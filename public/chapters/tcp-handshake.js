@@ -21,7 +21,7 @@ export default {
       blocks: [
         { md: `Chapter 4.1 left you with a connection named by its 5-tuple, and a client that has never spoken to the server before. For data to flow, both kernels must create state for that tuple: what has been sent, what has been received, what to expect next. They can only get it by exchanging a few segments first.
 
-TCP numbers every byte of the stream. Each segment's header carries a **sequence number** (where its data starts in the sender's stream) and an **acknowledgment number** (the next byte the sender expects from the peer), plus flag bits: SYN, ACK, FIN, RST and others (RFC 9293, section 3.1). Both numbers need a starting value, and each side chooses its own: the **initial sequence number** (ISN).
+TCP numbers every byte of the stream. Each segment's header carries a **sequence number** (where its data starts in the sender's stream) and an **acknowledgment number**, plus flag bits: SYN, ACK, FIN, RST and others (RFC 9293, section 3.1). Both numbers need a starting value, and each side chooses its own: the **initial sequence number** (ISN).
 
 The lab builds client n43c (10.43.0.1) and server n43s (10.43.0.2) on one veth. In n43s, \`nc -l\` listens on port 8080. In n43c, \`tcpdump -S\` captures the connection (\`-S\` prints absolute sequence numbers instead of relative ones) while \`echo hi | nc\` connects, sends 3 bytes (\`hi\` and a newline) and closes. The listing is trimmed to the first six segments, and to the interesting columns: \`Flags [S]\` is a SYN, \`[S.]\` is SYN plus ACK, \`[.]\` is a bare ACK.
 
@@ -34,7 +34,7 @@ Look at the first two lines before you run it: the client's SYN carries \`seq X\
               "X itself: an ack echoes back the sequence number it received",
               "The server's own sequence number: the ack field carries the sender's position",
               "One past X: the SYN itself used up a sequence number",
-              "X plus zero: the SYN had no payload, so nothing has been received yet",
+              "Four past X (X+4): the ack counts the bytes of the whole handshake",
             ],
             key: 2,
             why: 'The ack field names the next sequence number expected. The SYN occupies one position in the sequence space even without data, so the next one expected is X+1.',
@@ -76,7 +76,7 @@ client > server  [F.]  seq X+4, ack Y+1
 
 In the run, X was 845383342 and the SYN/ACK acknowledged 845383343: X+1. The server's own ISN, Y, was a different number, 1947068774, unrelated to X, and the client's final ACK said \`ack 1947068775\`: Y+1. The data segment started at X+1, not at X. The server's ack for it was X+4, because 3 bytes were sent. Run it again and X and Y change; they are chosen per connection.
 
-Each SYN used up one sequence number, which is why each ack is one more than the ISN it answers. RFC 9293 (section 3.4) says that SYN and FIN are the only controls that occupy sequence space. The ISNs themselves are not zero: the RFC describes a 32-bit clock-driven generator, to keep segments from an earlier connection on the same 5-tuple from being mistaken for the new one, and notes that predictable ISNs are a security problem for off-path attackers. What this lab saw is only that X and Y looked unrelated and changed between runs.
+The acknowledgment number names the next sequence number the sender expects from its peer. Each SYN used up one sequence number, which is why each ack is one more than the ISN it answers. RFC 9293 (section 3.4) says that SYN and FIN are the only controls that occupy sequence space. The ISNs themselves are not zero: the RFC describes a 32-bit clock-driven generator, to keep segments from an earlier connection on the same 5-tuple from being mistaken for the new one, and notes that predictable ISNs are a security problem for off-path attackers. What this lab saw is only that X and Y looked unrelated and changed between runs.
 
 > [!IMPORTANT]
 > SYN, SYN/ACK, ACK. Each side picks its own ISN, and each ack is the peer's ISN plus one. No application data moves until the third segment has been sent.
@@ -116,7 +116,7 @@ The second half of the lab connected to port 8099, where nothing listens. The cl
       id: 'rtt',
       title: 'What the handshake costs',
       blocks: [
-        { md: `The three segments cross the network one after another, so their cost is set by distance. The next lab gives each side's interface a **50 ms** delay with \`tc netem\`, so one round trip (RTT) is 100 ms. A python client records the time just before \`connect()\` and the time \`connect()\` returns, then sends one byte as soon as it can. A python server blocked in \`accept()\` records when \`accept()\` returns and when the byte arrives. Both processes run on the same machine, so their clocks are comparable.` },
+        { md: `The three segments cross the network one after another, The next lab gives each side's interface a **50 ms** delay with \`tc netem\`, so one round trip (RTT) is 100 ms. A python client records the time just before \`connect()\` and the time \`connect()\` returns, then sends one byte as soon as it can. A python server blocked in \`accept()\` records when \`accept()\` returns and when the byte arrives. Both processes run on the same machine, so their clocks are comparable.` },
         {
           checkpoint: {
             id: 'c2',
@@ -152,7 +152,7 @@ wait
 for n in n43c n43s; do ip netns exec $n tc qdisc del dev eth0 root; done`,
           },
         },
-        { md: `The raw lines print absolute times; read them relative to the first. In my runs \`connect()\` returned a little over 100 ms after it was called (between about 102 and 119 ms across six runs), and \`accept()\` returned about 45 to 60 ms after that, with the first data byte read at the same moment. That is one RTT for the client, and about one and a half for the server, which is the half trip the final ACK needs to arrive. Nothing was sent by the application until \`connect()\` had returned, so **one RTT passes before the client's first byte can leave**.
+        { md: `The raw lines print absolute times; read them relative to the first. In a typical run \`connect()\` returned a little over 100 ms after it was called, one RTT. \`accept()\` returned roughly 50 to 60 ms after that, about half a trip, and the first data byte was read at about the same moment. That fits the server finishing when the client's final ACK arrives, but it fits the first data segment arriving just as well, so this lab doesn't separate the two; both are half a trip after \`connect()\` returns. Nothing was sent by the application until \`connect()\` had returned, so **one RTT passes before the client's first byte can leave**.
 
 Python's startup and scheduling add some milliseconds to the numbers, so the figures are approximate. The shape is what matters: it doesn't change with how much you send, only with the distance. This is why a short-lived connection to a faraway server feels slow, and why reusing connections matters.` },
       ],
@@ -167,9 +167,9 @@ Python's startup and scheduling add some milliseconds to the numbers, so the fig
             id: 'c3',
             prompt: 'The server never calls accept(). What state are clients 1 and 2 in?',
             options: [
-              'Connected: the kernel completes the handshake without the application',
-              'Refused: with no accept() there is no one to take the connection, so a reset comes back',
-              'Stuck in SYN-SENT: the SYN/ACK is only sent once the application accepts',
+              'Established without accept(): the kernel completes the handshake without the application',
+              'Turned away with a reset: with no accept() there is no one to take the connection',
+              'Waiting for accept(): the SYN/ACK is only sent once the application accepts',
               'Only client 1 connects: a backlog of 1 means one waiting connection',
             ],
             key: 0,
@@ -204,23 +204,25 @@ for p in sorted(n): print("client port", p, ": SYN sent x%d, SYN/ACK received x%
 wait`,
           },
         },
-        { md: `The server shows its \`LISTEN\` socket and **two** \`ESTAB\` sockets, though no code ever called \`accept()\`. The clients agree: two are \`ESTAB\`, and two are still \`SYN-SENT\`. The capture says why. The first two client ports each sent one SYN and received one SYN/ACK. The other two sent four SYNs in about five seconds and received no SYN/ACK. I did not capture the server side, so I can't say whether those SYNs were dropped before or after reaching it; I only saw that they went unanswered.
+        { md: `The server shows its \`LISTEN\` socket and **two** \`ESTAB\` sockets, though no code ever called \`accept()\`. The clients agree: two are \`ESTAB\`, and two are still \`SYN-SENT\`. The capture says why. The first two client ports each sent one SYN and received one SYN/ACK. The other two sent four SYNs within the capture and received no SYN/ACK. This lab didn't capture the server side, so it can't say whether those SYNs were dropped before or after reaching it; it shows only that they went unanswered.
 
-So the handshake is the kernel's business. The listening socket answers SYNs and finishes handshakes on its own, and parks each completed connection in a queue until the application calls \`accept()\`. That queue is bounded by the \`listen()\` backlog. I passed 1 and two connections completed, so on this kernel the limit was not one; the \`LISTEN\` row read \`2 1\` in its two queue columns. I'm not sourcing what those columns mean (the \`ss\` man page doesn't say), only noting that it matched two waiting connections and my backlog of 1. Once the queue was full, further SYNs went unanswered and the clients kept retrying.
+So the handshake is the kernel's business. The listening socket answers SYNs and finishes handshakes on its own, and parks each completed connection in a queue until the application calls \`accept()\`. That queue is bounded by the \`listen()\` backlog. The observation: the listener passed a backlog of 1 and two connections completed, and the \`LISTEN\` row read \`2 1\` in its two queue columns. Why backlog 1 admitted two wasn't investigated here, and the \`ss\` man page doesn't define those columns; as in chapter 4.1, the numbers are noted as observed, not explained.
+
+The cause of the unanswered SYNs is general knowledge, not something this lab captured: Linux drops new SYNs when the accept queue is full and \`tcp_abort_on_overflow\` is 0 (its default), which is why the clients kept retrying instead of being refused. The kernel documentation for \`tcp_abort_on_overflow\` wasn't fetched in this session.
 
 > [!IMPORTANT]
-> An established connection can exist with nobody having called accept(). A full accept queue looks to the client like a SYN that never gets an answer, not like a refusal.` },
+> An established connection can exist with nobody having called accept(). In this lab, clients beyond the queue saw SYNs that never got an answer, not a refusal.` },
       ],
     },
     {
       id: 'twins',
       title: "Where you've met this",
       blocks: [
-        { md: `**AWS.** Security groups track connections, and the EC2 connection-tracking page says responses to allowed traffic flow back whatever the other direction's rules are. My inference: the rule that matters is the one that admits the opening SYN. A missing inbound rule would then show up as a SYN that gets no answer, the same SYN-SENT you saw for clients 3 and 4 though from a different cause. Chapters 4.4 and 4.5 test this.
+        { md: `**AWS.** Security groups track connections, and the EC2 connection-tracking page says responses to allowed traffic flow back whatever the other direction's rules are. The likely reading, not stated on that page: the rule that matters is the one that admits the opening SYN. A missing inbound rule would then show up as a SYN that gets no answer, the same SYN-SENT you saw for clients 3 and 4 though from a different cause. Chapters 4.4 and 4.5 test this.
 
 **Kubernetes / Cilium.** With a Service, the SYN is sent to the ClusterIP and rewritten to a backend pod by kube-proxy or Cilium, so the SYN/ACK comes from the pod's address and is translated back. This is general knowledge, not fetched here; chapter 4.7 tests conntrack-based rewriting.
 
-**Proxmox.** The handshake is run by each guest's kernel, as in the lab. The Proxmox firewall tracks state per VM; I haven't checked its documentation here, so treat the detail as unverified.` },
+**Proxmox.** The handshake is run by each guest's kernel, as in the lab. The Proxmox firewall tracks state per VM; its documentation wasn't checked here, so treat the detail as unverified.` },
       ],
     },
     {
@@ -229,7 +231,7 @@ So the handshake is the kernel's business. The listening socket answers SYNs and
       blocks: [
         { md: `- A connection opens with SYN, SYN/ACK, ACK. Each side picks its own ISN, and each ack is the peer's ISN plus one, because a SYN uses up one sequence number.
 - The ISNs are per connection and look unrelated between runs; data starts at ISN+1.
-- The client can send data only after the SYN/ACK has made one round trip. The server's accept() returns about half a trip after the client's connect().
+- The client can send data only after the SYN/ACK has made one round trip. The server's accept() returned about half a trip after the client's connect() in the lab, but the lab doesn't say whether that tracks the final ACK or the first data.
 - The kernel completes handshakes for a listening socket; accept() just collects them from a bounded queue.
 - A closed port answers the SYN with a reset. A server that doesn't answer leaves the client in SYN-SENT, retrying.` },
       ],
