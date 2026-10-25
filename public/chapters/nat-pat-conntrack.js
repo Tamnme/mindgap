@@ -109,9 +109,7 @@ The first tuple is the packet as the client sent it. The second is the packet as
       id: 'ports',
       title: 'Two clients, one source port',
       blocks: [
-        { md: `Rewriting only the address leaves a problem. Both clients are behind one WAN address, so the server sees the same source address for every connection from either. What tells two connections apart then is the source port, and nothing stops two inside hosts from choosing the same one.
-
-The next lab forces that case. Both clients bind source port 40000 before connecting to 198.51.100.2:8080: A first, then B 0.3 s later. Inside the router the two connections are different, 10.47.1.2:40000 and 10.47.1.3:40000. Both stay open while the lab reads the server's view and \`conntrack -L\`. The lab flushes the conntrack table first, so only these two connections show.` },
+        { md: `The next lab sets up two connections that look alike. Both clients bind source port 40000 before connecting to 198.51.100.2:8080: A first, then B 0.3 s later. Inside the router the two connections are different, 10.47.1.2:40000 and 10.47.1.3:40000. Both stay open while the lab reads the server's view and \`conntrack -L\`. The lab flushes the conntrack table first, so only these two connections show.` },
         {
           checkpoint: {
             id: 'c2',
@@ -142,7 +140,7 @@ ip netns exec n47r conntrack -L -p tcp 2>/dev/null | sed 's/ mark=0 use=1//; s/^
 wait $SP`,
           },
         },
-        { md: `The server reported two peers, both at 198.51.100.1: one on port 40000, and one on a different port. The router has one WAN address, so the only field it has left to make the connections distinct is the port.
+        { md: `The server reported two peers, both at 198.51.100.1: one on port 40000, and one on a different port. Both clients sit behind one WAN address, so the server sees the same source address for every connection from either, and the source port is what tells two connections apart. Nothing stops two inside hosts from choosing the same port. The router has one WAN address, so the only field it has left to make the connections distinct is the port.
 
 The conntrack rows show how it did it. Client A's row is unchanged: the original tuple has \`sport=40000\` and the reply tuple has \`dport=40000\`. Client B's row has \`sport=40000\` in the original, because that is what B sent, and a different number in the reply's \`dport\`. The original tuple is the packet before translation, and the reply tuple is the packet as the server sends it back. The router uses the reply tuple to find the row, so each reply tuple has to be unique. When B's connection arrived and 40000 was already taken, the router picked another port for the outside.
 
@@ -150,7 +148,7 @@ In the runs recorded for this chapter the second port was different each time. T
 
 This is **port address translation**. The name is worth fixing: "PAT" is the common term for NAT that rewrites ports too (general knowledge, not fetched), and RFC 3022 calls the setup NAPT. Address-only NAT would need a separate outside address for each inside host that is talking at the same time (general reasoning, not tested here). Translating ports lets thousands of flows share one.
 
-PAT has one structural weakness that RFC 3022 section 6.3 spells out. It matches packets to sessions by the TCP or UDP header, and "only the first fragment contains the TCP/UDP header that would be necessary to associate the packet to a session". A later fragment has no port in it for the table to look up. Fragments come up in chapter 3.9, on MTU.
+PAT has one structural weakness that RFC 3022 section 6.3 (a 2001 RFC; not tested here) spells out. It matches packets to sessions by the TCP or UDP header, and "only the first fragment contains the TCP/UDP header that would be necessary to associate the packet to a session". A later fragment has no port in it for the table to look up. The RFC describes the general problem for a port-translating NAT. This chapter does not say whether Linux masquerade behaves that way, because fragments were not run. Fragments come up in chapter 3.9, on MTU.
 
 > [!IMPORTANT]
 > PAT keeps every flow's outside tuple unique by rewriting the source port when it has to. The conntrack row stores both the original and the reply tuple, and replies are found through the reply tuple.` },
@@ -162,43 +160,43 @@ PAT has one structural weakness that RFC 3022 section 6.3 spells out. It matches
       blocks: [
         { md: `Client A's connection from port 40000 is still open, so the router's table holds a row that mentions port 40000 on the WAN side. The server now dials the router's WAN address, 198.51.100.1, on port 40000. A fresh connection, from a port the server picks.
 
-The lab also listens on client A's interface for any packet on port 40000 during the attempt.` },
+The lab also captures on client A's interface, counting A's own packets as a control and any packet that arrives from the server's other ports during the attempt.` },
         {
           checkpoint: {
             id: 'c3',
             prompt: 'Client A has a live connection that uses WAN port 40000. The server opens a new connection to 198.51.100.1 port 40000. What happens?',
             options: [
+              'Refused by the router: nothing matches this tuple, and nothing listens there',
               'Reaches A: the router already maps port 40000, so it forwards the packet inside',
-              'Refused by the router itself: no row matches this tuple, and the router has nothing on that port',
               'Times out: NAT silently drops anything it has no mapping for',
             ],
-            key: 1,
-            why: 'The table is looked up by the whole tuple. The existing row expects replies from port 8080, and this SYN comes from another source port, so it matches nothing. It is addressed to the router itself, which has no listener, so the router answers with a reset and the packet never goes inside.',
+            key: 0,
+            why: 'The table is looked up by the whole tuple. The existing row expects replies from port 8080, and this SYN comes from another source port, so it matches nothing. It is addressed to the router itself, which has no listener, so the router is the one that can refuse it and the packet never goes inside.',
           },
         },
         {
           lab: {
-            explain: 'With A\'s connection open, the server dials 198.51.100.1:40000; count packets A sees on port 40000 (expect 0)',
+            explain: 'With A\'s connection open, the server dials 198.51.100.1:40000; count A\'s own packets as a control and packets reaching A from other server ports (expect 0)',
             cmd: `ip netns list | grep -q n47r || { echo "Run the first lab first."; exit 1; }
 ip netns exec n47r conntrack -F 2>/dev/null
-ip netns exec n47s python3 /tmp/srv47.py 5 & SP=$!
-sleep 0.5
+ip netns exec n47s python3 /tmp/srv47.py 6 & SP=$!
+ip netns exec n47a timeout 5 tcpdump -nl -i eth0 'tcp port 40000' 2>/dev/null > /tmp/a47.cap &
+sleep 1
 ip netns exec n47a python3 /tmp/cli47.py 4 40000 A &
-sleep 0.5
-ip netns exec n47a timeout 3 tcpdump -nl -i eth0 'tcp port 40000' 2>/dev/null > /tmp/a47.cap &
-sleep 0.5
+sleep 1
 echo "--- server dials the router's WAN address, port 40000"
 ip netns exec n47s python3 -c "
 import socket
 s = socket.socket(); s.settimeout(2)
 try: s.connect(('198.51.100.1', 40000)); print('connected')
 except OSError as e: print(e.strerror)"
-sleep 2.5
-echo "packets A saw on port 40000 during the attempt: $(grep -c 'IP ' /tmp/a47.cap)"
+sleep 3
+echo "control, A's own packets to the server in the capture: $(grep -c '10.47.1.2.40000 > 198.51.100.2.8080' /tmp/a47.cap)"
+echo "packets A saw coming from the server's other ports: $(grep '> 10.47.1.2.40000' /tmp/a47.cap | grep -vc '198.51.100.2.8080 >')"
 wait $SP`,
           },
         },
-        { md: `The attempt was refused straight away, and client A saw 0 packets on port 40000. The router answered the SYN itself, as it would answer any SYN for a closed port on its own address. Nothing reached the inside host, although that host was using port 40000 at the time.
+        { md: `The attempt was refused straight away. A's capture on the inside held 2 of A's own packets to the server, which shows the capture was running, and 0 packets arriving from any other server port. The SYN was addressed to the router's own WAN address, so the router is the only other box that could have answered it, and the capture shows nothing arrived inside. The lab did not capture the source of the reset, so "the router answered" is the inference that fits. Nothing reached the inside host, although that host was using port 40000 at the time.
 
 The reason is the lookup. The row for A's connection will match a packet with source 198.51.100.2 port 8080 and destination 198.51.100.1 port 40000: that is its reply tuple. The new SYN has a different source port, so it matches no row. There is no mapping for "a new connection to port 40000", because mappings are created only by traffic from the inside. In this setup a connection can only enter through a row that an inside host created by connecting out.
 
@@ -209,7 +207,7 @@ That is a property of the table, not a filtering rule. Whether to count on it is
       id: 'twins',
       title: "Where you've met this",
       blocks: [
-        { md: `**AWS NAT gateway.** AWS describes a public NAT gateway as a service that lets instances in a private subnet reach the internet, while the instances "can't receive unsolicited inbound connections from the internet". You create it in a public subnet, give it an Elastic IP address, and route its traffic to the internet gateway. That is the lab's router, with the WAN address being the Elastic IP. Chapter 4.1 already covered the NAT gateway's limit of 55,000 simultaneous connections per address to each unique destination and worked out the ephemeral range, so none of that is repeated here. The lab shows why such a limit exists at all: every flow needs its own outside tuple, and with one source address and one destination the source port is the only thing left to vary. Per the same page, a NAT gateway supports TCP, UDP and ICMP, and can have up to 8 IPv4 addresses (1 primary and 7 secondary), which multiplies the tuples available. AWS doesn't say how the gateway chooses ports, so the safe mental model is the one in the lab and nothing more specific.
+        { md: `**AWS NAT gateway.** AWS describes a public NAT gateway as a service that lets instances in a private subnet reach the internet, while the instances "can't receive unsolicited inbound connections from the internet". You create it in a public subnet, give it an Elastic IP address, and route its traffic to the internet gateway. That is the lab's router, with the WAN address being the Elastic IP. Chapter 4.1 already covered the NAT gateway's per-destination connection limit and worked out the ephemeral range, so none of that is repeated here. The lab is consistent with there being such a limit: every flow needs its own outside tuple, and with one source address and one destination the source port is the only thing left to vary. Per the same page, a NAT gateway supports TCP, UDP and ICMP, and can have up to 8 IPv4 addresses (1 primary and 7 secondary), which multiplies the tuples available. AWS's documentation gives the range its ports come from (1024-65535) but doesn't publish how it picks a port within it, so the safe mental model is the one in the lab and nothing more specific.
 
 **Kubernetes / Cilium.** Pod traffic leaving a cluster is commonly source-translated to the node's address, and Service virtual IPs are commonly destination-translated to a pod, with both translations recorded in conntrack. This chapter did not fetch Kubernetes or Cilium documentation, so treat that as general knowledge. The method carries over: \`conntrack -L\` on the node shows the original and reply tuples of a flow, and a mismatch between them is the translation.
 
@@ -223,8 +221,8 @@ That is a property of the table, not a filtering rule. Whether to count on it is
         { md: `- Masquerade is SNAT whose source address is the address of the output interface, applied in a postrouting nat chain. The server only ever saw the router's WAN address.
 - Every NAT row in \`conntrack -L\` has an original tuple and a reply tuple, and the difference between them is the translation.
 - When two inside flows would share an outside tuple, the router rewrites a source port. In the lab it kept a free port and changed a colliding one, to a different value in each run.
-- A connection can enter through a row only if an inside host created it by connecting out. A new SYN to the same WAN port reached the router and no further.
-- AWS's NAT gateway gives private instances outbound access and no unsolicited inbound, and its connection limit is covered in chapter 4.1.` },
+- A connection can enter through a row only if an inside host created it by connecting out. A new SYN to the same WAN port was refused and never appeared on the inside.
+- AWS's NAT gateway gives private instances outbound access and no unsolicited inbound. Its connection limit is covered in chapter 4.1.` },
       ],
     },
   ],
