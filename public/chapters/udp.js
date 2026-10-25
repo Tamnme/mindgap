@@ -4,6 +4,7 @@
 //   https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/security-group-connection-tracking.html (security groups track connections, including UDP, so a response to an allowed request is let back regardless of the other direction's rules),
 //   https://docs.aws.amazon.com/vpc/latest/userguide/nat-gateway-basics.html (a NAT gateway supports TCP, UDP and ICMP).
 // Observed, not quoted from a spec: everything in the labs. ECONNREFUSED on a connected socket and the silence on an unconnected one are the Linux python3 behaviour in this VM, not a claim about other systems.
+// General knowledge, not tested: that losing one IP fragment loses the whole datagram.
 // Hedged, not sourced: CoreDNS, VXLAN and WireGuard riding on UDP and Kubernetes UDP Services (general knowledge; chapters 5.1 and 6.2 go further), and what the Proxmox firewall does with UDP.
 
 const NEED = `ip netns list | grep -q n42a || { echo "Run the first lab first."; exit 1; }`;
@@ -30,7 +31,7 @@ export default {
 | payload ...               |
 \`\`\`
 
-Eight bytes, then your data. One \`send\` produces one datagram, which becomes one IP packet.
+Eight bytes, then your data.
 
 The first lab builds two namespaces, **n42a** (10.42.0.1) and **n42b** (10.42.0.2), joined by one veth. In n42b, \`nc -u -l 9999\` listens on UDP port 9999. In n42a, \`tcpdump\` watches for UDP and ICMP while \`echo hello | nc -u\` sends one datagram.` },
         {
@@ -68,7 +69,9 @@ wait`,
 
 That exit status says only that the datagram was handed to the network. A sender that wants to know it arrived has to build that itself: B's application replies, A's application waits for it, and both agree on what to do when it doesn't come.
 
-RFC 768 says as much: the protocol uses "a minimum of protocol mechanism" and "delivery and duplicate protection are not guaranteed". Applications that need ordered, reliable delivery are pointed at TCP.` },
+RFC 768 says as much: the protocol uses "a minimum of protocol mechanism" and "delivery and duplicate protection are not guaranteed". Applications that need ordered, reliable delivery are pointed at TCP.
+
+The one safety feature UDP does keep is the checksum. RFC 768 computes it over the header, the data and a pseudo header holding the source address, destination address, protocol and UDP length, which "gives protection against misrouted datagrams". The checksum detects damage and misdelivery; it repairs nothing.` },
       ],
     },
     {
@@ -81,7 +84,7 @@ RFC 768 says as much: the protocol uses "a minimum of protocol mechanism" and "d
             id: 'c2',
             prompt: 'The connected UDP socket sends to port 9998, where nothing listens. What does the python program see when it waits for a reply?',
             options: [
-              'A timeout: nothing in UDP can report a failure to the sender',
+              'Silence for the connected socket too: nothing in UDP can report a failure to the sender',
               'An error from the socket call (connection refused)',
               'A TCP-style reset: the closed port answers with RST',
               'An empty UDP reply: the closed port answers in UDP',
@@ -111,9 +114,9 @@ except Exception as e: print("unconnected socket ->", type(e).__name__)
 wait`,
           },
         },
-        { md: `Every one of the four datagrams was answered, and tcpdump shows the answer: \`10.42.0.2 > 10.42.0.1: ICMP 10.42.0.2 udp port 9998 unreachable\`. It comes from B, which has no socket on UDP 9998 and says so. Chapter 3.7 captured one of these on the way to a router lab; here it is from UDP's side. The ICMP message is a separate IP packet, and it has no UDP header.
+        { md: `Every one of the four datagrams was answered, and tcpdump shows the answer: \`10.42.0.2 > 10.42.0.1: ICMP 10.42.0.2 udp port 9998 unreachable\`. It comes from B, which has no socket on UDP 9998 and says so. Chapter 3.7 listed port unreachable among the type-3 codes; here you see it from UDP's side. The reply is ICMP, not UDP, and quotes the start of your datagram: its length of 42 is 8 bytes of ICMP header, the 20-byte IP header and 8-byte UDP header of the original, and the 6 payload bytes (37 for the 1-byte datagrams).
 
-What the program sees depends on the socket. The connected one raised \`ConnectionRefusedError\` on both waits. The unconnected one timed out and got no error, although its two datagrams drew the same two ICMP replies on the wire. That is what Linux and python3 did here. I didn't check other systems or other socket options.
+What the program sees depends on the socket. The connected one raised \`ConnectionRefusedError\` on both waits. The unconnected one timed out and got no error, although its two datagrams drew the same two ICMP replies on the wire. That is what Linux and python3 did here; other systems and other socket options were not tested.
 
 > [!IMPORTANT]
 > A closed UDP port is not silent: the host answers with ICMP port-unreachable. An application sees it only if its socket is connected to the peer.
@@ -159,7 +162,7 @@ Compare the two silences. A closed port produces an ICMP answer on the wire. A d
         },
         {
           lab: {
-            explain: 'Send a, bb, ccc over UDP and over TCP; read UDP three times and TCP once',
+            explain: 'Send a, bb, ccc over UDP and over TCP, read both; then send 3000, 65507 and 65508-byte datagrams and count IP packets',
             cmd: `${NEED}
 ip netns exec n42b python3 -c '
 import socket
@@ -178,10 +181,31 @@ import time; time.sleep(0.5)
 print("UDP reads:", [r.recvfrom(100)[0] for _ in range(3)])
 conn, _ = t.accept(); time.sleep(0.5)
 print("TCP one read:", conn.recv(100))
-'`,
+'
+ip netns exec n42a timeout 4 tcpdump -nl -i eth0 'ip proto 17' 2>/dev/null > /tmp/n42.cap &
+ip netns exec n42b python3 -c '
+import socket, subprocess
+r = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); r.bind(("10.42.0.2", 9995)); r.settimeout(3)
+subprocess.Popen(["ip", "netns", "exec", "n42a", "python3", "-c", """
+import socket, time
+time.sleep(1)
+u = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+print("link MTU:", open("/sys/class/net/eth0/mtu").read().strip())
+for n in (3000, 65507, 65508):
+    try: u.sendto(b"x" * n, ("10.42.0.2", 9995)); print("sent", n, "bytes")
+    except OSError as e: print("send", n, "->", e.strerror)
+time.sleep(1)
+"""])
+print("receiver read", [len(r.recvfrom(70000)[0]) for _ in range(2)], "bytes per datagram")'
+wait
+awk '/UDP, length/ { if (n) print "UDP payload " len ": " n " IP packets"; len = $NF; n = 1; next } { n++ } END { print "UDP payload " len ": " n " IP packets" }' /tmp/n42.cap`,
           },
         },
         { md: `The UDP reads returned \`[b'a', b'bb', b'ccc']\`: three reads, three messages, each exactly as sent. The TCP read returned \`b'abbccc'\`: one read, all six bytes, with the edges gone. TCP delivers the same bytes in the same order, but it makes no promise to keep the sends separate. That is how it behaves in this lab, after a half-second wait.
+
+The second half of the lab was about size. On the 1500-byte link, a 3000-byte datagram was accepted, and tcpdump counted **3 IP packets** for it, yet the receiver read one datagram of 3000 bytes. The kernel split it into IP fragments and the far end reassembled it before handing it up, which is the fragmentation from chapter 3.9. A payload of 65507 bytes was accepted too (46 IP packets), and 65508 failed with \`Message too long\`. The limit is arithmetic: the IPv4 total-length field is 16 bits, so a packet is at most 65535 bytes, minus 20 for the IP header and 8 for the UDP header leaves 65507.
+
+The lab doesn't test loss, so the next point is general knowledge: every fragment must arrive for the datagram to be reassembled, so losing any one loses the whole datagram, and UDP has no retransmission to repair it. Applications that care keep datagrams small enough to fit in one packet.
 
 So a UDP application gets message boundaries for free and must handle loss, reordering and duplicates itself. A TCP application gets order and reliability and has to mark its own message boundaries.` },
       ],
@@ -204,6 +228,7 @@ So a UDP application gets message boundaries for free and must handle loss, reor
         { md: `- UDP is an 8-byte header (ports, length, checksum) in front of the payload. No handshake, acknowledgement, retransmission or ordering.
 - A datagram that arrives is delivered whole, one per read. TCP gives a byte stream; UDP gives messages.
 - A closed UDP port answers with ICMP port-unreachable. A connected socket turns it into an error; an unconnected one may not.
+- A UDP payload is at most 65507 bytes on IPv4. Above the link MTU the datagram is fragmented, and losing any fragment loses it all.
 - A firewall drop gives no answer at all, so the sender can't tell it from a lost packet.
 - The \`nc -u\` exit status means "handed to the network", not "delivered".` },
       ],
