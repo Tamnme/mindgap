@@ -22,6 +22,8 @@ for (const id of ids) {
     for (const c of cps) {
       assert.ok(Number.isInteger(c.key) && c.key >= 0 && c.key < c.options.length, `${c.id} key in range`);
       assert.ok(c.prompt && c.why, `${c.id} has prompt and why`);
+      const labels = c.options.map((o) => String(o).split(': ')[0]);
+      assert.equal(new Set(labels).size, labels.length, `${c.id} receipt labels are distinct: ${JSON.stringify(labels)}`);
     }
     for (const b of blocks) {
       const kinds = ['md', 'checkpoint', 'widget', 'lab'].filter((k) => b[k]);
