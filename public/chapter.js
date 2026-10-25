@@ -138,18 +138,20 @@ function widgetCard(w) {
     instance?.destroy?.();
     host.replaceChildren();
     try {
-      const mod = await import('/sim/switch-sim.js');
-      instance = mod.mount(host, w.sim);
+      const mod = await import(`/widgets/${w.kind || 'sim'}.js`);
+      instance = mod.mount(host, w);
     } catch {
-      host.replaceChildren(el('p', { class: 'muted small', text: 'simulator unavailable' }));
+      host.replaceChildren(el('p', { class: 'muted small', text: 'widget unavailable' }));
     }
   };
-  host.addEventListener('click', (e) => {
-    if (explored || !e.target.closest('button')) return;
+  // First button click, or first input/change inside the widget (sliders count).
+  const markExplored = (e) => {
+    if (explored || (e.type === 'click' && !e.target.closest('button'))) return;
     explored = true;
     badge.classList.remove('hidden');
     try { localStorage.setItem(key, '1'); } catch { /* storage blocked */ }
-  });
+  };
+  for (const t of ['click', 'input', 'change']) host.addEventListener(t, markExplored);
 
   const card = el('div', { class: 'widget' });
   const focusBtn = el('button', { class: 'w-tool', text: '⤢ Focus' });

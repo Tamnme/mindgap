@@ -74,7 +74,7 @@ Learner `event` shapes:
 
 Chapter mode (`prompts/chapter.md`): the first `/api/turn` sends `CONTEXT` (including `chapter_source`, the chapter file) followed by the event. The learner record is written **before** the tutor call, so an answer survives a failed review.
 
-Chapters: `public/chapters/<node_id>.js` exports `{node, number, kicker, title, lede, sections:[{id, title, blocks:[{md}|{checkpoint:{id, prompt, options, key, why}}|{widget:{id, sim, title, hint, takeaway}}|{lab:{explain, cmd}}]}]}`, listed in `public/chapters/index.json`. `test/chapter.test.mjs` checks every listed chapter.
+Chapters: `public/chapters/<node_id>.js` exports `{node, number, kicker, title, lede, sections:[{id, title, blocks:[{md}|{checkpoint:{id, prompt, options, key, why}}|{widget:{id, kind?, title, hint, takeaway, ...config}}|{lab:{explain, cmd}}]}]}`, listed in `public/chapters/index.json`. Widget kinds and their config are documented in `public/widgets/README.md`. `test/chapter.test.mjs` checks every listed chapter.
 
 After each turn the server applies `node_updates` to map.json (status + evidence = note) and appends `propositions` (with lesson_id, ts) to propositions.jsonl.
 

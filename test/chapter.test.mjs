@@ -5,7 +5,6 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { firstOpenCheckpoint, flatBlocks, answerEvent, answersFrom, sectionState } from '../public/chapter-logic.js';
-import { SCENARIOS } from '../public/sim/switch-sim.js';
 
 const PUB = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 const ids = JSON.parse(await readFile(path.join(PUB, 'chapters', 'index.json'), 'utf8'));
@@ -27,7 +26,10 @@ for (const id of ids) {
     for (const b of blocks) {
       const kinds = ['md', 'checkpoint', 'widget', 'lab'].filter((k) => b[k]);
       assert.equal(kinds.length, 1, 'each block is exactly one kind');
-      if (b.widget) assert.ok(SCENARIOS[b.widget.sim], `widget sim ${b.widget.sim} exists`);
+      if (b.widget) {
+        const mod = await import(`../public/widgets/${b.widget.kind || 'sim'}.js`);
+        assert.deepEqual(mod.validate(b.widget), [], `widget ${b.widget.id} config valid`);
+      }
       if (b.lab) assert.ok(b.lab.cmd.length <= 4000, 'lab fits the server limit');
     }
   });
