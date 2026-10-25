@@ -15,7 +15,7 @@ export default {
   number: '1.1',
   kicker: 'Physical',
   title: 'Links, NICs and virtual cables',
-  lede: 'A NIC puts bits on a link and takes bits off it, and it neither knows nor cares what is addressed to whom. A veth pair is that link made of software.',
+  lede: 'A NIC puts frames on a link and takes frames off it. Neither reads IP addresses. A veth pair is that link made of software.',
   sections: [
     {
       id: 'cable',
@@ -34,7 +34,7 @@ On a real machine that cable is copper or fibre. In Linux there is a software ca
 
 The useful trick is that the two ends can sit in *different network namespaces*. A namespace has its own interfaces, routes and ARP table, so a veth pair is a patch cable between two isolated network stacks. The kernel manual says it directly: packets transmitted on one device are immediately received on the other.
 
-Every container runtime and CNI relies on this. A pod lives in its own namespace, and a veth pair is how it reaches the node. Picture one: the pod's \`eth0\` is one end. The other end is somewhere else.` },
+Every container runtime and CNI relies on this. A pod lives in its own namespace and has a veth pair. Picture one: the pod's \`eth0\` is one end. The other end is somewhere else.` },
         {
           checkpoint: {
             id: 'c1',
@@ -49,7 +49,7 @@ Every container runtime and CNI relies on this. A pod lives in its own namespace
             why: 'The pod’s only link is its veth. Whatever leaves eth0 comes out of the other end of the pair, in the node’s root namespace. Routing and the physical NIC come after that.',
           },
         },
-        { md: `It lands on the other end of the cable, which is an interface in the node's root namespace. Cilium's documentation names it: the pod's \`eth0\` is one end of the pair, and the other end is called \`lxcXXXXXX\` in the host namespace. Only after the packet has come out of that \`lxc…\` interface do the eBPF programs, the routing table and the physical NIC get involved.
+        { md: `It lands on the other end of the cable, which is an interface in the node's root namespace: that pair is how a pod reaches its node. Cilium's documentation names it: in its default veth mode, the pod's \`eth0\` is one end of the pair, and the other end is called \`lxcXXXXXX\` in the host namespace. Only after the packet has come out of that \`lxc…\` interface do the eBPF programs, the routing table and the physical NIC get involved.
 
 So the physical NIC is not the pod's first hop. It is the node's own link, one more port on the node's side. The pod never touches it directly.
 
@@ -116,9 +116,7 @@ No ICMP appears. a cannot build the Ethernet header without a destination MAC, a
       id: 'state',
       title: 'Link state: a cable has two ends',
       blocks: [
-        { md: `An interface has two separate pieces of state. The **admin state** is what you asked for: \`ip link set … up\` or \`down\`. The **carrier** is what the hardware sees: is something alive on the other end?
-
-A veth pair copies that behaviour. The man page says when either device is down, the link state of the pair is down. Put the address back on b's end, then set b down and look at a, which you have not touched. Ping from a after that.` },
+        { md: `Put the address back on b's end, then set b down with \`ip link set v11b down\`. Look at a, which you have not touched, and ping from a.` },
         {
           checkpoint: {
             id: 'c3',
@@ -126,8 +124,8 @@ A veth pair copies that behaviour. The man page says when either device is down,
             options: [
               'Unchanged, still UP: its own admin state is UP, so nothing about it changes',
               'Gone: a veth end cannot exist without its partner',
-              'DOWN, because the admin state of a pair is shared: one down sets both down',
-              'Still admin-UP, but NO-CARRIER and state DOWN: it lost the link, though nobody touched it',
+              'Admin-DOWN: one down command downs both ends of the pair',
+              'NO-CARRIER while still admin-UP: it lost the link, though nobody touched it',
             ],
             key: 3,
             why: 'Admin state is per interface and v11a keeps its UP flag. Carrier is a property of the link, and a link with a dead end has none. So v11a shows NO-CARRIER and state DOWN while still flagged UP.',
@@ -148,6 +146,8 @@ echo "peer up again:"; ip -n n11a -br link show v11a`,
           },
         },
         { md: `Before, \`v11a\` shows \`UP\` with \`LOWER_UP\`. After b goes down it shows \`DOWN\`, with \`NO-CARRIER\` in the flags and \`UP\` still present, and the long form says \`state DOWN\`. The ping gets 0 received. Set b up again and a returns to \`UP\` with \`LOWER_UP\`, with no action on a.
+
+An interface has two separate pieces of state. The **admin state** is what you asked for with \`ip link set … up\` or \`down\`. The **carrier** is what the hardware sees: is something alive on the other end? A veth pair copies that behaviour, and the man page says so: when either device is down, the link state of the pair is down.
 
 Two readings to keep apart. \`UP\` in the flags is *admin up*. The \`state\` column and \`LOWER_UP\` say whether the link actually works. An interface can be admin-UP and state DOWN, and that combination points at the far end or the cable, not at a's configuration.
 
