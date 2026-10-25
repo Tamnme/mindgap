@@ -3,8 +3,8 @@
 // Sources: https://datatracker.ietf.org/doc/html/rfc1812 (section 5.2.1 step 7: the forwarder decrements and checks the TTL, and step 10 finds the link-layer address of the next hop;
 //   section 5.3.1: a router MUST decrement the TTL by at least one; section 5.3.4: a router MUST NOT forward a packet it received as a link-layer broadcast unless it is directed to an IP multicast address),
 //   https://docs.aws.amazon.com/vpc/latest/userguide/subnet-sizing.html (the VPC router sits at the subnet's base + 1, reserved by AWS).
-// Hedged, not sourced: how AWS builds the VPC router internally, Cilium/Kubernetes behaviour and the Proxmox ip_forward remark are general knowledge. The "switch changes nothing" contrast is
-//   observed only on a Linux bridge (capture on C below), not on other switches.
+// Hedged, not sourced: how AWS builds the VPC router internally, Cilium/Kubernetes behaviour and the Proxmox ip_forward remark are general knowledge. The unchanged-frame contrast is observed only
+//   on an untagged Linux bridge (capture on C below), not on other switches.
 
 const NEED = `ip link show br33 >/dev/null 2>&1 || { echo "Run the first lab (build br33) first."; exit 1; }`;
 // Join a tcpdump -e -v pair of lines and keep: src > dst MAC, ttl, src > dst IP.
@@ -31,7 +31,7 @@ The lab builds the topology: **A** (\`10.33.0.10\`) and **C** (\`10.33.0.30\`) o
         {
           lab: {
             explain: 'Build br33 (A, C and router R on it), R\'s eth1 to B on a second subnet; show R\'s addresses and forwarding switch',
-            cmd: `for n in n33a n33b n33c n33r; do ip netns del $n 2>/dev/null; done
+            cmd: `rm -f /tmp/n33.*; for n in n33a n33b n33c n33r; do ip netns del $n 2>/dev/null; done
 ip link del br33 2>/dev/null; for v in v33a v33c v33r; do ip link del $v 2>/dev/null; done; sleep 0.5
 ip link add br33 type bridge && ip link set br33 up
 mk() { ip netns add $1; ip netns exec $1 sysctl -qw net.ipv6.conf.all.disable_ipv6=1 net.ipv6.conf.default.disable_ipv6=1; }
@@ -82,7 +82,7 @@ echo "--- MACs:"
 for x in a:eth0 c:eth0 r:eth0 r:eth1 b:eth0; do echo "n33\${x%%:*} \${x##*:} = $(ip -n n33\${x%%:*} -br link show \${x##*:} | awk '{print $3}')"; done`,
           },
         },
-        { md: `On C's \`eth0\` the frame from A has A's source MAC and C's destination MAC, with TTL 64: the bridge changed nothing. On R's side the same ping changes:
+        { md: `On C's \`eth0\` the frame from A has A's source MAC and C's destination MAC, with TTL 64: on this untagged bridge the frame arrived unchanged. (A VLAN tag push or pop, chapter 2.6, is the only edit a switch makes to a frame, and never to the IP header.) On R's side the same ping changes:
 
 - On \`eth0\`: source = A's MAC, destination = R's \`eth0\` MAC, TTL 64.
 - On \`eth1\`: source = R's \`eth1\` MAC, destination = B's MAC, TTL 63.
@@ -92,14 +92,14 @@ The IPs are \`10.33.0.10 > 10.33.1.20\` on both. The ping's reply line also show
 That is RFC 1812's forwarding algorithm in the output: the forwarder decrements the TTL (step 7), and it determines the link-layer address of the next hop (step 10) to build the new frame.
 
 > [!IMPORTANT]
-> A switch forwards the *frame* unchanged. A router consumes the frame and sends a *new* one: new MACs on every hop, the IP addresses unchanged and the TTL one lower.` },
+> A switch forwards the *frame* by MAC without touching the IP header. A router consumes the frame and sends a *new* one: new MACs on every hop, the IP addresses unchanged and the TTL one lower.` },
       ],
     },
     {
       id: 'bcast',
       title: 'Where broadcasts stop',
       blocks: [
-        { md: `A switch floods a broadcast out every port. Chapter 2.4 called the set of ports that hear it a broadcast domain. A router's interfaces belong to different segments.
+        { md: `A switch floods a broadcast out every port. Chapter 2.4 called the set of ports that hear it a broadcast domain.
 
 For this lab, A pings \`10.33.0.99\`, an address no host owns. A has to ARP for it, and that request goes to \`ff:ff:ff:ff:ff:ff\`. \`tcpdump\` on three NICs counts the ARP requests for \`10.33.0.99\`: C's \`eth0\` (same segment as A), R's \`eth0\` (A's side), and B's \`eth0\` (behind R).` },
         {
@@ -107,9 +107,9 @@ For this lab, A pings \`10.33.0.99\`, an address no host owns. A has to ARP for 
             id: 'c2',
             prompt: 'A broadcasts an ARP request for 10.33.0.99. Does the request reach B, on the other side of R?',
             options: [
-              'Yes: R forwards a broadcast out its other interface like any frame',
-              'No: R receives it but does not pass it to the other segment',
-              'Yes, as a new frame: R re-sends it with its own source MAC',
+              'Yes, forwarded: R passes a broadcast out its other interface like any frame',
+              'No, it stops: R receives it but does not pass it to the other segment',
+              'Yes, rewritten: R re-sends it as a new frame with its own source MAC',
             ],
             key: 1,
             why: 'A router forwards packets by their destination IP and never forwards a link-layer broadcast onto another segment, so the broadcast ends at R. This is what makes each router interface the edge of a broadcast domain.',
@@ -127,7 +127,7 @@ ip netns exec n33a ping -c1 -W2 10.33.0.99 >/dev/null; wait
 for n in n33c n33r n33b; do echo "$n saw $(cat /tmp/n33.arp.$n) ARP request(s)"; done`,
           },
         },
-        { md: `C and R each count 3 requests. B counts 0. The request was heard by every NIC on A's segment, including R's, and went no further. RFC 1812 §5.3.4 puts it as a rule: a router MUST NOT forward a packet it received as a link-layer broadcast (unless it is directed to an IP multicast address).
+        { md: `C and R each count 3 requests. B counts 0. R's interfaces sit on different segments, and that is where the broadcast stops. The request was heard by every NIC on A's segment, including R's, and went no further. RFC 1812 §5.3.4 puts it as a rule: a router MUST NOT forward a packet it received as a link-layer broadcast (unless it is directed to an IP multicast address).
 
 This is why a router is also a **fault boundary**: a broadcast storm or a flood of unknown unicast stays inside one segment (general knowledge; the lab shows only the single broadcast).` },
       ],
@@ -136,7 +136,7 @@ This is why a router is also a **fault boundary**: a broadcast storm or a flood 
       id: 'twins',
       title: "Where you've met this",
       blocks: [
-        { md: `**AWS VPC.** The router is the VPC router at the subnet's base + 1, reserved by AWS (subnet-sizing page). There is no switch object in a VPC. How AWS builds the VPC router internally isn't published, so the safe mental model is the one you just saw: from an instance's side, a gateway MAC with the destination IP unchanged.
+        { md: `**AWS VPC.** The router is the VPC router at the subnet's base + 1, reserved by AWS (subnet-sizing page). A VPC shows you no switch to configure. How AWS builds the VPC, router included, isn't published, so the safe mental model is the one you just saw: from an instance's side, a gateway MAC with the destination IP unchanged.
 
 **Kubernetes / Cilium.** A node's kernel routes between the pod network and the outside, with Cilium in the datapath. In overlay mode the tunnel makes remote pods look adjacent, and that is a Cilium design point, not something this lab demonstrates (not sourced here).
 
@@ -147,7 +147,7 @@ This is why a router is also a **fault boundary**: a broadcast storm or a flood 
       id: 'keep',
       title: 'What to keep',
       blocks: [
-        { md: `- A switch uses the Ethernet header and the ingress port, has no IP on the path, and forwards the frame unchanged.
+        { md: `- A switch uses the Ethernet header and the ingress port, has no IP on the path, and forwards the frame by MAC without touching the IP header or TTL.
 - A router has an IP in every segment it joins, forwards by destination IP, and builds a new frame for each hop: new source and destination MAC.
 - The router decrements the TTL on every hop: 64 became 63 across R.
 - A router doesn't forward broadcasts, so each of its interfaces ends a broadcast domain.` },
