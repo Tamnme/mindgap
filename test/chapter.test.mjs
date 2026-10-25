@@ -26,6 +26,7 @@ for (const id of ids) {
       assert.equal(new Set(labels).size, labels.length, `${c.id} receipt labels are distinct: ${JSON.stringify(labels)}`);
       for (const l of labels) {
         assert.ok(/[A-Za-z]{3,}/.test(l.replace(/(^|\s)-\w+/g, '')) && !/^(yes|no)$/i.test(l.trim()), `${c.id} receipt label must carry a belief, not a bare value: ${JSON.stringify(l)}`);
+        assert.ok(!/^(zero|one|two|three|four|five|six|seven|eight|nine|ten|none|all|both|neither|some|any|all of them|some of them|all three|all four)$/i.test(l.trim()), `${c.id} receipt label is a bare number word or quantifier; put the belief in the label: ${JSON.stringify(l)}`);
       }
     }
     const FIRST_PERSON = /(?<![-/\w])(I|I'm|I've|I'd)(?![/\w])|\b(my|me)\b/g; // I/G, -I and quoted speech are not first person
