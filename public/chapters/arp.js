@@ -153,7 +153,7 @@ echo "5 s in:               $(ip -n n28a neigh show 10.28.0.99 | awk '{print $NF
 The address nobody owns takes a different path. The entry is INCOMPLETE while A's requests go unanswered, then FAILED after the probes run out. FAILED is what a missing neighbour looks like on your own segment: nobody answered the question.
 
 > [!IMPORTANT]
-> STALE is not broken, and FAILED is not a timeout. STALE means "re-verify before trusting". FAILED means ARP got no answer at all.
+> STALE is not broken. STALE means "re-verify before trusting". FAILED means ARP got no answer at all.
 
 One last case: the owner of an IP changes while entries are cached. A's entry for \`10.28.0.2\` points at B's MAC. The lab moves \`10.28.0.2\` to C, then C sends a **gratuitous ARP**: a request in which the sender's IP and the target IP are the same address, broadcast without anyone asking. The \`arping\` tool isn't installed in netlab, so the lab builds that one frame by hand with a few lines of python. A listens, and its table is printed before and after.` },
         {
@@ -178,7 +178,7 @@ echo "A now thinks .2 is: $(ip -n n28a neigh show 10.28.0.2 | awk '{print $5, $N
         },
         { md: `A saw one broadcast frame, from C's MAC, asking "who has 10.28.0.2, tell 10.28.0.2". A never asked, and its entry for \`10.28.0.2\` changed from B's MAC to C's, with the state STALE. That's RFC 826's merge rule again: a packet whose sender IP is already in the table updates that entry.
 
-This is how an IP address fails over on a real L2 segment. The new owner announces itself, and every cache on the segment learns the new MAC at once, with no timer to wait for. It's what VRRP and keepalived rely on, and it needs a segment where a broadcast reaches everyone. That last condition is the subject of the next chapter.` },
+This is how an IP address fails over on a real L2 segment. The new owner announces itself, and every cache on the segment that already holds that IP switches to the new MAC at once, with no timer to wait for. It's what VRRP and keepalived rely on, and it needs a segment where a broadcast reaches everyone. That last condition is the subject of the next chapter.` },
       ],
     },
     {

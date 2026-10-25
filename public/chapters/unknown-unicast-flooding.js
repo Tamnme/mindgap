@@ -25,7 +25,7 @@ In an ordinary network you want it to stay that way. A flooded frame costs every
 
 Three kinds of frame take the flood path, and the industry has a name for the group, **BUM**: **B**roadcast, **U**nknown unicast (no entry), **M**ulticast (on a plain switch, flooded like the others). This chapter is about the U.
 
-Build a bridge, \`br23\`, with three hosts **n23a, n23b, n23c**. Its \`ageing_time\` is set to 3 seconds. We'll get to what that setting does in a moment. ARP is pinned between n23a and n23c, so the only frames you'll count are unicast ones. The table starts empty.` },
+Build a bridge, \`br23\`, with three hosts **n23a, n23b, n23c**. Its \`ageing_time\` is set to 3 seconds. What that setting does comes up in a moment. ARP is pinned between n23a and n23c, so the only frames you'll count are unicast ones. The table starts empty.` },
         {
           lab: {
             explain: 'Build br23 (ageing_time 300 = 3 s) with three hosts and pinned ARP; expect 0 learned entries',

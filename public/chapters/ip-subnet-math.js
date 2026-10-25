@@ -56,7 +56,7 @@ Zero the host bits and you get the **network address**, \`172.16.5.192\`. Set th
         {
           checkpoint: {
             id: 'c1',
-            prompt: 'After `ip addr add 10.31.0.77/26 dev d0` and no other command, what is in the routing table?',
+            prompt: 'After `ip addr add 10.31.0.77/26 dev d0` and no other command, what does `ip route show` list?',
             options: [
               'Nothing: an address adds no route, so you add one yourself',
               'Host route (10.31.0.77/32): a host route for the address itself',

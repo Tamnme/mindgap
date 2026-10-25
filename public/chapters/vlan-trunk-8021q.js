@@ -1,6 +1,7 @@
 // Chapter 2.6: VLAN trunk and 802.1Q. Authored content; the tutor gets this file as chapter_source.
 // Labs run in netlab (Ubuntu 26.04, iproute2 6.19) on 2026-10-25; outputs described in the prose were observed.
 // Sources: https://en.wikipedia.org/wiki/IEEE_802.1Q (tag = 4 bytes between source MAC and EtherType: TPID 0x8100, then TCI = PCP 3 bits + DEI 1 bit + VID 12 bits; max frame 1518 -> 1522 bytes),
+//   https://docs.aws.amazon.com/directconnect/latest/UserGuide/Welcome.html ("AWS requires 802.1Q VLAN encapsulation across the entire connection"),
 //   https://man7.org/linux/man-pages/man8/bridge.8.html (bridge vlan add: pvid, untagged),
 //   https://man7.org/linux/man-pages/man8/ip-link.8.html (vlan_default_pvid: "default PVID (native/untagged VLAN ID)"),
 //   https://pve.proxmox.com/wiki/Network_Configuration (Proxmox: VLAN-aware bridge, trunk mode on a guest NIC needs configuration in the guest).
@@ -151,7 +152,7 @@ t26a   1 PVID Egress Untagged
        20
 \`\`\`
 
-VLANs 10 and 20 have no flags: they leave the port tagged. VLAN 1 has \`PVID\` and \`Egress Untagged\`, the same flags as an access port. Those two flags are the **native VLAN** of the trunk: untagged frames arriving on the port join it, and its frames leave without a tag. The bridge creates the default PVID itself (the \`ip-link\` man page calls \`vlan_default_pvid\` the "native/untagged VLAN ID"), and our lab never removed it from the trunk ports.
+VLANs 10 and 20 have no flags: they leave the port tagged. VLAN 1 has \`PVID\` and \`Egress Untagged\`, the same flags as an access port. Those two flags are the **native VLAN** of the trunk: untagged frames arriving on the port join it, and its frames leave without a tag. The bridge creates the default PVID itself (the \`ip-link\` man page calls \`vlan_default_pvid\` the "native/untagged VLAN ID"), and the lab never removed it from the trunk ports.
 
 So *trunk* is not a different kind of port: it is a port that is a member of several VLANs, most of them tagged. An access port is the special case of one untagged VLAN.
 
@@ -201,7 +202,7 @@ echo "VLAN 20 restored:    c -> d: $(ip netns exec n26c ping -c2 -W1 -q 10.26.20
       blocks: [
         { md: `**Proxmox.** A VLAN-aware bridge's uplink to the physical switch is a trunk. The PVE wiki's example for a VLAN-aware \`vmbr0\` sets \`bridge-vids 2-4094\` on a bridge whose port is \`eno1\`. A guest NIC *without* a VLAN tag on a VLAN-aware bridge can carry several VLANs, but then the VLANs have to be handled inside the guest, as the wiki says of trunk mode. Whether your uplink looks like \`t26a\` in \`bridge vlan show\` depends on your own config; check it there.
 
-**AWS VPC.** You never tag frames to AWS from an instance. A Direct Connect private virtual interface takes a VLAN ID when you create it ([create a private VIF](https://docs.aws.amazon.com/directconnect/latest/UserGuide/create-private-vif.html)). AWS doesn't document how that tag is carried, so treat it as the one place a VLAN number shows up in an AWS setup.
+**AWS VPC.** You never tag frames to AWS from an instance. A Direct Connect private virtual interface takes a VLAN ID when you create it ([create a private VIF](https://docs.aws.amazon.com/directconnect/latest/UserGuide/create-private-vif.html)). That ID is an 802.1Q tag on the Direct Connect link: AWS requires 802.1Q VLAN encapsulation across the entire connection ([network requirements](https://docs.aws.amazon.com/directconnect/latest/UserGuide/Welcome.html)). It is the one place a VLAN number shows up in an AWS setup.
 
 **Kubernetes / Cilium.** Pods don't see tags. A node's uplink to its top-of-rack switch can be a trunk with the VLANs the cluster uses; that is a switch-side arrangement, invisible to the pod.` },
       ],

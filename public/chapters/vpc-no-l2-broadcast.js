@@ -46,7 +46,7 @@ AWS's subnet documentation lists the addresses it reserves in every subnet. For 
         },
         { md: `That sentence is the whole premise of the chapter: AWS states it doesn't support broadcast in a VPC. The last address of a /24 is the one a real Ethernet segment would use for it, and AWS keeps it out of reach.
 
-Multicast is a separate story. Transit Gateway offers **multicast domains** as an opt-in feature: you define membership at the subnet level, with IGMPv2 or static (API-based) group membership, and the docs say you must create a new transit gateway to support it. It's a distinct service you switch on, not something a subnet gives you. The same page says multicast routing isn't supported over Direct Connect, Site-to-Site VPN, peering attachments or Connect attachments.
+Multicast is a separate story. Transit Gateway offers **multicast domains** as an opt-in feature: you associate subnets with a multicast domain, and individual network interfaces join groups through IGMPv2 or static (API-based) membership, and the docs say you must create a new transit gateway to support it. It's a distinct service you switch on, not something a subnet gives you. The same page says multicast routing isn't supported over Direct Connect, Site-to-Site VPN, peering attachments or Connect attachments.
 
 > [!IMPORTANT]
 > A VPC is not a shared Ethernet segment. Don't build anything that needs a broadcast or a multicast to reach the other instances, unless you've set up Transit Gateway multicast for it.` },

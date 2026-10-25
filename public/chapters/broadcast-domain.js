@@ -32,7 +32,7 @@ export default {
   sections: [
     {
       id: 'frame',
-      title: 'One frame, every port',
+      title: 'Who hears a broadcast',
       blocks: [
         { md: `In chapter 2.3 you met the three kinds of frame that a switch floods. Broadcast is the one that floods *always*: its destination MAC is \`ff:ff:ff:ff:ff:ff\`, which never appears as a source, so it can never be in the table.
 

@@ -116,7 +116,7 @@ The second half of the lab connected to port 8099, where nothing listens. The cl
       id: 'rtt',
       title: 'What the handshake costs',
       blocks: [
-        { md: `The three segments cross the network one after another, The next lab gives each side's interface a **50 ms** delay with \`tc netem\`, so one round trip (RTT) is 100 ms. A python client records the time just before \`connect()\` and the time \`connect()\` returns, then sends one byte as soon as it can. A python server blocked in \`accept()\` records when \`accept()\` returns and when the byte arrives. Both processes run on the same machine, so their clocks are comparable.` },
+        { md: `The three segments cross the network one after another. The next lab gives each side's interface a **50 ms** delay with \`tc netem\`, so one round trip (RTT) is 100 ms. A python client records the time just before \`connect()\` and the time \`connect()\` returns, then sends one byte as soon as it can. A python server blocked in \`accept()\` records when \`accept()\` returns and when the byte arrives. Both processes run on the same machine, so their clocks are comparable.` },
         {
           checkpoint: {
             id: 'c2',

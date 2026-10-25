@@ -47,7 +47,7 @@ a pings c. a looks at 10.25.0.3, sees it is inside its own /24, and decides c is
             why: 'The switch decides which VLAN a frame belongs to from the port it arrived on, and only forwards it to ports in that VLAN. The IP subnet is a label the hosts use; it does not override the port. Without the ARP answer, a cannot even build the frame.',
           },
         },
-        { md: `Build it and see. Each host port gets \`vid 10\` or \`vid 20\`. A port you don't touch comes up as a member of VLAN 1 (\`1 PVID Egress Untagged\`, as chapter 2.6's e and f ports show), so the lab also deletes that default \`vid 1\` to leave each port in exactly one VLAN. The flags are explained after the second lab.` },
+        { md: `Build it and see. Each host port gets \`vid 10\` or \`vid 20\`. A port you don't touch comes up as a member of VLAN 1 (\`1 PVID Egress Untagged\`, the default you will see on chapter 2.6's trunk port), so the lab also deletes that default \`vid 1\` to leave each port in exactly one VLAN. The flags are explained after the second lab.` },
         {
           lab: {
             explain: 'Build br25 (vlan_filtering) with a,b on VLAN 10 and c on VLAN 20; ping b then c from a (expect 2 received, then 0)',
