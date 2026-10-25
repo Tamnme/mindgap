@@ -38,6 +38,7 @@ Each map node in `learner/map.json` has a `truth` (the one idea the chapter must
 
 **Claims vs observation (found in review):**
 - Claim only what a lab printed. "You could see it with tcpdump on b" needs a lab that runs tcpdump on b. An inference from a virtual interface (veth has no FCS) is not evidence about physical NICs; label general knowledge as such.
+- Keep authoring process out of learner text: no "this chapter fetched", "not fetched", or similar. Say what is documented, what is general knowledge, and what wasn't checked.
 - Don't put tool behaviour in a tool's mouth (e.g. `ip neigh` does not resolve vendors). If unsure, run it.
 
 ## Labs (run every one)
