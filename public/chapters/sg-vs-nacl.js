@@ -26,14 +26,9 @@ export default {
       blocks: [
         { md: `Chapter 4.5 split filters into stateless and stateful, and placed AWS's NACL and security group on either side of that line. This chapter takes the rest of the comparison apart, row by row.
 
-Start with where each one sits. AWS's security group page says a security group "controls the traffic that is allowed to reach and leave the resources that it is associated with". The quota wording on the same page counts security groups per *network interface*, which fits a filter on the ENI. A **network ACL** is attached to a *subnet*: the VPC documentation says it "allows or denies specific inbound or outbound traffic at the subnet level", and a subnet has exactly one at a time.
+Start with where each one sits. AWS's security group page says a security group "controls the traffic that is allowed to reach and leave the resources that it is associated with". The quota wording on the same page counts security groups per *network interface*, which fits a filter on the ENI. A **network ACL** is associated with a *subnet*, and a subnet has exactly one at a time.
 
-\`\`\`
- outside         subnet 10.46.2.0/24
- client --> router --[NACL]--+--[SG]-- instance
-\`\`\`
-
-The labs build the NACL half with nft, in three network namespaces: a client \`n46a\` (10.46.1.2), a router \`n46r\`, and a server \`n46s\` (10.46.2.2) that stands for an instance in the protected subnet. The router's forward chain plays the NACL. A packet leaving the router toward the server is *inbound* to the subnet, and a packet arriving from the server is *outbound*. Every rule carries a number in its comment, as an AWS rule does. The last rule in each direction is a drop, standing in for the \`*\` rule that AWS says every NACL has: "if a packet doesn't match any of the other rules, it's denied".
+The labs build the NACL half with nft, in three network namespaces: a client \`n46a\` (10.46.1.2), a router \`n46r\`, and a server \`n46s\` (10.46.2.2) that stands for an instance in the protected subnet. The router's forward chain plays the NACL. Rules tagged \`in\` match packets heading to the server, and rules tagged \`out\` match packets coming back from it. Every rule carries a number in its comment, as an AWS rule does. The last rule in each direction is a drop, standing in for the \`*\` rule that AWS says every NACL has: "if a packet doesn't match any of the other rules, it's denied".
 
 This is an emulation of the behaviour AWS documents. It says nothing about how AWS implements it, and AWS doesn't publish that.
 
@@ -179,7 +174,6 @@ A security group has no numbers, and the comparison table on the infrastructure-
 
 | | Security group | Network ACL |
 |---|---|---|
-| Level of operation | Instance level | Subnet level |
 | Rule type | Allow rules only | Allow and deny rules |
 | Rule evaluation | Evaluates all rules before deciding whether to allow traffic | Evaluates rules in ascending order until a match for the traffic is found |
 | Return traffic | Automatically allowed (stateful) | Must be explicitly allowed (stateless) |
@@ -245,7 +239,7 @@ kill $PIDS 2>/dev/null; true`,
         },
         { md: `8443 connected. 9001 and 9002 both timed out after 2.0 s, and 8444 was refused after 0.0 s.
 
-From the client, the NACL block and the server-filter block are indistinguishable. Only the counters tell them apart: the router's inbound \`*\` rule counted 2 packets (toward 9001) and the server chain's end-of-chain counter counted 2 (toward 9002). Which layer dropped the packet is information the client's connect() never receives.
+From the client, the NACL block and the server-filter block are indistinguishable. Only the counters tell them apart: the router's inbound \`*\` rule counted 2 packets (toward 9001) and the server chain's end-of-chain counter counted 2 (toward 9002). Which layer dropped the packet is information the client's connect() never receives. The counters also show that the 9001 packets never reached the server chain: its counter holds only the 9002 attempts, because the NACL's inbound \`*\` rule had already dropped the 9001 SYNs.
 
 The refusal on 8444 is also information. A packet that was refused got through the NACL inbound, through the server filter, and reached a host that answered. The host's reset then had to cross the outbound NACL rule on its way back, and it did, because outbound rule 100 covers that source port and the client's port. A refused connection therefore rules out both filters on that path. Chapter 4.4 covers the refused-versus-silent difference in detail.
 
@@ -265,7 +259,7 @@ AWS has tooling aimed at this question, such as VPC Flow Logs and Reachability A
             id: 'c3',
             prompt: 'Two instances share a subnet. The NACL does not allow inbound tcp 8443, but the target\'s security group does. Instance one connects to instance two on 8443. What happens?',
             options: [
-              'NACL never sees it: the traffic stays inside the subnet, so the security group decides',
+              'NACL never sees it: the traffic stays inside the subnet',
               'Blocked at the subnet edge: the NACL checks every packet the subnet carries',
               'Blocked on the way back: the security group needs a NACL-style return rule',
             ],
@@ -273,11 +267,18 @@ AWS has tooling aimed at this question, such as VPC Flow Logs and Reachability A
             why: 'AWS says NACL rules are evaluated when traffic enters and leaves the subnet, not as it is routed within a subnet. The security group on the target is the only filter in this path, and it allows the connection.',
           },
         },
-        { md: `**AWS.** The VPC documentation says a NACL's rules are evaluated "when traffic enters and leaves the subnet, not as it is routed within a subnet". That is the boundary the router in the lab stood for, and it is why a NACL cannot restrict traffic between two instances of the same subnet. A security group sits on the instance, so it still can. The infrastructure-security page shows the layering: traffic from an internet gateway is routed to a subnet using the route table, the subnet's NACL decides what may enter, and the instance's security group decides what may reach the instance. It also says you can secure instances with security groups alone, and add NACLs as an extra layer.
+        { md: `**AWS.** The VPC documentation says a NACL's rules are evaluated "when traffic enters and leaves the subnet, not as it is routed within a subnet". The comparison table's first row says the same thing in its own terms: security groups work at the "Instance level" and NACLs at the "Subnet level". The router in the lab stood for that boundary:
+
+\`\`\`
+ outside         subnet 10.46.2.0/24
+ client --> router --[NACL]--+--[SG]-- instance
+\`\`\`
+
+In the lab, "in" meant crossing the boundary toward the server and "out" meant crossing it on the way back. That is why a NACL cannot restrict traffic between two instances of the same subnet. A security group sits on the instance, so it still can. The infrastructure-security page shows the layering: traffic from an internet gateway is routed to a subnet using the route table, the subnet's NACL decides what may enter, and the instance's security group decides what may reach the instance. It also says you can secure instances with security groups alone, and add NACLs as an extra layer.
 
 Two details from the NACL pages are worth carrying with you. Each NACL has an asterisk rule that denies anything unmatched, and it cannot be deleted. IPv4 and IPv6 are evaluated separately, so an IPv4 rule does not cover IPv6 traffic. The ephemeral-port table from 4.5 applies to the return rules just as it did in lab 2.
 
-The security group page adds that some traffic is not filtered by security groups at all, such as instance metadata and the Amazon Time Sync Service. 
+The security group page adds that some traffic is not filtered by security groups at all, such as instance metadata and the Amazon Time Sync Service.
 
 **Kubernetes / Cilium.** A Kubernetes NetworkPolicy is usually described as per-workload, allow-style and stateful, which makes it resemble a security group more than a NACL. This chapter did not fetch the Kubernetes or Cilium documentation, so treat that as general knowledge. If the nodes sit in a VPC, the node's security group and subnet NACL still apply underneath it.
 
