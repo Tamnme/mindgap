@@ -40,7 +40,7 @@ dig example.com A | grep -E '^;; (SERVER|flags)|^example.com'`,
 
 The stub asked one question and got an answer. It cannot tell from this whether the resolver already had it cached or went out and found it. The next question is what happens inside that resolver on a cold cache.
 
-Put a resolver with an **empty cache** in front of the name \`example.com\`. It has no cached answer for \`com\` or for \`example.com\`, and the only DNS server addresses it has built in are a short fixed list.`,
+Put a resolver with an **empty cache** in front of the name \`example.com\`.`,
         },
         {
           checkpoint: {
@@ -66,7 +66,7 @@ resolver             root         .com         example.com's
    |--- example.com? ---------------->|               |
    |<-- ask example.com's servers: ---|               |
    |--- example.com? ------------------------------->|
-   |<-- A 192.0.2.x (authoritative) -----------------|
+   |<-- A 192.0.2.x (example address) ----------------|
 \`\`\`
 
 Once the resolver has the answer it caches it for the record's TTL and returns it to the stub. A second query from any client of that resolver is served from the cache without leaving it.
@@ -128,9 +128,9 @@ dig example.com A +noall +comments +answer | grep -E '^;; flags|^example.com' | 
         {
           md: `The direct answer carries \`qr aa\`: a response (\`qr\`) from the authority for the zone (\`aa\`, authoritative answer), with no \`rd\` or \`ra\`. The answer from the configured resolver carries \`qr rd ra\` and no \`aa\`, because that server does not own the zone. It is passing on what it learned. RFC 1035 defines these header bits (QR, AA, TC, RD, RA).
 
-The TTLs differ too: 300 from the authority and 275 from the resolver, in runs made minutes apart. A resolver that cached the record earlier would normally report a smaller remaining TTL, but this resolver reported the same 275 each time, so the lab does not explain the difference and no claim is made about it.
+The TTLs differ too: 300 from the authority and a smaller value from the resolver (the exact number varies by run). A resolver that cached the record earlier would normally report a smaller remaining TTL, but the lab did not isolate the reason, so no claim is made about it.
 
-This is also why the two servers are different machines in practice. Authoritative servers answer questions about their own zones, and a resolver never owns the zones it looks up. The same program can play both roles, but the roles do not mix.`,
+This is also why the two servers are different machines in practice. Authoritative servers answer questions about their own zones, and a resolver is not authoritative for the zones it looks up for you. One program can play both roles (dnsmasq in the next chapter does), but a given answer comes from one role or the other.`,
         },
       ],
     },
@@ -139,9 +139,9 @@ This is also why the two servers are different machines in practice. Authoritati
       title: 'Port 53 and message size',
       blocks: [
         {
-          md: `You know UDP from the previous chapters. DNS uses port 53 and a query normally goes out as a single UDP datagram, with no handshake to pay for. RFC 1035 sets the size limit for UDP messages at 512 octets, and the dig output above showed a larger EDNS buffer size (\`udp: 1232\`) that the client advertises. Neither size is unbounded.
+          md: `You know UDP from the previous chapters. DNS uses port 53, and a query normally goes out as one UDP datagram. RFC 1035 sets the size limit for UDP messages at 512 octets.
 
-Now give dig a reason to need more room. The query asks for the root zone's DNSKEY records, which are large, and tells the server that this client only accepts 512 bytes (\`+bufsize=512\`). First the lab runs it with truncation ignored, so you see what the UDP reply looks like. Then it runs the default, while a capture counts what goes out on port 53.`,
+Now give dig a reason to need more room. The query asks for the root zone's DNSKEY records, which are large, and tells the server that this client accepts only 512 bytes (\`+bufsize=512\`). The lab prints the first reply dig gets, then what the default dig does with it, and captures port 53 while it runs.`,
         },
         {
           checkpoint: {
@@ -174,7 +174,7 @@ echo "capture, big query (root DNSKEY, 512 buffer):"; cnt dig +bufsize=512 +dnss
           },
         },
         {
-          md: `The first reply has the flags \`qr tc rd ra\`. \`tc\` is the truncation bit (RFC 1035), and the reply came over UDP. The default run prints \`Truncated, retrying in TCP mode\`, and its second \`SERVER\` line ends in \`(TCP)\`, now with the answer in full and no \`tc\`.
+          md: `The first reply has the flags \`qr tc rd ra\`. \`tc\` is the truncation bit (RFC 1035), and the reply came over UDP. The default run prints \`Truncated, retrying in TCP mode\`, and its \`SERVER\` line ends in \`(TCP)\`, now with the answer in full and no \`tc\`.
 
 The capture closes the loop. A small query shows one UDP query and zero TCP SYNs. The UDP count there is the positive control: it proves the capture was running when the zero was printed. The big query shows the UDP query as well, and one TCP SYN to port 53: the retry.
 
@@ -187,7 +187,7 @@ In practice this means DNS needs both UDP **and** TCP on port 53. Every firewall
       title: "Where you've met this",
       blocks: [
         {
-          md: `**AWS VPC.** The resolver your instances use is the Route 53 Resolver, also called the Amazon DNS server. AWS documents it at three addresses: \`169.254.169.253\` (IPv4), \`fd00:ec2::253\` (IPv6) and the VPC's primary IPv4 CIDR **base plus two**, so \`10.0.0.2\` in a \`10.0.0.0/16\` VPC. Queries to it use a link-local path and, in AWS's words, "are not visible on the network", so you will not see them on a VPC packet capture beyond the instance's own interface. DNS is also bound by a limit of 1024 packets per second per network interface for link-local services, shared with instance metadata and the time service. Instances usually get this address through the DHCP option set (previous chapter). A VPC attribute turns DNS resolution on or off; the attribute's API name and its default were not checked for this chapter.
+          md: `**AWS VPC.** The resolver your instances use is the Route 53 Resolver, also called the Amazon DNS server. AWS documents it at three addresses: \`169.254.169.253\` (IPv4), \`fd00:ec2::253\` (IPv6) and the VPC's primary IPv4 CIDR **base plus two**, so \`10.0.0.2\` in a \`10.0.0.0/16\` VPC. Queries to it use a link-local path and, in AWS's words, "are not visible on the network", so you will not see them on a VPC packet capture beyond the instance's own interface. DNS is also bound by a limit of 1024 packets per second for link-local services, shared with instance metadata and the time service. Instances usually get this address through the DHCP option set (previous chapter). A VPC attribute turns DNS resolution on or off; the attribute's API name and its default were not checked for this chapter.
 
 **Kubernetes.** The pod's \`resolv.conf\` is written by kubelet and points at the cluster DNS service (the Kubernetes docs show an example with \`nameserver 10.32.0.10\`). The docs describe the default \`ClusterFirst\` policy: names that do not match the cluster domain suffix are forwarded by the DNS server to an upstream nameserver, so the pod's stub asks one server, and that server is the one that recurses or forwards. The next chapter covers the search list that is also in that file.
 
