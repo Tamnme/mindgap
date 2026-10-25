@@ -28,7 +28,7 @@ export default {
   number: '2.4',
   kicker: 'Layer 2',
   title: 'Broadcast domain',
-  lede: 'A broadcast frame goes to every port of its L2 segment, including the port the router sits on. The router receives it like any other host and does not pass it on.',
+  lede: 'A broadcast is addressed to everyone, so what matters is who counts as "everyone". This chapter pins down where that set ends, and what a router does at its edge.',
   sections: [
     {
       id: 'frame',
@@ -134,7 +134,7 @@ Why does \"to the router\" feel right? Because the router is the thing every hos
 
 There is also a broadcast at the IP layer. 255.255.255.255 means \"everyone on this local network\", and RFC 919 says it must not be forwarded. Hosts put it inside a frame addressed to \`ff:ff:ff:ff:ff:ff\`, so it takes the same flood path. DHCP discovery works this way: a host with no address yet can only shout.
 
-A broadcast *can* be meant for the router. A host broadcasting a routing update on the segment is addressing every router on it, and RFC 919 says the gateway should treat itself as a destination of that datagram. The router reads it, as any receiver would. What it does not do is copy it to \`ethB\`: whatever it needs to say on the other side, it says in a frame of its own.
+A broadcast *can* be meant for the router. RFC 919's example is that the datagram "might be a routing table update", and it says the gateway should consider itself a destination of the broadcast. The router reads it, as any receiver would. Per the RFC, it should not copy it to \`ethB\`: whatever it needs to say on the other side, it says in a frame of its own.
 
 The RFC also covers a *directed* broadcast, one aimed at a different network's broadcast address. Such a datagram is routed like any other packet until it reaches a gateway attached to that network, and only that last gateway turns it into a link-layer broadcast. Whether a particular router does so today is a configuration choice that this chapter does not test.
 
@@ -147,9 +147,9 @@ Now change the cabling. Leave the router and every IP address alone, and add a p
             prompt: 'With a cable joining br24a and br24b, n24a broadcasts an ARP request for 10.24.1.3. Does n24b (10.24.2.2/24) see it?',
             options: [
               'Yes: the cable makes the two bridges one L2 segment, whatever the IPs say',
-              'No: n24b is in 10.24.2.0/24, so it never receives anything for another subnet',
-              'No: the router sits between them and drops it',
-              'Yes, but only because n24b is the one being asked for',
+              'Subnet filter: n24b is in 10.24.2.0/24, so it never receives anything for another subnet',
+              'Router drops it: the router sits between them and drops the broadcast',
+              'Target only: n24b sees it only because it is the one being asked for',
             ],
             key: 0,
             why: 'A broadcast domain is whatever the frame can reach by switching alone. IP subnets are labels the hosts apply; they do not filter anything at L2. The cable joins the two floods into one.',
