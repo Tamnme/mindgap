@@ -67,7 +67,7 @@ for n in n11a n11b; do echo "$n:"; ip -n $n -br link show type veth; done
 ip netns exec n11a ping -c1 -W1 10.11.0.2 | sed -n 2p`,
           },
         },
-        { md: `Each namespace holds one end, and both show \`UP\` with \`LOWER_UP\`. \`LOWER_UP\` means the interface sees a live link underneath. Both ends have a MAC, and the MACs are random (more on that in chapter 2.1). The ping goes through, 64 bytes back from 10.11.0.2.
+        { md: `Each namespace holds one end, and both show \`UP\` with \`LOWER_UP\`. Both ends have a MAC, and the MACs are random (more on that in chapter 2.1). The ping goes through, 64 bytes back from 10.11.0.2.
 
 The \`@if2\` after each name is the *other* end's interface index, counted inside its own namespace. In each namespace the veth happens to be interface number 2, after \`lo\`. That is how \`ip\` tells you the interface is one half of a pair.` },
       ],
@@ -148,6 +148,8 @@ echo "peer up again:"; ip -n n11a -br link show v11a`,
         { md: `Before, \`v11a\` shows \`UP\` with \`LOWER_UP\`. After b goes down it shows \`DOWN\`, with \`NO-CARRIER\` in the flags and \`UP\` still present, and the long form says \`state DOWN\`. The ping gets 0 received. Set b up again and a returns to \`UP\` with \`LOWER_UP\`, with no action on a.
 
 An interface has two separate pieces of state. The **admin state** is what you asked for with \`ip link set … up\` or \`down\`. The **carrier** is what the hardware sees: is something alive on the other end? A veth pair copies that behaviour, and the man page says so: when either device is down, the link state of the pair is down.
+
+\`LOWER_UP\` is the flag for "a live link underneath".
 
 Two readings to keep apart. \`UP\` in the flags is *admin up*. The \`state\` column and \`LOWER_UP\` say whether the link actually works. An interface can be admin-UP and state DOWN, and that combination points at the far end or the cable, not at a's configuration.
 
