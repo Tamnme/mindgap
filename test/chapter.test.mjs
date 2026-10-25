@@ -28,6 +28,9 @@ for (const id of ids) {
         assert.ok(/[A-Za-z]{3,}/.test(l.replace(/(^|\s)-\w+/g, '')) && !/^(yes|no)$/i.test(l.trim()), `${c.id} receipt label must carry a belief, not a bare value: ${JSON.stringify(l)}`);
       }
     }
+    const FIRST_PERSON = /(?<![-/\w])(I|I'm|I've|I'd)(?![/\w])|\b(my|me)\b/g; // I/G, -I and quoted speech are not first person
+    const prose = [...blocks.filter((b) => b.md).map((b) => b.md), ...cps.map((c) => c.why), ...blocks.filter((b) => b.lab).map((b) => b.lab.explain)];
+    for (const t of prose) assert.ok(!new RegExp(FIRST_PERSON.source, 'i').test(t.replace(/`[^`]*`|"[^"]*"/g, '')), `first person in chapter text: ${t.match(new RegExp(FIRST_PERSON.source, 'i'))?.[0]} in "${t.slice(0, 60)}"`);
     for (const b of blocks) {
       const kinds = ['md', 'checkpoint', 'widget', 'lab'].filter((k) => b[k]);
       assert.equal(kinds.length, 1, 'each block is exactly one kind');
