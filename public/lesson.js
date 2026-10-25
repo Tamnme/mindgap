@@ -1,0 +1,400 @@
+// Workbench: tutor thread, question card, simulator and lab panels for one lesson.
+// Model text is rendered with renderMarkdown (escapes first); everything else uses textContent.
+
+import { renderMarkdown } from './md.js';
+import { createLabCard, fillLabCard } from './labcard.js';
+
+const $ = (id) => document.getElementById(id);
+const lessonId = new URLSearchParams(location.search).get('id');
+
+const S = {
+  meta: null,
+  node: null,
+  turn: null,        // latest tutor turn
+  waiting: false,    // /api/turn in flight
+  labRunning: false,
+  done: false,
+  pending: null,     // {event, summary} not yet acknowledged by the server
+  selectedChoice: null,
+  confidence: null,
+  scenario: null,    // last simulator scenario opened in the thread
+  sim: null,         // {card, instance} of the live simulator
+  simToken: 0,
+};
+
+class HttpError extends Error {
+  constructor(status, message) {
+    super(message);
+    this.status = status;
+  }
+}
+
+function el(tag, props = {}, children = []) {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (k === 'class') node.className = v;
+    else if (k === 'text') node.textContent = v;
+    else if (k.startsWith('on')) node.addEventListener(k.slice(2), v);
+    else if (v !== false && v != null) node.setAttribute(k, String(v));
+  }
+  for (const c of [].concat(children)) if (c != null) node.append(c);
+  return node;
+}
+
+async function errorText(res) {
+  try {
+    const body = await res.json();
+    return body.error || `HTTP ${res.status}`;
+  } catch {
+    return `HTTP ${res.status}`;
+  }
+}
+
+function showError(msg) {
+  const box = $('error');
+  box.textContent = msg;
+  box.classList.toggle('hidden', !msg);
+}
+
+function showTurnError(msg) {
+  const box = $('turn-error');
+  $('turn-error-text').textContent = msg || '';
+  box.classList.toggle('hidden', !msg);
+  $('btn-retry').disabled = S.waiting;
+}
+
+function messageFor(err) {
+  if (err.status === 409) return 'The lesson is busy with another turn (HTTP 409). Retry.';
+  if (err.status === 502) return 'The tutor did not answer (HTTP 502). Retry.';
+  if (err.status) return `Request failed (HTTP ${err.status}): ${err.message}. Retry.`;
+  return `Could not reach the server: ${err.message}. Retry.`;
+}
+
+// The page scrolls, not the thread: sims and lab cards live inline in the conversation.
+function scrollToBottom() {
+  window.scrollTo({ top: document.body.scrollHeight });
+}
+
+function appendTutor(say) {
+  // renderMarkdown escapes all model text before adding its own tags.
+  const body = el('div');
+  body.innerHTML = renderMarkdown(say);
+  const bubble = el('div', { class: 'bubble tutor' }, [el('div', { class: 'who', text: 'Tutor' }), body]);
+  $('thread').append(bubble);
+  return bubble;
+}
+
+function appendLearner(summary) {
+  $('thread').append(el('div', { class: 'bubble learner', text: summary }));
+  scrollToBottom();
+}
+
+// A command the tutor suggested: code on top, Run bar, output panel once it has run.
+function appendLabCard(lab) {
+  const card = createLabCard(lab, runLab);
+  $('thread').append(card);
+  return card;
+}
+
+// Replay: put a recorded lab run into the last card with that command, else its own card.
+function appendLabRun(out) {
+  const cards = [...document.querySelectorAll('.lab-card')].filter(c => c.dataset.cmd === (out.cmd ?? ''));
+  const card = cards.at(-1) || appendLabCard({ cmd: out.cmd });
+  fillLabCard(card, out);
+}
+
+// A tutor turn in the thread: the message, then any simulator or lab it opened.
+function appendTurn(turn) {
+  const bubble = turn.say ? appendTutor(turn.say) : null;
+  if (turn.sim && turn.sim.scenario && turn.sim.scenario !== S.scenario) openSim(turn.sim.scenario);
+  if (turn.lab && turn.lab.cmd) appendLabCard(turn.lab);
+  return bubble;
+}
+
+function summarize(e) {
+  if (e.type === 'answer') {
+    const parts = [];
+    if (e.choice != null) parts.push(`Answer: ${e.choice}`);
+    if (e.text) parts.push(e.text);
+    if (e.confidence) parts.push(`Confidence ${e.confidence}/5`);
+    if (e.reasoning) parts.push(`Because: ${e.reasoning}`);
+    return parts.join('\n') || 'Answer';
+  }
+  if (e.type === 'lost') return e.text ? `I'm lost: ${e.text}` : "I'm lost";
+  if (e.type === 'ask') return `Question: ${e.text}`;
+  return JSON.stringify(e);
+}
+
+function isChoice(q) {
+  return !!q && q.kind === 'choice' && Array.isArray(q.options) && q.options.length > 0;
+}
+
+function renderQuestion(q) {
+  S.selectedChoice = null;
+  S.confidence = null;
+  $('reasoning').value = '';
+  $('q-text').value = '';
+  const card = $('question');
+  card.classList.toggle('hidden', !q);
+  if (!q) return;
+
+  $('q-prompt').textContent = q.prompt || '';
+  const opts = $('q-options');
+  opts.replaceChildren();
+  const choice = isChoice(q);
+  if (choice) {
+    q.options.forEach((opt) => {
+      const input = el('input', { type: 'radio', name: 'choice' });
+      input.addEventListener('change', () => { S.selectedChoice = opt; refreshControls(); });
+      opts.append(el('label', { class: 'opt' }, [input, el('span', { text: opt })]));
+    });
+  }
+  $('q-free').classList.toggle('hidden', choice);
+
+  const conf = $('q-confidence');
+  conf.classList.toggle('hidden', !q.wants_confidence);
+  const cb = $('conf-buttons');
+  cb.replaceChildren();
+  if (q.wants_confidence) {
+    for (let c = 1; c <= 5; c++) {
+      const b = el('button', { type: 'button', 'aria-label': `Confidence ${c}`, text: String(c) });
+      b.addEventListener('click', () => {
+        S.confidence = S.confidence === c ? null : c;
+        syncConfidence();
+        refreshControls();
+      });
+      cb.append(b);
+    }
+  }
+}
+
+function syncConfidence() {
+  document.querySelectorAll('#conf-buttons button').forEach((b) => {
+    const on = Number(b.textContent) === S.confidence;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', String(on));
+  });
+}
+
+// One live simulator at a time: opening a new one closes the previous card.
+function openSim(scenario) {
+  const token = ++S.simToken;
+  if (S.sim) {
+    S.sim.instance?.destroy?.();
+    S.sim.card.querySelector('.sim-host')
+      .replaceChildren(el('p', { class: 'muted small', text: 'Closed. A newer simulator is open below.' }));
+  }
+  const host = el('div', { class: 'sim-host' });
+  const card = el('div', { class: 'card sim-card' }, [el('div', { class: 'who', text: `Simulator · ${scenario}` }), host]);
+  $('thread').append(card);
+  S.sim = { card, instance: null };
+  S.scenario = scenario;
+  import('/sim/switch-sim.js')
+    .then((mod) => {
+      if (token !== S.simToken) return;
+      S.sim.instance = mod.mount(host, scenario);
+    })
+    .catch(() => {
+      if (token !== S.simToken) return;
+      host.replaceChildren(el('p', { class: 'muted small', text: 'simulator unavailable' }));
+    });
+}
+
+function setStatusChip(status) {
+  const chip = $('status-chip');
+  const s = ['untested', 'gap', 'shaky', 'solid'].includes(status) ? status : 'untested';
+  chip.className = `chip ${s}`;
+  chip.textContent = s;
+}
+
+function renderBanner() {
+  const banner = $('done-banner');
+  banner.classList.toggle('hidden', !S.done);
+  if (S.done) {
+    banner.replaceChildren(
+      el('span', { text: 'Lesson complete — ' }),
+      el('a', { href: 'index.html', text: 'back to map' }),
+    );
+  }
+}
+
+// Apply a tutor turn's controls. Used for live turns and for the last turn on replay.
+function applyTurn(turn) {
+  S.turn = turn;
+  renderQuestion(turn.question || null);
+  if (S.meta) {
+    for (const u of turn.node_updates || []) {
+      if (u.id === S.meta.node_id) setStatusChip(u.status);
+    }
+  }
+  S.done = !!turn.lesson_done;
+  renderBanner();
+  refreshControls();
+}
+
+function refreshControls() {
+  const locked = S.waiting || S.done;
+  const q = S.turn?.question || null;
+  let hasAnswer = false;
+  if (q && isChoice(q)) hasAnswer = S.selectedChoice != null;
+  else if (q) hasAnswer = $('q-text').value.trim() !== '';
+
+  $('btn-submit').disabled = locked || !hasAnswer;
+  $('btn-lost').disabled = locked;
+  $('btn-ask').disabled = locked;
+  document.querySelectorAll('.lab-card .run').forEach((b) => { b.disabled = locked || S.labRunning; });
+  $('waiting').classList.toggle('hidden', !S.waiting);
+  document.querySelectorAll('#question input, #question textarea, #question button')
+    .forEach((x) => { x.disabled = locked; });
+  $('btn-retry').disabled = S.waiting;
+}
+
+async function dispatch() {
+  S.waiting = true;
+  refreshControls();
+  try {
+    const res = await fetch('/api/turn', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ lesson_id: lessonId, event: S.pending.event }),
+    });
+    if (!res.ok) throw new HttpError(res.status, await errorText(res));
+    const data = await res.json();
+    if (!data.turn) throw new HttpError(res.status, 'empty turn');
+    S.pending = null;
+    showTurnError('');
+    S.waiting = false;
+    const bubble = appendTurn(data.turn);
+    applyTurn(data.turn);
+    // Long explanations: show the start of the reply, not its end.
+    (bubble || $('question')).scrollIntoView({ block: 'start', behavior: 'smooth' });
+  } catch (err) {
+    S.waiting = false;
+    showTurnError(messageFor(err));
+    refreshControls();
+  }
+}
+
+// Shows the learner's submission immediately; a failed send keeps it pending for Retry.
+function send(event, summary) {
+  S.pending = { event, summary };
+  appendLearner(summary);
+  showTurnError('');
+  return dispatch();
+}
+
+function onSubmit() {
+  const q = S.turn?.question;
+  if (!q) return;
+  const reasoning = $('reasoning').value.trim();
+  const event = { type: 'answer' };
+  if (isChoice(q)) event.choice = S.selectedChoice;
+  else event.text = $('q-text').value.trim();
+  if (S.confidence) event.confidence = S.confidence;
+  if (reasoning) event.reasoning = reasoning;
+  send(event, summarize(event));
+}
+
+function onLost() {
+  const text = $('reasoning').value.trim();
+  const event = { type: 'lost' };
+  if (text) event.text = text;
+  send(event, summarize(event));
+}
+
+function onAsk() {
+  const text = (window.prompt('What would you like to ask the tutor?') || '').trim();
+  if (!text) return;
+  send({ type: 'ask', text }, summarize({ type: 'ask', text }));
+}
+
+async function runLab(card) {
+  const cmd = card.dataset.cmd;
+  const btn = card.querySelector('.run');
+  S.labRunning = true;
+  btn.textContent = '… Running';
+  refreshControls();
+  try {
+    const res = await fetch('/api/lab', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ lesson_id: lessonId, cmd }),
+    });
+    if (!res.ok) throw new HttpError(res.status, await errorText(res));
+    fillLabCard(card, { cmd, ...(await res.json()) });
+    showError('');
+  } catch (err) {
+    showError(`Lab run failed: ${err.message}`);
+  } finally {
+    S.labRunning = false;
+    btn.textContent = '↻ Run again';
+    refreshControls();
+  }
+}
+
+// Rebuild the thread from the transcript. Roles: tutor | learner | lab.
+function replay(events) {
+  let lastTutor = null;
+  let lastLearner = null;
+  for (const ev of events) {
+    if (ev.role === 'tutor') {
+      const t = ev.data || ev.turn || ev;
+      appendTurn(t);
+      lastTutor = t;
+      lastLearner = null;
+    } else if (ev.role === 'learner') {
+      const e = ev.data || ev.event || ev;
+      appendLearner(summarize(e));
+      lastLearner = { event: e, summary: summarize(e) };
+    } else if (ev.role === 'lab') {
+      const o = ev.data || ev.lab || ev;
+      appendLabRun(o);
+    }
+  }
+  if (lastTutor) applyTurn(lastTutor);
+  if (lastLearner) {
+    // The learner spoke last and no tutor reply is recorded: offer a retry.
+    S.pending = lastLearner;
+    showTurnError('The tutor has not answered your last message. Retry?');
+  }
+  refreshControls();
+  scrollToBottom();
+}
+
+async function init() {
+  if (!lessonId) {
+    showError('No lesson id in the URL. Start a lesson from the map.');
+    return;
+  }
+  $('btn-submit').addEventListener('click', onSubmit);
+  $('btn-lost').addEventListener('click', onLost);
+  $('btn-ask').addEventListener('click', onAsk);
+  $('btn-retry').addEventListener('click', () => { if (S.pending && !S.waiting) dispatch(); });
+  $('q-text').addEventListener('input', refreshControls);
+
+  try {
+    const [lessonRes, mapRes] = await Promise.all([
+      fetch(`/api/lesson/${encodeURIComponent(lessonId)}`),
+      fetch('/api/map'),
+    ]);
+    if (!lessonRes.ok) throw new Error(await errorText(lessonRes));
+    const { meta = {}, events = [] } = await lessonRes.json();
+    S.meta = meta;
+    if (mapRes.ok) {
+      const map = await mapRes.json();
+      S.node = (map.nodes || []).find(n => n.id === meta.node_id) || null;
+    }
+    $('title').textContent = S.node?.title || meta.node_id || 'Lesson';
+    setStatusChip(S.node?.status);
+    if (meta.mode) {
+      const m = $('mode-chip');
+      m.textContent = meta.mode;
+      m.classList.remove('hidden');
+    }
+    replay(events);
+  } catch (err) {
+    showError(`Could not load lesson: ${err.message}`);
+  }
+}
+
+init();

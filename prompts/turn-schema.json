@@ -1,0 +1,63 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["say", "question", "sim", "lab", "node_updates", "propositions", "lesson_done"],
+  "properties": {
+    "say": { "type": "string", "description": "Markdown shown as the tutor bubble." },
+    "question": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["kind", "prompt", "options", "wants_confidence"],
+      "properties": {
+        "kind": { "enum": ["choice", "free"] },
+        "prompt": { "type": "string" },
+        "options": { "type": "array", "items": { "type": "string" }, "description": "Empty when kind=free." },
+        "wants_confidence": { "type": "boolean" }
+      }
+    },
+    "sim": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["scenario"],
+      "properties": {
+        "scenario": { "enum": ["switch-learning", "switch-flood", "vlan-broadcast", "vlan-trunk"] }
+      }
+    },
+    "lab": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["cmd", "explain"],
+      "properties": {
+        "cmd": { "type": "string", "description": "Bash run inside the OrbStack machine 'netlab' only after the learner clicks Run." },
+        "explain": { "type": "string" }
+      }
+    },
+    "node_updates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "status", "note"],
+        "properties": {
+          "id": { "type": "string" },
+          "status": { "enum": ["untested", "gap", "shaky", "solid"] },
+          "note": { "type": "string", "description": "Evidence for the status, in one sentence." }
+        }
+      }
+    },
+    "propositions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["claim", "because", "node"],
+        "properties": {
+          "claim": { "type": "string" },
+          "because": { "type": "array", "items": { "type": "string" }, "description": "Premise claims this follows from." },
+          "node": { "type": "string" }
+        }
+      }
+    },
+    "lesson_done": { "type": "boolean" }
+  }
+}

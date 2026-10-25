@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>netbench · lesson</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <main style="padding: 16px; max-width: 900px; margin: 0 auto;">
+    <header class="wb-header">
+      <a href="index.html" id="back-map">← Map</a>
+      <h1 id="title">Lesson</h1>
+      <span id="status-chip" class="chip">…</span>
+      <span id="mode-chip" class="chip hidden"></span>
+    </header>
+
+    <div id="done-banner" class="done-banner hidden" role="status">
+      <span>Lesson complete.</span>
+      <a href="index.html">Back to map</a>
+    </div>
+    <div id="error" class="notice error hidden" role="alert"></div>
+
+    <div class="wb-layout">
+      <section class="panel" aria-label="Tutor">
+        <div class="label muted small">Tutor</div>
+        <div id="thread" class="thread" aria-live="polite"></div>
+
+        <div id="question" class="question hidden">
+          <p id="q-prompt"></p>
+          <div id="q-options"></div>
+          <div id="q-free" class="hidden">
+            <textarea id="q-text" placeholder="Your answer"></textarea>
+          </div>
+          <div id="q-confidence" class="conf hidden">
+            <span>Confidence</span>
+            <span id="conf-buttons"></span>
+          </div>
+          <textarea id="reasoning" placeholder="Think out loud: why do you think that?" style="margin-top:6px"></textarea>
+        </div>
+
+        <div class="actions-row">
+          <button id="btn-submit" class="primary" disabled>Submit</button>
+          <button id="btn-lost">I'm lost</button>
+          <button id="btn-ask">Ask something else</button>
+          <span id="waiting" class="small muted hidden"><span class="spinner"></span>Tutor is thinking…</span>
+        </div>
+        <div id="turn-error" class="notice error hidden" role="alert">
+          <span id="turn-error-text"></span>
+          <button id="btn-retry">Retry</button>
+        </div>
+      </section>
+
+    </div>
+  </main>
+  <script type="module" src="lesson.js"></script>
+</body>
+</html>

@@ -1,0 +1,749 @@
+{
+  "nodes": [
+    {
+      "id": "l1-links-nics",
+      "title": "Links, NICs and virtual cables",
+      "layer": "L1",
+      "prereqs": [],
+      "truth": "A network interface hands bits to whatever sits at the other end of its link; a Linux veth pair is a virtual cable where whatever enters one end comes out of the other.",
+      "twins": {
+        "aws": "An ENI is the VM's NIC; AWS does not expose the physical link, so there is no L1 you can inspect or fault. Link state is not a thing you debug in a VPC.",
+        "k8s": "Each pod gets a network namespace whose eth0 is one end of a veth pair; the other end lives in the node's root namespace (a CNI detail, e.g. Cilium's lxc* devices).",
+        "proxmox": "Each VM NIC appears on the host as a tap device attached to a Linux bridge port; the physical NIC (e.g. eno1) is another bridge port."
+      },
+      "lab": "ip netns add a; ip link add va type veth peer name vb; ip link set va netns a; ip -br link; ip netns exec a ip -br link",
+      "sim": null,
+      "sources": [
+        "https://man7.org/linux/man-pages/man4/veth.4.html",
+        "https://pve.proxmox.com/wiki/Network_Configuration"
+      ],
+      "status": "shaky",
+      "evidence": "After a re-teach with the lab's @ifN pairing table, correctly said tcpdump on lab-lxc2 sees nothing when pod3 sends (confidence 5, no reasoning given). Before that, two confident misses: pod eth0 goes straight to ens5, and one shared root device."
+    },
+    {
+      "id": "frames-mac",
+      "title": "Ethernet frames and MAC addresses",
+      "layer": "L2",
+      "prereqs": [
+        "l1-links-nics"
+      ],
+      "truth": "An Ethernet frame starts with a 6-byte destination MAC then a 6-byte source MAC; a MAC address names one interface on one L2 segment, and every router that forwards a packet rewrites both MACs.",
+      "twins": {
+        "aws": "Every ENI has a MAC address; tcpdump -e inside an instance shows which MAC it uses as the next hop for off-subnet traffic.",
+        "k8s": "Pods have a MAC on their veth; which MACs appear on the wire between nodes depends on the CNI mode (overlay encapsulates the frame or packet), so check with tcpdump -e.",
+        "proxmox": "Each VM NIC has its own MAC (visible in the VM config); the physical network sees one MAC per VM through the bridge."
+      },
+      "lab": "ip netns exec a tcpdump -e -n -i va icmp & ip netns exec a ping ... ; read src/dst MAC of each frame",
+      "sim": null,
+      "sources": [
+        "https://standards.ieee.org/ieee/802.3/7071/",
+        "https://man7.org/linux/man-pages/man8/ip-link.8.html"
+      ],
+      "status": "untested",
+      "evidence": ""
+    },
+    {
+      "id": "switch-mac-table",
+      "title": "Switch: MAC → port",
+      "layer": "L2",
+      "prereqs": [
+        "frames-mac"
+      ],
+      "truth": "A switch forwards frames by destination MAC only; it learns MAC→port from each frame's source MAC and never looks at IP addresses.",
+      "twins": {
+        "aws": "No direct twin you can see: there is no switch with a MAC table in a VPC, the SDN forwards by its own mapping. The concept lives on in your head when you debug on-prem or Proxmox.",
+        "k8s": "Cilium in default VXLAN mode keeps its own endpoint/IP-to-node map in eBPF maps rather than learning MACs; the node's Linux bridge (if the CNI uses one) does have an FDB.",
+        "proxmox": "vmbr0 is a Linux bridge with a forwarding database (bridge fdb show); MAC learning is on by default and can be disabled per bridge with bridge-disable-mac-learning (PVE 7.3+)."
+      },
+      "lab": "ip link add br0 type bridge; attach 3 veth ports from 3 netns; ping between two; bridge fdb show br br0",
+      "sim": "switch-learning",
+      "sources": [
+        "https://pve.proxmox.com/wiki/Network_Configuration",
+        "https://man7.org/linux/man-pages/man8/bridge.8.html"
+      ],
+      "status": "gap",
+      "evidence": "Placement 2026-10-24: said a switch maps IP→MAC."
+    },
+    {
+      "id": "unknown-unicast-flooding",
+      "title": "Unknown-unicast flooding",
+      "layer": "L2",
+      "prereqs": [
+        "switch-mac-table"
+      ],
+      "truth": "A switch with no table entry for a frame's destination MAC sends the frame out every port in that VLAN except the one it arrived on.",
+      "twins": {
+        "aws": "No direct twin: a VPC does not flood; traffic to a destination the SDN does not know is simply not delivered.",
+        "k8s": "No direct twin for pod traffic in overlay mode (VXLAN unicast to a known node); flooding appears only if a CNI uses a plain Linux bridge and the FDB entry expired.",
+        "proxmox": "A Linux bridge floods unknown unicast to all ports of the (VLAN-aware) bridge; it is why a VM on vmbr0 can see another VM's traffic right after FDB aging."
+      },
+      "lab": "On br0 with fdb flushed (bridge fdb flush dev ...), run tcpdump on a third netns port while pinging a not-yet-learned MAC",
+      "sim": "switch-flood",
+      "sources": [
+        "https://man7.org/linux/man-pages/man8/bridge.8.html",
+        "https://pve.proxmox.com/wiki/Network_Configuration"
+      ],
+      "status": "untested",
+      "evidence": ""
+    },
+    {
+      "id": "broadcast-domain",
+      "title": "Broadcast domain",
+      "layer": "L2",
+      "prereqs": [
+        "unknown-unicast-flooding"
+      ],
+      "truth": "A broadcast frame (destination ff:ff:ff:ff:ff:ff) is delivered to every port of its L2 segment or VLAN, and a router does not forward it onward.",
+      "twins": {
+        "aws": "No direct twin: AWS states it does not support broadcast in a VPC (the subnet's last address is reserved as the 'network broadcast address' for that reason). A subnet is an IP range, not a broadcast domain.",
+        "k8s": "A node's pod network in overlay mode has no shared broadcast domain across nodes; broadcast does not cross the VXLAN tunnel in the way a switch fabric would.",
+        "proxmox": "Each VLAN on a bridge (or each bridge without VLANs) is one broadcast domain; guests on the same vmbr0 and VLAN tag receive each other's broadcasts."
+      },
+      "lab": "In 3 netns on br0: ping -b <bcast> from one; tcpdump icmp in the other two; then put one on a different VLAN",
+      "sim": "vlan-broadcast",
+      "sources": [
+        "https://docs.aws.amazon.com/vpc/latest/userguide/subnet-sizing.html",
+        "https://datatracker.ietf.org/doc/html/rfc919"
+      ],
+      "status": "gap",
+      "evidence": "Placement 2026-10-24: said a broadcast goes to the router."
+    },
+    {
+      "id": "vlan-access",
+      "title": "VLAN access ports",
+      "layer": "L2",
+      "prereqs": [
+        "broadcast-domain"
+      ],
+      "truth": "An access port belongs to exactly one VLAN, and frames never pass between VLANs at L2; only a router can connect two VLANs.",
+      "twins": {
+        "aws": "No direct twin: VPC subnets are isolated by routing and SGs, not by VLAN; there is no 802.1Q you configure. Two subnets in one VPC talk through the implied router.",
+        "k8s": "No direct twin in the core model; Multus/macvlan/VLAN-backed secondary networks can attach pods to a VLAN, but default pod networking has no VLAN concept.",
+        "proxmox": "Setting a VLAN tag on a VM's NIC (Proxmox GUI) on a VLAN-aware bridge makes that bridge port an access port for that VLAN (bridge vlan show)."
+      },
+      "lab": "br0 with vlan_filtering 1; bridge vlan add dev vb1 vid 10 pvid untagged; vb2 on vid 20; same /24 on both; ping fails",
+      "sim": "vlan-broadcast",
+      "sources": [
+        "https://pve.proxmox.com/wiki/Network_Configuration",
+        "https://man7.org/linux/man-pages/man8/bridge.8.html"
+      ],
+      "status": "gap",
+      "evidence": "Placement 2026-10-24: said two hosts in the same subnet on different VLANs can ping."
+    },
+    {
+      "id": "vlan-trunk-8021q",
+      "title": "VLAN trunk and 802.1Q",
+      "layer": "L2",
+      "prereqs": [
+        "vlan-access"
+      ],
+      "truth": "A trunk port carries several VLANs on one link by inserting a 4-byte 802.1Q tag whose 12-bit field holds the VLAN ID.",
+      "twins": {
+        "aws": "No direct twin: you never tag frames to AWS. The nearest thing is Direct Connect private VIFs, which use 802.1Q VLAN IDs on the physical link to AWS.",
+        "k8s": "No direct twin in default pod networking; node uplinks to the switch may be trunks, invisible to pods.",
+        "proxmox": "A VLAN-aware bridge's uplink (e.g. eno1 with bridge-vids 2-4094) is a trunk; a guest NIC without a tag set on a VLAN-aware bridge can also be configured as a trunk, with VLANs handled inside the guest."
+      },
+      "lab": "tcpdump -e -n -i eno-equivalent veth showing 'vlan 10' while ping from an access port; compare with the access-port side (untagged)",
+      "sim": "vlan-trunk",
+      "sources": [
+        "https://pve.proxmox.com/wiki/Network_Configuration",
+        "https://standards.ieee.org/ieee/802.1Q/10323/"
+      ],
+      "status": "untested",
+      "evidence": ""
+    },
+    {
+      "id": "arp",
+      "title": "ARP: IP → MAC",
+      "layer": "L2",
+      "prereqs": [
+        "frames-mac",
+        "broadcast-domain",
+        "ip-subnet-math"
+      ],
+      "truth": "ARP broadcasts 'who has IP X?' on the local segment and the owner of X replies with its MAC; a host ARPs only for on-link destinations, and for anything else it ARPs for its gateway.",
+      "twins": {
+        "aws": "Instances still hold an ARP/neighbour table with the VPC router (subnet base+1) as gateway. AWS documents only that broadcast is unsupported; how the SDN answers ARP is not documented in the sources checked.",
+        "k8s": "Pods ARP for their gateway on the veth; how the CNI answers that ARP is CNI-specific (not verified for Cilium here), so check with ip neigh in a pod.",
+        "proxmox": "VMs ARP across the Linux bridge like on a real switch; a routed setup can use proxy_arp on the host NIC (as in the Proxmox 'routed' example)."
+      },
+      "lab": "ip neigh flush all; ping the gateway in a netns while tcpdump -n -e arp; ip neigh show afterwards",
+      "sim": null,
+      "sources": [
+        "https://datatracker.ietf.org/doc/html/rfc826",
+        "https://pve.proxmox.com/wiki/Network_Configuration"
+      ],
+      "status": "solid",
+      "evidence": "Placement 2026-10-24: answered the ARP-for-gateway question correctly (once, no confidence given)."
+    },
+    {
+      "id": "linux-bridge-vlan-aware",
+      "title": "Proxmox Linux bridge and VLAN-aware bridge",
+      "layer": "L2",
+      "prereqs": [
+        "switch-mac-table",
+        "vlan-access",
+        "vlan-trunk-8021q"
+      ],
+      "truth": "A Linux bridge is a software switch with a MAC table; with vlan_filtering on it also keeps a per-port VLAN list, making each port an access or trunk port.",
+      "twins": {
+        "aws": "No direct twin: there is no bridge object to configure. The closest conceptual mapping is a subnet plus its ENIs behind the VPC's SDN.",
+        "k8s": "Some CNIs (bridge CNI plugin) create a Linux bridge per node; Cilium does not use one in its default datapath.",
+        "proxmox": "vmbr0 in /etc/network/interfaces is exactly this: bridge-ports eno1, plus bridge-vlan-aware yes and bridge-vids 2-4094 to turn it into a VLAN-aware bridge; the VM NIC's 'VLAN Tag' sets the access VLAN."
+      },
+      "lab": "ip link add br0 type bridge vlan_filtering 1; bridge vlan add ...; bridge vlan show; bridge fdb show",
+      "sim": null,
+      "sources": [
+        "https://pve.proxmox.com/wiki/Network_Configuration",
+        "https://man7.org/linux/man-pages/man8/bridge.8.html"
+      ],
+      "status": "untested",
+      "evidence": ""
+    },
+    {
+      "id": "vpc-no-l2-broadcast",
+      "title": "Why a VPC has no L2 broadcast",
+      "layer": "L2",
+      "prereqs": [
+        "broadcast-domain",
+        "arp"
+      ],
+      "truth": "AWS states it does not support broadcast in a VPC, so every packet between instances is delivered by the VPC's own forwarding, not by a shared Ethernet segment.",
+      "twins": {
+        "aws": "The subnet doc reserves the last address as the 'network broadcast address' precisely because broadcast is not supported. Multicast is not available by default either; Transit Gateway offers opt-in multicast domains with IGMPv2.",
+        "k8s": "Same consequence for K8s on AWS: anything that needs L2 adjacency (keepalived VRRP, gratuitous-ARP failover) does not work the usual way; use cloud-native VIPs.",
+        "proxmox": "Contrast: on a Proxmox bridge the VMs do share a real L2 segment, so broadcast, gratuitous ARP and VRRP all work."
+      },
+      "lab": "On a Linux bridge: arping -I vb1 <ip-of-vb2> works; then explain why the same arping to a neighbour VPC instance is not how packets get delivered",
+      "sim": null,
+      "sources": [
+        "https://docs.aws.amazon.com/vpc/latest/userguide/subnet-sizing.html",
+        "https://docs.aws.amazon.com/vpc/latest/tgw/tgw-multicast-overview.html"
+      ],
+      "status": "untested",
+      "evidence": ""
+    },
+    {
+      "id": "ip-subnet-math",
+      "title": "IP addressing and subnet math",
+      "layer": "L3",
+      "prereqs": [],
+      "truth": "A /N prefix fixes the first N bits as the network part and leaves 32-N host bits, so the subnet holds 2^(32-N) addresses; two addresses are on-link to each other only if their first N bits are equal.",
+      "twins": {
+        "aws": "Subnets are /28 to /16; AWS reserves the first four addresses (network, VPC router at base+1, DNS at base+2, future use) and the last one in every subnet, so a /24 gives 251 usable.",
+        "k8s": "Each node gets a pod CIDR slice (e.g. a /24 from the cluster pod CIDR); Services get a separate ClusterIP range that exists only as rules, not on any interface.",
+        "proxmox": "You pick the bridge's address/prefix in /etc/network/interfaces; nothing is reserved for you, but the network and broadcast addresses of the block cannot be used."
+      },
+      "lab": "ipcalc 10.0.5.0/26 (or python3 -c 'import ipaddress...'); ip addr add 10.0.5.77/26 dev ...; ip route to see the connected prefix",
+      "sim": null,
+      "sources": [
+        "https://datatracker.ietf.org/doc/html/rfc4632",
+        "https://docs.aws.amazon.com/vpc/latest/userguide/subnet-sizing.html"
+      ],
+      "status": "solid",
+      "evidence": "Placement 2026-10-24: subnet math answered correctly (once, no confidence given)."
+    },
+    {
+      "id": "default-gateway",
+      "title": "Default gateway",
+      "layer": "L3",
+      "prereqs": [
+        "arp",
+        "ip-subnet-math"
+      ],
+      "truth": "To reach a destination outside its own subnet, a host puts the destination IP unchanged in the packet and the gateway's MAC in the frame.",
+      "twins": {
+        "aws": "The default gateway of every instance is the VPC router at the subnet's base+1 address (10.0.0.1 in 10.0.0.0/24); it is reserved by AWS.",
+        "k8s": "A pod's default route points at an address on its veth; on the node the next hop depends on the CNI (Cilium handles it in its datapath).",
+        "proxmox": "The gateway line in vmbr0's stanza is the host's own default route; VMs use whatever gateway their own OS configures, typically the physical router."
+      },
+      "lab": "ip route; ping -c1 <remote>; tcpdump -e -n shows dst IP = remote but dst MAC = gateway",
+      "sim": null,
+      "sources": [
+        "https://datatracker.ietf.org/doc/html/rfc1122",
+        "https://docs.aws.amazon.com/vpc/latest/userguide/subnet-sizing.html"
+      ],
+      "status": "untested",
+      "evidence": ""
+    },
+    {
+      "id": "router-vs-switch",
+      "title": "Router vs switch",
+      "layer": "L3",
+      "prereqs": [
+        "switch-mac-table",
+        "default-gateway"
+      ],
+      "truth": "A switch forwards frames inside one L2 segment by MAC; a router forwards packets between networks by destination IP, rewriting the L2 header and decrementing TTL.",
+      "twins": {
+        "aws": "The VPC router (implied, base+1 of each subnet) is the router; there is no switch object, and it routes between subnets using your route tables.",
+        "k8s": "The node's kernel (plus Cilium) acts as the router between the pod network and the outside; in overlay mode the tunnel makes remote pods look adjacent.",
+        "proxmox": "vmbr0 is the switch; the physical or virtual router upstream is the router; enabling ip_forward on the host turns it into a router too."
+      },
+      "lab": "netns r with two veths on two bridges and sysctl net.ipv4.ip_forward=1; observe TTL drop and MAC rewrite with tcpdump -e",
+      "sim": null,
+      "sources": [
+        "https://datatracker.ietf.org/doc/html/rfc1812",
+        "https://man7.org/linux/man-pages/man8/ip-route.8.html"
+      ],
+      "status": "untested",
+      "evidence": ""
+    },
+    {
+      "id": "longest-prefix-match",
+      "title": "Longest-prefix match",
+      "layer": "L3",
+      "prereqs": [
+        "ip-subnet-math"
+      ],
+      "truth": "When several routes match a destination, the route with the longest prefix wins, regardless of its position in the table.",
+      "twins": {
+        "aws": "AWS route tables use the most specific route; docs list priority as longest prefix first, then static routes, prefix-list routes, propagated routes (Direct Connect BGP, VPN static, VPN BGP). 172.31.0.0/16 to a peering beats 0.0.0.0/0 to an IGW.",
+        "k8s": "Node route table (ip route) obeys the same rule; pod CIDR routes on a node are more specific than the default route.",
+        "proxmox": "The Linux kernel FIB on the host picks the longest prefix; ip route get <dst> shows which route won."
+      },
+      "lab": "ip route add 10.0.5.0/24 via A; ip route add 10.0.5.64/26 via B; ip route get 10.0.5.77 (hits /26)",
+      "sim": null,
+      "sources": [
+        "https://docs.aws.amazon.com/vpc/latest/userguide/route-tables-priority.html",
+        "https://man7.org/linux/man-pages/man8/ip-route.8.html"
+      ],
+      "status": "gap",
+      "evidence": "Placement 2026-10-24: picked /24 over /26 for 10.0.5.77."
+    },
+    {
+      "id": "routing-table-next-hop",
+      "title": "Routing table and next hop",
+      "layer": "L3",
+      "prereqs": [
+        "longest-prefix-match",
+        "router-vs-switch"
+      ],
+      "truth": "A route maps a destination prefix to a next hop or a directly connected interface, and the sender frames the packet to the next hop's MAC, not to the final destination's.",
+      "twins": {
+        "aws": "A VPC route's target (igw-, nat-, pcx-, vgw-, local) plays the role of the next hop; you edit the table, the SDN does the forwarding. The 'local' route covers the VPC CIDR.",
+        "k8s": "ip route on a node shows pod CIDRs via the CNI device or via other nodes (native routing); ip route get <pod-ip> shows the chosen next hop.",
+        "proxmox": "ip route on the host shows connected /24 on vmbr0 and a default via the gateway; routed setups add per-VM routes."
+      },
+      "lab": "ip route; ip route get 1.1.1.1; ip route get <pod-or-ns-ip>; compare 'dev' vs 'via'",
+      "sim": null,
+      "sources": [
+        "https://man7.org/linux/man-pages/man8/ip-route.8.html",
+        "https://docs.aws.amazon.com/vpc/latest/userguide/VPC_Route_Tables.html"
+      ],
+      "status": "untested",
+      "evidence": ""
+    },
+    {
+      "id": "aws-route-table-implied-router",
+      "title": "AWS route table and the implied router",
+      "layer": "L3",
+      "prereqs": [
+        "routing-table-next-hop"
+      ],
+      "truth": "A VPC route table is a set of destination-CIDR to target rules; each subnet's traffic is directed by the route table associated with it, using the most specific matching route.",
+      "twins": {
+        "aws": "You never see the router: it is reserved at base+1 of each subnet and AWS applies the subnet's route table; targets include IGW, NAT gateway, peering, VPN, and the 'local' route for the VPC CIDR.",
+        "k8s": "With the AWS ENI IPAM or native routing, pod IPs live in the VPC and are routed by this same table; with overlay, only node IPs are.",
+        "proxmox": "No twin for an implied router: the router is a real box or VM you configure, with its own table."
+      },
+      "lab": "aws ec2 describe-route-tables --filters Name=association.subnet-id,Values=<id>; predict the target for 3 destinations, then check with Reachability Analyzer",
+      "sim": null,
+      "sources": [
+        "https://docs.aws.amazon.com/vpc/latest/userguide/route-tables-priority.html",
+        "https://docs.aws.amazon.com/vpc/latest/userguide/VPC_Route_Tables.html"
+      ],
+      "status": "untested",
+      "evidence": ""
+    },
+    {
+      "id": "icmp",
+      "title": "ICMP",
+      "layer": "L3",
+      "prereqs": [
+        "routing-table-next-hop"
+      ],
+      "truth": "ICMP is IP's error and control channel: hosts and routers use it to report unreachable destinations, expired TTL and oversize packets, and ping is just echo request/reply.",
+      "twins": {
+        "aws": "SGs and NACLs filter ICMP like any protocol; a missing ICMP allow rule is why ping fails while TCP works, and why PMTUD can break (type 3 code 4 must be allowed).",
+        "k8s": "NetworkPolicy generally concerns TCP/UDP/SCTP; ICMP handling depends on the CNI, so test it with ping in a debug pod rather than assuming.",
+        "proxmox": "The Proxmox firewall can allow or drop ICMP per VM or at the host; the default on a bridge without firewall is pass-through."
+      },
+      "lab": "ping -c2 <dst>; tcpdump -n icmp; ping -M do -s 1500 <dst> to provoke 'frag needed'",
+      "sim": null,
+      "sources": [
+        "https://datatracker.ietf.org/doc/html/rfc792",
+        "https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/network_mtu.html"
+      ],
+      "status": "untested",
+      "evidence": ""
+    },
+    {
+      "id": "ttl-traceroute",
+      "title": "TTL and traceroute",
+      "layer": "L3",
+      "prereqs": [
+        "icmp"
+      ],
+      "truth": "Every router decrements the IP TTL by one and discards the packet at zero, replying with ICMP time-exceeded; traceroute exploits that by sending probes with TTL 1, 2, 3 and so on.",
+      "twins": {
+        "aws": "No direct twin documented: AWS does not document whether the VPC router appears as a hop or decrements TTL, so test with traceroute rather than assume.",
+        "k8s": "Cross-node pod traffic in overlay mode shows few or no intermediate hops because the underlay hides them inside the tunnel.",
+        "proxmox": "A real router upstream shows up as a hop; the Linux bridge never does, since it works at L2."
+      },
+      "lab": "traceroute -n through the netns router from router-vs-switch lab; watch TTL with tcpdump -v",
+      "sim": null,
+      "sources": [
+        "https://datatracker.ietf.org/doc/html/rfc792",
+        "https://man7.org/linux/man-pages/man8/traceroute.8.html"
+      ],
+      "status": "untested",
+      "evidence": ""
+    },
+    {
+      "id": "mtu-pmtud",
+      "title": "MTU and path MTU discovery",
+      "layer": "L3",
+      "prereqs": [
+        "icmp",
+        "frames-mac"
+      ],
+      "truth": "An IPv4 packet with DF set that exceeds a link's MTU is dropped and the dropping router returns ICMP type 3 code 4 (fragmentation needed) with the MTU to use; if that ICMP never arrives the sender never learns.",
+      "twins": {
+        "aws": "EC2 instance types support 1500 and many up to 9001 MTU; 9001 applies inside a VPC, but 1500 is the limit over an internet gateway, VPN, and between Regions (without a transit gateway), 8500 over inter-region peering. DF packets over the limit are dropped.",
+        "k8s": "Overlays shrink pod MTU: VXLAN adds 50 bytes per packet in Cilium, so a pod on a 1500 underlay has less than 1500 available; mismatched MTU shows up as large transfers stalling while small ones work.",
+        "proxmox": "Bridge and guest NIC MTU must match the physical path; a guest set to 9000 on a 1500 uplink black-holes large frames."
+      },
+      "lab": "ping -M do -s 1472 then 1473 across a veth set to mtu 1500; ip link set vb mtu 1400; tcpdump icmp to see type 3 code 4",
+      "sim": null,
+      "sources": [
+        "https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/network_mtu.html",
+        "https://datatracker.ietf.org/doc/html/rfc1191"
+      ],
+      "status": "shaky",
+      "evidence": "Placement 2026-10-24: recognised the MTU symptom but did not know PMTUD or ICMP frag-needed."
+    },
+    {
+      "id": "udp",
+      "title": "UDP",
+      "layer": "L4",
+      "prereqs": [
+        "ports-sockets"
+      ],
+      "truth": "UDP sends each datagram on its own with no handshake, no acknowledgement and no retransmission; ports only select the receiving socket.",
+      "twins": {
+        "aws": "SGs track UDP flows too, so replies to an allowed UDP request come back without an inbound rule; NAT gateway supports TCP, UDP and ICMP.",
+        "k8s": "DNS (CoreDNS) and VXLAN/Geneve tunnels run on UDP; a Service of type UDP works but gives no connection-level error when no backend exists.",
+        "proxmox": "VXLAN (SDN zones) and WireGuard are UDP; a firewall that drops UDP silently produces timeouts with no error."
+      },
+      "lab": "nc -u -l 9999 in netns a; echo hi | nc -u <ip> 9999 from b; tcpdump -n udp; send to a closed port and watch ICMP port unreachable",
+      "sim": null,
+      "sources": [
+        "https://datatracker.ietf.org/doc/html/rfc768",
+        "https://docs.aws.amazon.com/vpc/latest/userguide/nat-gateway-basics.html"
+      ],
+      "status": "untested",
+      "evidence": ""
+    },
+    {
+      "id": "ports-sockets",
+      "title": "Ports and the 5-tuple",
+      "layer": "L4",
+      "prereqs": [
+        "ip-subnet-math"
+      ],
+      "truth": "A connection is identified by the 5-tuple (protocol, source IP, source port, destination IP, destination port); a port number only has meaning together with an IP and a protocol.",
+      "twins": {
+        "aws": "NAT gateway limits are expressed in 5-tuple terms: up to 55,000 simultaneous connections per IP to each unique destination (IP, port, protocol).",
+        "k8s": "Services map a ClusterIP:port to pod IP:port; conntrack entries are keyed by the 5-tuple.",
+        "proxmox": "Port forwarding on the host (iptables DNAT) rewrites the destination half of the 5-tuple and conntrack remembers it."
+      },
+      "lab": "ss -tn to list connections as tuples; open two curls to the same server and compare source ports",
+      "sim": null,
+      "sources": [
+        "https://datatracker.ietf.org/doc/html/rfc9293",
+        "https://docs.aws.amazon.com/vpc/latest/userguide/nat-gateway-basics.html"
+      ],
+      "status": "untested",
+      "evidence": ""
+    },
+    {
+      "id": "tcp-handshake",
+      "title": "TCP three-way handshake",
+      "layer": "L4",
+      "prereqs": [
+        "ports-sockets"
+      ],
+      "truth": "A TCP connection opens with SYN, SYN-ACK, ACK, and no application data flows until the handshake completes.",
+      "twins": {
+        "aws": "SGs and NAT gateways track a flow from its SYN; an SG that allows inbound SYN lets the whole connection through, while a missing rule makes the SYN vanish.",
+        "k8s": "kube-proxy/Cilium rewrite the SYN to a backend pod, so the handshake completes with the pod, not with the Service IP.",
+        "proxmox": "Handshake behaviour is the guest OS's; the Proxmox firewall tracks state per VM with conntrack."
+      },
+      "lab": "tcpdump -n -i any 'tcp[tcpflags] & (tcp-syn|tcp-ack) != 0' while curl a local server; read SYN, SYN-ACK, ACK",
+      "sim": null,
+      "sources": [
+        "https://datatracker.ietf.org/doc/html/rfc9293",
+        "https://man7.org/linux/man-pages/man8/ss.8.html"
+      ],
+      "status": "untested",
+      "evidence": ""
+    },
+    {
+      "id": "rst-vs-silent-drop",
+      "title": "RST vs silent drop (refused vs timed out)",
+      "layer": "L4",
+      "prereqs": [
+        "tcp-handshake",
+        "icmp"
+      ],
+      "truth": "'Connection refused' means a RST (or ICMP unreachable) came back, so something answered; 'timed out' means nothing came back at all.",
+      "twins": {
+        "aws": "The statement 'SG and NACL denies are silent drops, so a blocked port times out' is the usual experience but is not verified in this map's sources; a refused connection means the packet reached a host stack.",
+        "k8s": "A Service with no ready endpoints typically fails fast with refused or unreachable rather than hanging, depending on the datapath; check with curl -v rather than assuming.",
+        "proxmox": "A closed port on a reachable VM refuses at once; the Proxmox firewall's DROP gives a timeout and REJECT gives a refusal."
+      },
+      "lab": "curl -v to a closed port on a netns (refused); add iptables -A INPUT -p tcp --dport 80 -j DROP then curl (timeout); swap to REJECT",
+      "sim": null,
+      "sources": [
+        "https://datatracker.ietf.org/doc/html/rfc9293",
+        "https://man7.org/linux/man-pages/man8/iptables.8.html"
+      ],
+      "status": "gap",
+      "evidence": "Placement 2026-10-24: said 'refused' means a firewall."
+    },
+    {
+      "id": "stateful-vs-stateless-filtering",
+      "title": "Stateful vs stateless filtering",
+      "layer": "L4",
+      "prereqs": [
+        "ports-sockets"
+      ],
+      "truth": "A stateful filter remembers each permitted flow and lets its replies back automatically; a stateless filter judges every packet alone, so replies need their own rule.",
+      "twins": {
+        "aws": "Security groups are stateful (responses to allowed traffic are allowed regardless of rules in the other direction); network ACLs are stateless and need explicit return rules.",
+        "k8s": "Cilium NetworkPolicy is stateful: allowing ingress to a pod allows its reply packets via conntrack.",
+        "proxmox": "The Proxmox firewall is built on netfilter with conntrack, so established/related replies are accepted by state."
+      },
+      "lab": "iptables -P INPUT DROP with and without -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT; curl out from the box and see replies drop or pass",
+      "sim": null,
+      "sources": [
+        "https://docs.aws.amazon.com/vpc/latest/userguide/vpc-security-groups.html",
+        "https://docs.aws.amazon.com/vpc/latest/userguide/infrastructure-security.html"
+      ],
+      "status": "solid",
+      "evidence": "Placement 2026-10-24: security-group statefulness answered correctly (once, no confidence given)."
+    },
+    {
+      "id": "sg-vs-nacl",
+      "title": "Security group vs network ACL",
+      "layer": "L4",
+      "prereqs": [
+        "stateful-vs-stateless-filtering",
+        "aws-route-table-implied-router"
+      ],
+      "truth": "A security group is an allow-only, stateful filter on an instance's ENI; a network ACL is an ordered allow-and-deny, stateless filter on a subnet boundary, evaluated lowest rule number first.",
+      "twins": {
+        "aws": "AWS's comparison table: SG instance level, allow rules only, all rules evaluated, return traffic automatic; NACL subnet level, allow and deny, rules in ascending order until a match, return traffic must be explicit. NACLs do not filter traffic between instances in the same subnet.",
+        "k8s": "NetworkPolicy/CiliumNetworkPolicy is closer to an SG (per workload, allow-style, stateful) than to a NACL; node SGs still sit under it.",
+        "proxmox": "Proxmox firewall rules per VM are the SG analogue; there is no subnet-level stateless filter unless you add one on the router."
+      },
+      "lab": "Conceptual: write a NACL pair for 'allow inbound 443 to a subnet' on paper, including ephemeral return ports; then reproduce the missing-return-rule failure with iptables -P FORWARD DROP and no conntrack rule",
+      "sim": null,
+      "sources": [
+        "https://docs.aws.amazon.com/vpc/latest/userguide/infrastructure-security.html",
+        "https://docs.aws.amazon.com/vpc/latest/userguide/vpc-network-acls.html"
+      ],
+      "status": "untested",
+      "evidence": ""
+    },
+    {
+      "id": "nat-pat-conntrack",
+      "title": "NAT/PAT and conntrack",
+      "layer": "L4",
+      "prereqs": [
+        "stateful-vs-stateless-filtering",
+        "routing-table-next-hop"
+      ],
+      "truth": "NAT rewrites addresses in the packet header and PAT also rewrites ports, with each mapping recorded in a state table (conntrack) so replies are translated back.",
+      "twins": {
+        "aws": "A public NAT gateway lets private instances start outbound connections but gives no unsolicited inbound; it needs an Elastic IP and a route via the internet gateway; each IP supports up to 55,000 simultaneous connections per unique destination and ports used are 1024-65535. SGs cannot be attached to a NAT gateway.",
+        "k8s": "kube-proxy or Cilium DNATs a Service ClusterIP to a pod IP and records it in conntrack; egress SNAT/masquerade makes pod traffic leave with the node's IP.",
+        "proxmox": "Masquerade on the host (iptables -t nat POSTROUTING MASQUERADE) is the common NAT; conntrack -L shows the table."
+      },
+      "lab": "netns behind a router netns with iptables -t nat -A POSTROUTING -j MASQUERADE; conntrack -L while curl; tcpdump on both sides to see src port rewrite",
+      "sim": null,
+      "sources": [
+        "https://docs.aws.amazon.com/vpc/latest/userguide/nat-gateway-basics.html",
+        "https://datatracker.ietf.org/doc/html/rfc3022"
+      ],
+      "status": "solid",
+      "evidence": "Placement 2026-10-24: NAT port translation answered correctly (once, no confidence given)."
+    },
+    {
+      "id": "encapsulation-vxlan",
+      "title": "Encapsulation and VXLAN",
+      "layer": "overlay",
+      "prereqs": [
+        "udp",
+        "frames-mac",
+        "mtu-pmtud"
+      ],
+      "truth": "Encapsulation wraps a complete inner packet or frame as the payload of an outer packet, and the underlay forwards by the outer headers; VXLAN carries an inner Ethernet frame in UDP with a 24-bit VNI.",
+      "twins": {
+        "aws": "No direct twin you configure: the VPC itself is an overlay on AWS's network, but it is not exposed. You meet encapsulation when running Cilium VXLAN/Geneve on EC2, where UDP 8472 or 6081 must be allowed between nodes in the SGs.",
+        "k8s": "Cilium defaults to VXLAN on UDP 8472 (Linux's default port; IANA assigns 4789) and can use Geneve on UDP 6081; the tunnel-port option can change it.",
+        "proxmox": "Proxmox SDN has a VXLAN zone type that builds L2 overlays across nodes over the UDP underlay."
+      },
+      "lab": "ip link add vx0 type vxlan id 100 dstport 4789 remote <peer> dev eth0; tcpdump -n udp port 4789 to see inner frame inside outer UDP",
+      "sim": null,
+      "sources": [
+        "https://datatracker.ietf.org/doc/html/rfc7348",
+        "https://docs.cilium.io/en/stable/network/concepts/routing/"
+      ],
+      "status": "untested",
+      "evidence": ""
+    },
+    {
+      "id": "k8s-pod-network-model",
+      "title": "Kubernetes pod network model",
+      "layer": "overlay",
+      "prereqs": [
+        "ip-subnet-math",
+        "l1-links-nics"
+      ],
+      "truth": "In the Kubernetes network model every pod has its own cluster-wide unique IP and pods reach each other directly, without NAT, whether on the same node or on different nodes.",
+      "twins": {
+        "aws": "With the VPC CNI or Cilium ENI mode, pod IPs come from the VPC and are routed by VPC route tables; with overlay CNIs, pod IPs exist only inside the tunnel.",
+        "k8s": "This is the model itself; the CNI plugin is what implements it. Services add stable virtual IPs on top, and agents on a node can reach all pods on that node.",
+        "proxmox": "Running K8s on Proxmox VMs, the VM NICs are the underlay; the CNI must be able to move pod IPs between VMs (overlay or routed)."
+      },
+      "lab": "kubectl get pods -o wide; from pod A: ip route; curl pod B's IP directly; kubectl exec ... -- ip addr to see the veth end",
+      "sim": null,
+      "sources": [
+        "https://kubernetes.io/docs/concepts/services-networking/",
+        "https://kubernetes.io/docs/concepts/cluster-administration/networking/"
+      ],
+      "status": "untested",
+      "evidence": ""
+    },
+    {
+      "id": "cilium-datapath",
+      "title": "K8s pod network and the Cilium datapath",
+      "layer": "overlay",
+      "prereqs": [
+        "k8s-pod-network-model",
+        "encapsulation-vxlan",
+        "nat-pat-conntrack"
+      ],
+      "truth": "Cilium connects pods across nodes in one of two ways: encapsulation (VXLAN on UDP 8472 by default, or Geneve on UDP 6081) between node IPs, or native routing where the underlay must be able to route pod IPs.",
+      "twins": {
+        "aws": "Encapsulation needs only node-to-node IP reachability plus UDP 8472 (or 6081) allowed in the node SGs; native routing needs the VPC to route pod IPs (the AWS ENI datapath does that). VXLAN costs 50 bytes of MTU per packet.",
+        "k8s": "This is the twin: encapsulation is the default when nothing is configured; tunnel-protocol, tunnel-port and underlay-protocol options exist; Cilium requires a recent kernel (5.10 or later recommended) and eBPF.",
+        "proxmox": "On Proxmox VMs the same two modes apply; with native routing across VMs on one L2 bridge, auto-direct-node-routes can install the pod routes."
+      },
+      "lab": "In a kind or k3s cluster with Cilium: cilium status; kubectl exec into a pod, ip route; on the node, tcpdump -n -i any udp port 8472 while pod-to-pod ping across nodes",
+      "sim": null,
+      "sources": [
+        "https://docs.cilium.io/en/stable/network/concepts/routing/",
+        "https://docs.cilium.io/en/stable/operations/system_requirements/"
+      ],
+      "status": "untested",
+      "evidence": ""
+    },
+    {
+      "id": "dhcp",
+      "title": "DHCP",
+      "layer": "services",
+      "prereqs": [
+        "udp",
+        "broadcast-domain"
+      ],
+      "truth": "A DHCP client with no address broadcasts a discover on its L2 segment and a DHCP server answers with an address, gateway and DNS settings.",
+      "twins": {
+        "aws": "VPC uses DHCP option sets (domain name, DNS servers, NTP) rather than anything you run; instances receive their private IP and the Amazon DNS server by default. Security groups do not filter DHCP traffic.",
+        "k8s": "Pods do not use DHCP: the CNI assigns the pod IP, and kubelet writes resolv.conf.",
+        "proxmox": "Guests use whatever DHCP is on the VLAN (usually the physical router); Proxmox itself does not run one unless you set up SDN IPAM/DHCP."
+      },
+      "lab": "dnsmasq on a netns on br0 with --dhcp-range; dhclient -v in a second netns; tcpdump -n port 67 or 68",
+      "sim": null,
+      "sources": [
+        "https://datatracker.ietf.org/doc/html/rfc2131",
+        "https://docs.aws.amazon.com/vpc/latest/userguide/VPC_DHCP_Options.html"
+      ],
+      "status": "untested",
+      "evidence": ""
+    },
+    {
+      "id": "dns-resolution",
+      "title": "DNS resolution",
+      "layer": "services",
+      "prereqs": [
+        "udp",
+        "default-gateway"
+      ],
+      "truth": "A stub resolver sends the name to the nameserver listed in resolv.conf, and that server returns an IP (or an error) either from its own data or by recursing to authoritative servers.",
+      "twins": {
+        "aws": "The Route 53 Resolver sits at the VPC base+2 address (also 169.254.169.253) and is reached over a link-local path not visible on the network; enableDnsSupport (default true) turns it on.",
+        "k8s": "CoreDNS answers cluster names (service.namespace.svc.cluster-domain) and forwards the rest; the pod's resolv.conf points at it.",
+        "proxmox": "Hosts and guests use their own resolv.conf (usually the upstream router or DHCP-provided servers)."
+      },
+      "lab": "dig +trace example.com; dig @<ns> name; resolvectl status or cat /etc/resolv.conf",
+      "sim": null,
+      "sources": [
+        "https://datatracker.ietf.org/doc/html/rfc1035",
+        "https://docs.aws.amazon.com/vpc/latest/userguide/AmazonDNS-concepts.html"
+      ],
+      "status": "untested",
+      "evidence": ""
+    },
+    {
+      "id": "dns-search-ndots",
+      "title": "DNS search domains and ndots",
+      "layer": "services",
+      "prereqs": [
+        "dns-resolution"
+      ],
+      "truth": "A name with fewer dots than ndots is tried with each search suffix in turn before being tried as written; a name with at least ndots dots is tried as written first.",
+      "twins": {
+        "aws": "The DHCP option set's domain name becomes the search suffix on instances; ndots is a resolver setting, not an AWS one.",
+        "k8s": "Pods get search domains for their namespace, svc and the cluster domain, and ndots from the dnsConfig options (settable per pod); this is why external names can trigger several failed lookups first.",
+        "proxmox": "Search domain is a host or guest setting (/etc/resolv.conf, or the DNS tab in the Proxmox host config)."
+      },
+      "lab": "printf 'search a.test b.test\\noptions ndots:3\\nnameserver <ns>\\n' > resolv.conf in a netns; tcpdump -n port 53 while getent hosts x.y",
+      "sim": null,
+      "sources": [
+        "https://man7.org/linux/man-pages/man5/resolv.conf.5.html",
+        "https://kubernetes.io/docs/concepts/services-networking/dns-pod-service/"
+      ],
+      "status": "solid",
+      "evidence": "Placement 2026-10-24: K8s DNS ndots/search answered correctly (once, no confidence given)."
+    },
+    {
+      "id": "debug-method",
+      "title": "Debug method: work the layers",
+      "layer": "services",
+      "prereqs": [
+        "dns-resolution",
+        "routing-table-next-hop",
+        "rst-vs-silent-drop",
+        "mtu-pmtud",
+        "sg-vs-nacl"
+      ],
+      "truth": "Test in order: does the name resolve, is there a route, does the handshake complete, does the full-size path work, does the application answer; the first step that fails names the layer to fix.",
+      "twins": {
+        "aws": "Map each step to a tool: dig, route table or Reachability Analyzer, SG/NACL and curl -v (refused vs timeout), ping -M do for size, then app logs; flow logs show accept/reject at the ENI.",
+        "k8s": "Same order from a debug pod: nslookup, ip route, curl -v to the pod IP then the Service, MTU check, then the app; cilium monitor/hubble can show drops.",
+        "proxmox": "From the guest then the host: dig, ip route, bridge fdb/vlan show, tcpdump on tap and physical NIC, firewall rules."
+      },
+      "lab": "Write a 6-line script: getent hosts, ip route get, nc -vz, ping -M do -s 1472, curl -v; run it against three targets (one broken at each layer)",
+      "sim": null,
+      "sources": [
+        "https://docs.aws.amazon.com/vpc/latest/userguide/infrastructure-security.html",
+        "https://man7.org/linux/man-pages/man8/tcpdump.8.html"
+      ],
+      "status": "untested",
+      "evidence": ""
+    }
+  ]
+}

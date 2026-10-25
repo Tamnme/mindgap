@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>netbench · map</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <main style="padding: 16px; max-width: 1400px; margin: 0 auto;">
+    <header style="margin-bottom: 12px;">
+      <h1>netbench · your networking map</h1>
+      <p class="muted small">Built from your placement test. Work top to bottom; click a topic to open it.</p>
+    </header>
+
+    <div class="map-toolbar">
+      <button id="btn-next" class="primary" disabled>Next lesson</button>
+      <button id="btn-practice" disabled>Practice shaky (0)</button>
+      <button id="btn-debug" disabled>Debug drill</button>
+      <span id="busy" class="small muted hidden"><span class="spinner"></span><span id="busy-text">Starting lesson… this can take up to a minute.</span></span>
+    </div>
+    <div id="error" class="notice error hidden" role="alert"></div>
+
+    <div class="map-layout">
+      <section class="panel">
+        <div class="map-scroll">
+          <svg id="map" class="map-svg" role="img" aria-label="Knowledge map"></svg>
+        </div>
+        <div class="map-legend"><b style="color:#2f9e44">✓</b> solid · <b style="color:#f08c00">~</b> shaky · <b style="color:#e03131">!</b> gap · no badge = not tested yet · CHAPTER tag = written chapter ready · select a node to see what it builds on</div>
+      </section>
+
+      <aside id="side" class="panel side" aria-live="polite">
+        <p class="muted">Select a node to see its evidence and lesson options.</p>
+      </aside>
+    </div>
+  </main>
+  <script type="module" src="map.js"></script>
+</body>
+</html>

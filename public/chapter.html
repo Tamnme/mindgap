@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>netbench · chapter</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <div class="ch-layout">
+    <aside class="ch-side" aria-label="Chapters">
+      <a href="index.html" class="ch-back">← Map</a>
+      <div id="side-layer" class="ch-kicker"></div>
+      <details id="toc-wrap" class="toc-wrap" open>
+        <summary>Chapters and sections</summary>
+        <nav id="toc"></nav>
+      </details>
+    </aside>
+
+    <main class="ch-main">
+      <header class="ch-head">
+        <div class="ch-kicker"><span id="ch-number"></span> <span id="status-chip" class="chip">…</span></div>
+        <h1 id="ch-title">Chapter</h1>
+        <p id="ch-lede" class="ch-lede"></p>
+      </header>
+      <div id="error" class="notice error hidden" role="alert"></div>
+      <article id="article"></article>
+    </main>
+  </div>
+
+  <button id="tutor-fab" class="tutor-fab" aria-controls="drawer" aria-expanded="false">
+    ✦ Tutor <span id="tutor-state" class="small"></span><span id="tutor-badge" class="badge hidden"></span>
+  </button>
+
+  <aside id="drawer" class="drawer" aria-label="Tutor" aria-hidden="true">
+    <header class="drawer-head">
+      <strong>Tutor</strong>
+      <span class="small muted">Reviews your checkpoint answers. Ask it anything about the chapter.</span>
+      <button id="drawer-close" aria-label="Close tutor">×</button>
+    </header>
+    <div id="drawer-thread" class="drawer-thread" aria-live="polite"></div>
+    <form id="ask-form" class="ask-form">
+      <textarea id="ask-text" placeholder="Ask about this chapter…" rows="2"></textarea>
+      <button class="primary" id="ask-send">Send</button>
+    </form>
+  </aside>
+
+  <script type="module" src="chapter.js"></script>
+</body>
+</html>
