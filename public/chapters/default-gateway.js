@@ -50,12 +50,12 @@ A is going to ping each of them while \`tcpdump -e\` on A's NIC prints the Ether
             id: 'c1',
             prompt: 'A pings B (10.32.1.20), which sits behind R. For the echo request leaving A, what are the frame\'s destination MAC and the packet\'s destination IP?',
             options: [
+              'MAC of R, IP of B: the frame goes to the next hop, the packet to the destination',
               'MAC of B, IP of B: the frame is addressed to the final destination, end to end',
               'MAC of R, IP of R: A addresses the gateway, which then starts a new packet',
-              'MAC of R, IP of B: the frame goes to the next hop, the packet to the destination',
               'MAC of B, IP of R: the IP finds the gateway, the MAC finds the host',
             ],
-            key: 2,
+            key: 0,
             why: 'The MAC only has to carry the frame one hop, so it is the next hop\'s. The IP header addresses the final destination and is not rewritten on the way.',
           },
         },
@@ -81,19 +81,17 @@ off-link:  frame dst MAC = gateway's MAC        packet dst IP = destination
 
 The right-hand column is the same in both rows. Only the MAC, which matters for one hop, changes.
 
-A's neighbour table holds C and R. B never appears in it: A never needed B's MAC, and couldn't have got it, since B isn't on A's segment. ARP asks the segment, and a broadcast stops at the router's interface.
+A's neighbour table holds C and R. B never appears in it: A never needed B's MAC, and couldn't have got it, since B isn't on A's segment.
 
 > [!IMPORTANT]
-> RFC 1122 says off-link traffic is routed "to a gateway on a connected network". The gateway has to be an address on your own segment, because it is the only thing A will ARP for.` },
+> RFC 1122 says off-link traffic is routed "to a gateway on a connected network": the next hop is always something on your own segment.` },
       ],
     },
     {
       id: 'mask',
       title: 'When the mask lies',
       blocks: [
-        { md: `A host trusts its own prefix completely. The on-link test uses nothing but A's address and mask: no router is asked and nothing is probed. So a wrong mask is a wrong decision.
-
-Suppose A is reconfigured as \`10.32.0.10/16\` by mistake, with the same default gateway. A pings B again, with \`tcpdump\` on A's NIC watching the ARP traffic about B.` },
+        { md: `Suppose A is reconfigured as \`10.32.0.10/16\` by mistake, with the same default gateway. A pings B again, with \`tcpdump\` on A's NIC capturing ARP.` },
         {
           checkpoint: {
             id: 'c2',
@@ -105,7 +103,7 @@ Suppose A is reconfigured as \`10.32.0.10/16\` by mistake, with the same default
               'The kernel refuses with Network is unreachable, since the /16 overlaps B',
             ],
             key: 2,
-            why: 'The /16 makes B look on-link, so the kernel picks the connected route and ARPs for B itself. B is on another segment and R doesn\'t proxy for it, so the request goes unanswered and no frame is ever sent.',
+            why: 'The /16 makes B look on-link, so the kernel picks the connected route and ARPs for B itself. B is on another segment and R doesn\'t proxy for it, so the request goes unanswered and no echo request is ever sent.',
           },
         },
         {
@@ -117,13 +115,15 @@ echo "route to B: $(ip -n n32a route get 10.32.1.20 | head -1)"
 echo "R's proxy_arp on eth0: $(ip netns exec n32r sysctl -n net.ipv4.conf.eth0.proxy_arp)"
 ip netns exec n32a timeout 4 tcpdump -nel -i eth0 arp host 10.32.1.20 2>/dev/null | ${TRIM} &
 sleep 1
-ip netns exec n32a ping -c1 -W2 10.32.1.20 | grep 'packet loss'; wait
-echo "--- A's entry for B:"; ip -n n32a neigh show 10.32.1.20
+ip netns exec n32a ping -c1 -W2 10.32.1.20 | grep 'packet loss'
+echo "--- A's entry for B:"; ip -n n32a neigh show 10.32.1.20; wait
 ip -n n32a addr flush dev eth0; ip -n n32a addr add 10.32.0.10/24 dev eth0; ip -n n32a route add default via 10.32.0.1
 echo "--- restored:"; ip -n n32a route get 10.32.1.20 | head -1`,
           },
         },
-        { md: `\`route get\` for B shows \`dev eth0\` and no \`via\`: with the /16 the kernel treats B as on-link and never looks at the gateway. R's \`proxy_arp\` on eth0 is 0, so R doesn't answer ARP on behalf of hosts behind it. The capture shows A broadcasting \`who-has 10.32.1.20\` to \`ff:ff:ff:ff:ff:ff\`, repeated, with no reply line. The ping reports 100% packet loss, and A's entry for \`10.32.1.20\` has no MAC and is in state \`INCOMPLETE\`: the question was asked and nothing answered it.
+        { md: `A host trusts its own prefix completely. The on-link test uses nothing but A's address and mask: no router is asked and nothing is probed, so a wrong mask is a wrong decision.
+
+\`route get\` for B shows \`dev eth0\` and no \`via\`: with the /16 the kernel treats B as on-link and never looks at the gateway. R's \`proxy_arp\` on eth0 is 0, so R doesn't answer ARP on behalf of hosts behind it. The capture shows A broadcasting \`who-has 10.32.1.20\` to \`ff:ff:ff:ff:ff:ff\`, repeated, with no reply line. The ping reports 100% packet loss, and A's entry for \`10.32.1.20\` has no MAC and is in state \`INCOMPLETE\` (it would turn \`FAILED\` if you looked later): the question was asked and nothing answered it.
 
 This is why "ping the gateway works but nothing beyond it does" is worth checking against the mask first. The symptom, a stuck ARP, looks like a dead host but it's a routing decision.` },
       ],
@@ -134,7 +134,7 @@ This is why "ping the gateway works but nothing beyond it does" is worth checkin
       blocks: [
         { md: `**AWS VPC.** The default gateway of an instance is the VPC router, the subnet's base + 1 address (\`10.0.0.1\` in \`10.0.0.0/24\`). The subnet-sizing page lists it among the five reserved addresses. The instance ARPs for it like A did for R.
 
-**Kubernetes.** A pod's default route points at an address on its own veth, and which next hop the node uses beyond that depends on the CNI. For Cilium the details live in its datapath, and this chapter does not cover them (not sourced here).
+**Kubernetes.** A pod ARPs for its gateway on its veth, like A did. How the CNI answers that ARP is CNI-specific, and this chapter does not cover it (not sourced here).
 
 **Proxmox.** The \`gateway\` line in \`vmbr0\`'s stanza is the *host's* own default route. A VM uses whatever gateway its own OS is configured with, typically the physical router (general knowledge, not sourced).` },
       ],
@@ -145,7 +145,7 @@ This is why "ping the gateway works but nothing beyond it does" is worth checkin
       blocks: [
         { md: `- The host compares destination and own address under its mask: equal means on-link, so ARP for the destination; otherwise ARP for the gateway.
 - Off-link: frame dst MAC is the gateway's, packet dst IP is still the remote host's.
-- The gateway must sit inside a connected prefix of the host.
+- The next hop is always an address inside a connected prefix of the host.
 - A wrong mask is a wrong decision: a /16 that is too wide ARPs for hosts that aren't on the segment.` },
       ],
     },
