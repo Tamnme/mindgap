@@ -120,3 +120,74 @@ test('routes: mount runs against a fake DOM and renders winner + verdict', () =>
     w.destroy();
   } finally { globalThis.document = prev; }
 });
+
+import { clampStep, layoutSteps, validate as validateTimeline, mount as mountTimeline } from '../public/widgets/timeline.js';
+
+const TL = {
+  lanes: ['client', 'server'],
+  scenarios: [
+    { name: 'Open', steps: [{ from: 0, to: 1, label: 'SYN' }, { from: 1, to: 0, label: 'SYN/ACK' }, { from: 0, to: 1, label: 'ACK', note: 'connected' }] },
+    { name: 'Drop', steps: [{ from: 0, to: 1, label: 'SYN', drop: true, at: '0 s', note: 'lost' }] },
+  ],
+};
+
+test('timeline: clampStep', () => {
+  assert.equal(clampStep(-1, 3), 0);
+  assert.equal(clampStep(0, 3), 0);
+  assert.equal(clampStep(2, 3), 2);
+  assert.equal(clampStep(9, 3), 2);
+  assert.equal(clampStep(5, 0), 0);
+});
+
+test('timeline: layoutSteps puts drop end between lanes, y increases', () => {
+  const L = layoutSteps([{ from: 0, to: 1 }, { from: 1, to: 0, drop: true }, { from: 0, to: 1, drop: true }], 480);
+  assert.equal(L.length, 3);
+  assert.equal(L[0].dropX, undefined);
+  assert.ok(L[0].x1 < L[0].x2);
+  const lo = Math.min(L[2].x1, L[2].x2), hi = Math.max(L[2].x1, L[2].x2);
+  assert.ok(L[2].dropX > lo && L[2].dropX < hi);
+  assert.ok(L[1].dropX > lo && L[1].dropX < hi);
+  assert.ok(L[0].y < L[1].y && L[1].y < L[2].y);
+});
+
+test('timeline: validate', () => {
+  assert.deepEqual(validateTimeline(TL), []);
+  assert.ok(validateTimeline({ ...TL, lanes: ['a'] }).length);
+  assert.ok(validateTimeline({ ...TL, scenarios: [] }).length);
+  assert.ok(validateTimeline({ ...TL, scenarios: [{ name: 'x', steps: [{ from: 0, to: 5, label: 'l' }] }] }).length);
+  assert.ok(validateTimeline({ ...TL, scenarios: [{ name: 'x', steps: [{ from: 0, to: 0, label: 'l' }] }] }).length);
+  assert.ok(validateTimeline({ ...TL, scenarios: [{ name: 'x', steps: [{ from: 0, to: 1 }] }] }).length);
+});
+
+test('timeline: mount in fake DOM, Next updates counter + note, remount after destroy', () => {
+  const mk = (tag) => ({ tag, children: [], attrs: {}, listeners: {}, textContent: '', className: '',
+    classList: { toggle() {} },
+    append(...k) { this.children.push(...k); },
+    replaceChildren(...k) { this.children = k; },
+    setAttribute(k, v) { this.attrs[k] = v; },
+    addEventListener(t, f) { this.listeners[t] = f; },
+    remove() {} });
+  const prev = globalThis.document;
+  globalThis.document = { createElement: mk, createElementNS: (_ns, t) => mk(t) };
+  const flat = (e) => [e, ...e.children.flatMap(flat)];
+  try {
+    for (let round = 0; round < 2; round++) {
+      const host = mk('div');
+      const w = mountTimeline(host, TL);
+      const q = (cls) => flat(host).find((e) => e.className === cls);
+      assert.equal(q('tl-count').textContent, '1 / 3');
+      q('tl-next').listeners.click();
+      assert.equal(q('tl-count').textContent, '2 / 3');
+      q('tl-next').listeners.click();
+      assert.equal(q('tl-count').textContent, '3 / 3');
+      assert.equal(q('tl-note').textContent, 'connected');
+      q('tl-next').listeners.click(); // clamped
+      assert.equal(q('tl-count').textContent, '3 / 3');
+      flat(host).filter((e) => e.className === 'tl-scn')[1].listeners.click();
+      assert.equal(q('tl-count').textContent, '1 / 1');
+      assert.equal(q('tl-note').textContent, 'lost');
+      assert.ok(flat(host).some((e) => e.textContent === 'dropped'));
+      w.destroy();
+    }
+  } finally { globalThis.document = prev; }
+});

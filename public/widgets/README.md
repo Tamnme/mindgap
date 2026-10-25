@@ -33,3 +33,14 @@ bad addresses, and two routes with the same network and length (ambiguous tie). 
 ```json
 { "id": "route-lpm", "kind": "routes", "title": "Which route wins?", "routes": [{ "prefix": "10.0.0.0/16", "target": "local" }, { "prefix": "0.0.0.0/0", "target": "igw-1" }], "dest": "10.0.3.4", "presets": ["10.0.3.4", "8.8.8.8"], "caption": "Subnet route table" }
 ```
+
+## timeline
+
+Sequence-diagram stepper. `lanes` are vertical lifelines (name's first word is line 1, the rest wraps to line 2);
+each scenario is a list of steps (`from`/`to` are lane indexes, `label` required, `at` time and `note` optional).
+Prev/Next reveal arrows up to the current step and show its `note`. `drop: true` stops the arrow halfway with an ✕ and "dropped".
+`validate` rejects fewer than 2 lanes, bad indexes, same-lane steps and missing labels.
+
+```json
+{ "id": "tcp-open", "kind": "timeline", "title": "Handshake outcomes", "lanes": ["client 10.0.0.1:51514", "server 10.0.0.2:80"], "scenarios": [{ "name": "Port open", "steps": [{ "from": 0, "to": 1, "label": "SYN seq=100" }, { "from": 1, "to": 0, "label": "SYN/ACK seq=300 ack=101" }, { "from": 0, "to": 1, "label": "ACK ack=301", "note": "connected after 1 RTT" }] }, { "name": "Firewall drops", "steps": [{ "from": 0, "to": 1, "label": "SYN", "drop": true, "at": "0 s" }, { "from": 0, "to": 1, "label": "SYN (retry)", "drop": true, "at": "+1 s", "note": "…until the timeout" }] }] }
+```

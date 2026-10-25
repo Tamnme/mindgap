@@ -413,3 +413,26 @@ body.has-focus::after { content: ""; position: fixed; inset: 0; background: rgba
 @media (max-width: 520px) { .nbroutes .rt-table { font-size: 13px; } .nbroutes th, .nbroutes td { padding: 5px 8px; } }
 .widget.focused .nbroutes { max-width: min(860px, 100%); margin: 0 auto; font-size: 16px; }
 .widget.focused .nbroutes .rt-table { font-size: 16px; }
+.nbtimeline { padding: 14px 16px; display: grid; gap: 10px; }
+.nbtimeline .tl-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.nbtimeline button { font: inherit; font-size: 14px; padding: 4px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--fg); cursor: pointer; }
+.nbtimeline button:hover:not(:disabled) { border-color: var(--accent); }
+.nbtimeline button:disabled { opacity: .5; cursor: default; }
+.nbtimeline .tl-scn[aria-pressed=true] { border-color: var(--accent); background: var(--tutor-bg); font-weight: 700; }
+.nbtimeline .tl-count { font-family: ui-monospace, monospace; font-size: 14px; color: var(--muted); }
+.nbtimeline .tl-svg { display: block; width: 100%; height: auto; max-width: 100%; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); font-family: ui-monospace, monospace; }
+.nbtimeline .tl-lane { font-size: 13px; font-weight: 700; fill: var(--fg); }
+.nbtimeline .tl-lane2 { font-size: 11px; fill: var(--muted); }
+.nbtimeline .tl-line { stroke: var(--border); stroke-width: 2; }
+.nbtimeline .tl-shaft { stroke: var(--muted); stroke-width: 2; }
+.nbtimeline .tl-head { fill: var(--muted); }
+.nbtimeline .tl-label { font-size: 12px; fill: var(--fg); }
+.nbtimeline .tl-at { font-size: 11px; fill: var(--muted); }
+.nbtimeline .tl-x { stroke: #c92a2a; stroke-width: 2.5; fill: none; }
+.nbtimeline .tl-drop { font-size: 11px; font-weight: 700; fill: #c92a2a; }
+.nbtimeline .tl-cur .tl-shaft { stroke: var(--accent); stroke-width: 3; }
+.nbtimeline .tl-cur .tl-head { fill: var(--accent); }
+.nbtimeline .tl-cur .tl-label { font-weight: 700; }
+.nbtimeline .tl-note { margin: 0; min-height: 1.4em; font-size: 14px; }
+@media (max-width: 520px) { .nbtimeline { padding: 12px; } }
+.widget.focused .nbtimeline { max-width: min(860px, 100%); margin: 0 auto; }
