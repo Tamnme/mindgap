@@ -26,12 +26,22 @@ for (const id of ids) {
       assert.equal(new Set(labels).size, labels.length, `${c.id} receipt labels are distinct: ${JSON.stringify(labels)}`);
       for (const l of labels) {
         assert.ok(/[A-Za-z]{3,}/.test(l.replace(/(^|\s)-\w+/g, '')) && !/^(yes|no)$/i.test(l.trim()), `${c.id} receipt label must carry a belief, not a bare value: ${JSON.stringify(l)}`);
-        assert.ok(!/^(zero|one|two|three|four|five|six|seven|eight|nine|ten|none|all|both|neither|some|any|all of them|some of them|all three|all four)$/i.test(l.trim()), `${c.id} receipt label is a bare number word or quantifier; put the belief in the label: ${JSON.stringify(l)}`);
+        assert.ok(!/^(zero|one|two|three|four|five|six|seven|eight|nine|ten|none|all|both|neither|some|any|all of them|some of them|all three|all four|none of them|only one)$/i.test(l.trim()), `${c.id} receipt label is a bare number word or quantifier; put the belief in the label: ${JSON.stringify(l)}`);
       }
     }
-    const FIRST_PERSON = /(?<![-/\w])(I|I'm|I've|I'd)(?![/\w])|\b(my|me)\b/g; // I/G, -I and quoted speech are not first person
-    const prose = [...blocks.filter((b) => b.md).map((b) => b.md), ...cps.map((c) => c.why), ...blocks.filter((b) => b.lab).map((b) => b.lab.explain)];
-    for (const t of prose) assert.ok(!new RegExp(FIRST_PERSON.source, 'i').test(t.replace(/`[^`]*`|"[^"]*"/g, '')), `first person in chapter text: ${t.match(new RegExp(FIRST_PERSON.source, 'i'))?.[0]} in "${t.slice(0, 60)}"`);
+    // I/G, -I and quoted speech are not first person; "I" is case-sensitive so "i.e." passes
+    const FP_I = /(?<![-/\w])(I|I'm|I've|I'd)(?![/\w])/;
+    const FP_REST = /\b(my|me|we|we'll|we're|we've|our|ours)\b/i;
+    const prose = [
+      ...blocks.filter((b) => b.md).map((b) => b.md), ...cps.map((c) => c.why), ...blocks.filter((b) => b.lab).map((b) => b.lab.explain),
+      ch.lede, ...ch.sections.map((s) => s.title), ...cps.flatMap((c) => [c.prompt, ...c.options.map(String)]),
+      ...blocks.filter((b) => b.widget).flatMap((b) => [b.widget.hint, b.widget.takeaway]),
+    ].filter(Boolean);
+    for (const t of prose) {
+      const bare = t.replace(/`[^`]*`|"[^"]*"/g, '');
+      const m = bare.match(FP_I) || bare.match(FP_REST);
+      assert.ok(!m, `first person in chapter text: ${m?.[0]} in "${t.slice(0, 60)}"`);
+    }
     for (const t of prose) assert.ok(!/\bfetch(ed|ing)?\b/i.test(t), `learner text mentions fetching: "${t.match(/.{0,40}\bfetch(ed|ing)?\b.{0,20}/i)?.[0]}"`);
     for (const b of blocks) {
       const kinds = ['md', 'checkpoint', 'widget', 'lab'].filter((k) => b[k]);
