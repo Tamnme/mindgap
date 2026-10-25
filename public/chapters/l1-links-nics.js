@@ -176,7 +176,7 @@ ip -o link | awk -F": " -v i=$P "\\$1==i{print \\"in this namespace, that is: \\
       blocks: [
         { md: `**Kubernetes / Cilium.** Per the Cilium routing documentation, a pod's namespace holds \`eth0\`, one end of a veth pair, and the other end is \`lxcXXXXXX\` in the host namespace. That is the first hop you just proved, and a good place to \`tcpdump\` when a pod's traffic goes missing.
 
-**Proxmox.** \`vmbr0\` is a Linux bridge, usually attached to the first physical NIC (the docs' example uses \`eno1\`). The physical NIC is one port on that bridge. Each VM NIC shows up on the host as a tap device on a bridge port, the VM equivalent of a veth end (the tap detail is standard KVM behaviour; the page I read doesn't spell it out). The network sees one MAC per VM through that single cable, as the Proxmox docs note.
+**Proxmox.** \`vmbr0\` is a Linux bridge, usually attached to the first physical NIC (the docs' example uses \`eno1\`). The physical NIC is one port on that bridge. Each VM NIC shows up on the host as a tap device on a bridge port, the VM equivalent of a veth end (the tap detail is standard KVM behaviour; the docs page for it doesn't spell it out). The network sees one MAC per VM through that single cable, as the Proxmox docs note.
 
 **AWS.** An ENI is a logical component that represents a virtual network card, with a MAC address of its own. AWS doesn't publish the datapath behind it, so there is no cable to inspect and no \`NO-CARRIER\` to read. The safe mental model is that L1 is not yours to debug in a VPC: if packets stop, look at addresses, routes and filters.` },
       ],

@@ -19,7 +19,7 @@ export default {
       id: 'implied',
       title: 'The router you never see',
       blocks: [
-        { md: `Chapter 3.2 gave an instance's first decision: destination on my prefix, or send it to the default gateway. In a VPC, that gateway is the **VPC router**, and AWS puts it at a fixed address. The subnet-sizing page lists the reserved addresses of a \`10.0.0.0/24\` subnet, and \`10.0.0.1\` is "Reserved by AWS for the VPC router": the subnet's base address plus one. In a subnet \`10.0.1.0/24\` it is \`10.0.1.1\`. (The same page reserves base+2 for the DNS server and base+3 for future use.)
+        { md: `Chapter 3.2 gave an instance's first decision: destination on its own prefix, or send it to the default gateway. In a VPC, that gateway is the **VPC router**, and AWS puts it at a fixed address. The subnet-sizing page lists the reserved addresses of a \`10.0.0.0/24\` subnet, and \`10.0.0.1\` is "Reserved by AWS for the VPC router": the subnet's base address plus one. In a subnet \`10.0.1.0/24\` it is \`10.0.1.1\`. (The same page reserves base+2 for the DNS server and base+3 for future use.)
 
 You cannot SSH to it, give it a second address or read its table with \`ip route\`. AWS doesn't publish how it is built, so treat it as a function: it applies a route table to each packet. The table is the only thing you configure.
 
@@ -136,7 +136,7 @@ Two things the docs call out:
 
 A different way to say "everything", from the same page: replace the local route's target with the appliance's interface, so that all traffic for the VPC CIDR, including subnets you add later, goes through it.
 
-**When this arrived.** The AWS News Blog post "New – VPC Ingress Routing", dated 3 December 2019, announced routing for inbound traffic through an appliance: a route table associated with the internet gateway whose row sends traffic to the appliance's network interface. The fetched User Guide page for the subnet-table form I quoted carries no date, and a dated announcement for that form returned a 404 when I tried it, so treat 2019 as the date for the gateway-table form only.` },
+**When this arrived.** The AWS News Blog post "New – VPC Ingress Routing", dated 3 December 2019, announced routing for inbound traffic through an appliance: a route table associated with the internet gateway whose row sends traffic to the appliance's network interface. The fetched User Guide page for the subnet-table form quoted here carries no date, and a dated announcement for that form returned a 404 when fetched, so treat 2019 as the date for the gateway-table form only.` },
         {
           widget: {
             id: 'w-aws-rt',
