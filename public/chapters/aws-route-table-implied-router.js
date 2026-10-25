@@ -21,7 +21,7 @@ export default {
       blocks: [
         { md: `Chapter 3.2 gave an instance's first decision: destination on my prefix, or send it to the default gateway. In a VPC, that gateway is the **VPC router**, and AWS puts it at a fixed address. The subnet-sizing page lists the reserved addresses of a \`10.0.0.0/24\` subnet, and \`10.0.0.1\` is "Reserved by AWS for the VPC router": the subnet's base address plus one. In a subnet \`10.0.1.0/24\` it is \`10.0.1.1\`. (The same page reserves base+2 for the DNS server and base+3 for future use.)
 
-You cannot SSH to it, give it a second address or read its table with \`ip route\`. AWS doesn't publish how it is built, so treat it as a function: it takes each packet leaving a subnet and applies *that subnet's route table*. The table is the only thing you configure.
+You cannot SSH to it, give it a second address or read its table with \`ip route\`. AWS doesn't publish how it is built, so treat it as a function: it applies a route table to each packet. The table is the only thing you configure.
 
 Set up a concrete VPC: CIDR \`10.0.0.0/16\`, with subnets \`10.0.1.0/24\` (call it **app**) and \`10.0.2.0/24\` (**db**). You edit app's route table and add exactly one row yourself:
 
@@ -86,7 +86,7 @@ An instance in **db** now sends a packet to \`10.1.4.4\`, an address in the peer
             why: "A packet is read against the table associated with the subnet it leaves. RT-db has no 10.1.0.0/16 row, so only its default row matches and the packet goes to the NAT gateway, not the peering.",
           },
         },
-        { md: `A route table is a separate object from a subnet, and a subnet gets its table by **association**. The subnet-route-tables page says each subnet must be associated with a route table: explicitly with a custom one, or with the main route table, either explicitly or implicitly. A subnet you never associated is implicitly associated with the main route table (WorkWithRouteTables page). The docs speak of "the" route table of a subnet, in the singular; I found no sentence stating a limit, so read "one at a time" as the model the docs use rather than a quoted rule.
+        { md: `A route table is a separate object from a subnet, and a subnet gets its table by **association**. The subnet-route-tables page says each subnet must be associated with a route table: explicitly with a custom one, or with the main route table, either explicitly or implicitly. A subnet you never associated is implicitly associated with the main route table (WorkWithRouteTables page). The page states the limit outright: "A subnet can only be associated with one route table at a time, but you can associate multiple subnets with the same subnet route table." The router applies *that* table to each packet leaving the subnet.
 
 The route table is read for traffic *leaving* the subnet it is associated with. A row added to \`RT-app\` does nothing for db. A familiar symptom after setting up a peering is "it works from the instance I tested, not from the other subnet": the row exists, but in one table (general experience, not from the docs).
 
