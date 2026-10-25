@@ -94,7 +94,7 @@ Now turn on \`proxy_arp\` on the router's \`eth0\`, flush A's table, and ping ag
               'B\'s own MAC: B answers once it receives the request',
               'Nothing: the request still gets no answer, because B is on another link',
               'The router\'s MAC: the router answers for an address it can reach',
-              'ff:ff:ff:ff:ff:ff: the router has no MAC for B, so A falls back to broadcast',
+              'Broadcast address (ff:ff:ff:ff:ff:ff): the router has no MAC for B, so A falls back to broadcast',
             ],
             key: 2,
             why: 'B is not on A\'s link, so B can\'t answer. With proxy_arp, the router replies with its own MAC. A then sends its frames for 10.29.1.2 to the router, which forwards them.',

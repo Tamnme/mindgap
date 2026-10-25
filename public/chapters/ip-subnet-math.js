@@ -59,9 +59,9 @@ Zero the host bits and you get the **network address**, \`172.16.5.192\`. Set th
             prompt: 'After `ip addr add 10.31.0.77/26 dev d0` and no other command, what is in the routing table?',
             options: [
               'Nothing: an address adds no route, so you add one yourself',
-              '10.31.0.77/32: a host route for the address itself',
-              '10.31.0.64/26: the whole subnet, on-link, added by the kernel',
-              '10.31.0.0/26: the block that starts at the first octets you typed',
+              'Host route (10.31.0.77/32): a host route for the address itself',
+              'Connected subnet (10.31.0.64/26): the whole subnet, on-link, added by the kernel',
+              'Rounded-down block (10.31.0.0/26): the block that starts at the first octets you typed',
             ],
             key: 2,
             why: 'The /26 keeps 2 bits of the last octet. 77 = 01001101, so the block starts at 64 (01000000). The kernel installs that prefix as a connected route; nobody typed it.',
