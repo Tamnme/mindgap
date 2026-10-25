@@ -58,6 +58,7 @@ A router is a different box from a switch (chapter 3.3 covers that). For now, tr
           lab: {
             explain: 'Build br24a + br24b joined by router n24r (ip_forward=1), then ping across it (expect 1 received)',
             cmd: `for n in n24a n24b n24c n24r; do ip netns del $n 2>/dev/null; done
+for l in v24a v24b v24c v24ra v24rb x24a; do ip link del $l 2>/dev/null; done; sleep 0.5
 for b in br24a br24b; do ip link del $b 2>/dev/null; ip link add $b type bridge; ip link set $b up; done
 for n in n24a n24b n24c n24r; do ip netns add $n
   ip netns exec $n sysctl -qw net.ipv6.conf.all.disable_ipv6=1 net.ipv6.conf.default.disable_ipv6=1; done
@@ -99,9 +100,9 @@ ip netns exec n24a ping -c1 -W1 -q 10.24.2.2 | grep -o '[0-9]* received'`,
         },
         { md: `n24c saw the request. So did the router's \`ethA\`, which is the router's leg on br24a. The router's \`ethB\` and n24b saw **0**. The router was no more special than n24c: it was one more port on the bridge and it got a copy because it was there.
 
-The captures print only requests. The answer is a unicast reply, which the switch can send to one port because the request taught it n24a's MAC.
+The captures print only requests. The answer is a unicast reply. By the learning rule from chapter 2.2 the switch can send it out one port, because the request taught it n24a's MAC; this lab doesn't capture replies.
 
-Now cross the router. n24a pings n24b at 10.24.2.2. n24b isn't in n24a's subnet, so n24a sends the packet to its default gateway, and before that it has to ARP for the *gateway's* MAC. Then the router has to find n24b's MAC on the other side.` },
+Now cross the router. n24a pings n24b at 10.24.2.2. n24b isn't in n24a's subnet, so n24a sends the packet to its default gateway, and before that it has to ARP for the *gateway's* MAC.` },
         {
           checkpoint: {
             id: 'c2',
@@ -127,11 +128,15 @@ Now cross the router. n24a pings n24b at 10.24.2.2. n24b isn't in n24a's subnet,
 > [!IMPORTANT]
 > A broadcast reaches every port of its L2 segment and stops at the router's interface. The router is a receiver, never a relay. To get to the other side, a router writes a new frame.
 
-That's the rule in [RFC 919](https://datatracker.ietf.org/doc/html/rfc919): a gateway that gets a broadcast on the network it's addressed to does not forward it, but counts itself as one of the destinations. The same RFC says 255.255.255.255 is a local-network broadcast and must not be forwarded.
+That's the rule in [RFC 919](https://datatracker.ietf.org/doc/html/rfc919): a gateway that gets a broadcast on the network it's addressed to *should not* forward it, but should consider itself one of the destinations (the RFC's own example is a routing-table update). The same RFC says 255.255.255.255 is a local-network broadcast and must not be forwarded.
 
 Why does \"to the router\" feel right? Because the router is the thing every host is configured to talk to when the destination isn't local, so it looks like the destination of anything unusual. But a broadcast isn't addressed to the gateway. Its destination is the all-ones MAC, which means \"every port\", and the gateway's leg is one of the ports. The default-gateway setting only matters for IP packets that leave the subnet; the ARP request in lab 2 was for an on-link host and never needed the gateway at all.
 
 There is also a broadcast at the IP layer. 255.255.255.255 means \"everyone on this local network\", and RFC 919 says it must not be forwarded. Hosts put it inside a frame addressed to \`ff:ff:ff:ff:ff:ff\`, so it takes the same flood path. DHCP discovery works this way: a host with no address yet can only shout.
+
+A broadcast *can* be meant for the router. A host broadcasting a routing update on the segment is addressing every router on it, and RFC 919 says the gateway should treat itself as a destination of that datagram. The router reads it, as any receiver would. What it does not do is copy it to \`ethB\`: whatever it needs to say on the other side, it says in a frame of its own.
+
+The RFC also covers a *directed* broadcast, one aimed at a different network's broadcast address. Such a datagram is routed like any other packet until it reaches a gateway attached to that network, and only that last gateway turns it into a link-layer broadcast. Whether a particular router does so today is a configuration choice that this chapter does not test.
 
 So the router *is* where a broadcast ends, and that's the true kernel of "goes to the router". The router is one of the receivers, and the segment ends there. The set of ports a broadcast reaches is the **broadcast domain**.
 
@@ -169,7 +174,7 @@ ip link del x24a; rm -rf $d`,
         },
         { md: `n24b received n24a's request for a host in a different IP subnet. Nothing at layer 2 looks at IP addresses. What decided who got the frame was the cabling, and that is why VLANs (next chapters) are a *layer 2* tool for splitting a broadcast domain: they change which ports a flood may reach, without touching IPs.
 
-Every broadcast interrupts every host in the domain, because each NIC has to hand it up to the kernel to decide whether it cares. This also explains why big flat networks hurt. Every host receives every broadcast from every other host, so ARP, DHCP discovery and the rest add up as the segment grows.` },
+Every broadcast interrupts every host in the domain, because in general each NIC hands it up to the kernel to decide whether it cares. This also explains why big flat networks hurt. Every host receives every broadcast from every other host, so ARP, DHCP discovery and the rest add up as the segment grows.` },
       ],
     },
     {
@@ -188,7 +193,7 @@ Every broadcast interrupts every host in the domain, because each NIC has to han
       title: 'What to keep',
       blocks: [
         { md: `- A broadcast (\`ff:ff:ff:ff:ff:ff\`) is flooded to every port of its L2 segment. A switch never has an entry for it.
-- A router's interface is one of those ports. The router receives the broadcast as a destination and does not forward it. To reach the other side it sends a new frame.
+- A router's interface is one of those ports. The router receives the broadcast as a destination and should not forward it (RFC 919). To reach the other side it sends a new frame.
 - A broadcast domain is defined by L2 connectivity (cables, bridges, VLANs), not by an IP subnet.
 - A VPC doesn't support broadcast, so a subnet there is an address range, not a broadcast domain.` },
       ],
