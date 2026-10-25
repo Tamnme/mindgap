@@ -58,3 +58,39 @@ test('validate', () => {
   assert.ok(validate({ ip: 'x', prefix: 26 }).length);
   assert.ok(validate({ ip: '10.0.0.1', prefix: 40 }).length);
 });
+
+import { parseCidr, lpm, validate as validateRoutes } from '../public/widgets/routes.js';
+
+const R = (...p) => p.map((prefix) => ({ prefix, target: 't' }));
+const win = (rs, d) => lpm(rs, parseIPv4(d));
+
+test('routes: parseCidr', () => {
+  assert.deepEqual(parseCidr('10.0.0.0/16'), { net: 0x0a000000, len: 16 });
+  assert.deepEqual(parseCidr('10.0.3.4/16'), { net: 0x0a000000, len: 16 });
+  assert.deepEqual(parseCidr('0.0.0.0/0'), { net: 0, len: 0 });
+  for (const bad of ['10.0.0.0', '10.0.0.0/33', '10.0.0.0/-1', '10.0.0/8', '10.0.0.0/x', '']) assert.equal(parseCidr(bad), null, bad);
+});
+
+test('routes: lpm overlapping /8 /16 /24 /32', () => {
+  const rs = R('10.0.0.0/8', '10.0.0.0/16', '10.0.3.0/24', '10.0.3.4/32');
+  assert.equal(win(rs, '10.0.3.4').winner, 3);
+  assert.equal(win(rs, '10.0.3.4').matches.length, 4);
+  assert.equal(win(rs, '10.0.3.5').winner, 2);
+  assert.equal(win(rs, '10.0.9.9').winner, 1);
+  assert.equal(win(rs, '10.9.9.9').winner, 0);
+});
+
+test('routes: default only, no match, /32 beats /24', () => {
+  assert.deepEqual(win(R('0.0.0.0/0'), '8.8.8.8'), { matches: [{ index: 0, len: 0 }], winner: 0 });
+  assert.deepEqual(win(R('10.0.0.0/16'), '8.8.8.8'), { matches: [], winner: null });
+  assert.equal(win(R('10.0.3.0/24', '10.0.3.4/32'), '10.0.3.4').winner, 1);
+});
+
+test('routes: validate', () => {
+  const ok = { routes: R('10.0.0.0/16', '0.0.0.0/0'), dest: '10.0.3.4' };
+  assert.deepEqual(validateRoutes(ok), []);
+  assert.ok(validateRoutes({ ...ok, routes: R('10.0.0.0/16', '10.0.1.2/16') }).length);
+  assert.ok(validateRoutes({ ...ok, routes: R('10.0.0.0/33') }).length);
+  assert.ok(validateRoutes({ ...ok, dest: 'nope' }).length);
+  assert.ok(validateRoutes({ ...ok, presets: ['1.2.3'] }).length);
+});

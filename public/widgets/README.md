@@ -23,3 +23,13 @@ Subnet calculator: IP text input, prefix slider, mask/network/broadcast/usable r
 ```json
 { "id": "subnet-calc", "kind": "subnet", "title": "Carve a subnet", "ip": "10.0.1.77", "prefix": 26, "minPrefix": 8, "maxPrefix": 32, "aws": false }
 ```
+
+## routes
+
+Route-table decision (longest-prefix match). Destination input plus preset buttons; each row shows
+"matches /N", "no match" or "winner", and a verdict line names the target. `validate` rejects bad prefixes,
+bad addresses, and two routes with the same network and length (ambiguous tie). `caption` and `presets` are optional.
+
+```json
+{ "id": "route-lpm", "kind": "routes", "title": "Which route wins?", "routes": [{ "prefix": "10.0.0.0/16", "target": "local" }, { "prefix": "0.0.0.0/0", "target": "igw-1" }], "dest": "10.0.3.4", "presets": ["10.0.3.4", "8.8.8.8"], "caption": "Subnet route table" }
+```
