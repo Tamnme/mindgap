@@ -6,7 +6,7 @@
 //   https://man7.org/linux/man-pages/man8/ip-link.8.html (the ip link tooling used in the labs)
 // Hedged, not sourced: the field layout, EtherType values, I/G and U/L bit meanings and the 4-byte FCS come from IEEE 802 / 802.3
 // as general knowledge (the IEEE page is a paywalled landing page, not read); the observed tcpdump lengths agree (IPv4 ping = 14 + 84 = 98).
-// Hedged: how a real NIC filters by destination MAC, and what AWS or Cilium overlays put on the wire between nodes.
+// Hedged: the NIC filtering rule (general knowledge; veth drop point not captured on b), and what AWS or Cilium overlays put on the wire between nodes.
 
 const NEED_N21 = `ip netns list | grep -q n21a || { echo "Run the first lab first."; exit 1; }`;
 
@@ -43,7 +43,7 @@ A real wire frame also ends with a 4-byte checksum, the FCS. The NIC checks it a
 
 A MAC address names an interface on this segment. There is no \`10.x.x.x\` anywhere in those 14 bytes, and a MAC is only meaningful on the link it was used on.
 
-Now watch one. hA and hB sit on a veth pair with addresses 10.21.0.1 and .2, and a pings b once. The first thing a does is ARP: it knows 10.21.0.2 but not which MAC owns it. Think about what destination MAC that first frame can carry.` },
+Now watch one. a and b sit on a veth pair with addresses 10.21.0.1 and .2, and a pings b once. The first thing a does is ARP: it knows 10.21.0.2 but not which MAC owns it. Think about what destination MAC that first frame can carry.` },
         {
           checkpoint: {
             id: 'c1',
@@ -80,7 +80,7 @@ The second is b's reply: source b's MAC, destination a's MAC, still ARP. This re
 
 Now a knows b's MAC, so frames three and four are \`ethertype IPv4 (0x0800)\`, with b's MAC as destination, then a's. The ping itself is the payload. The same two machines used three different destination-MAC choices in four frames, depending on what the sender knew.
 
-The \`length\` is 98 for the ping and 42 for ARP. 98 is 14 bytes of Ethernet header plus the 84-byte IP packet. There's no room for a 4-byte FCS, which confirms \`tcpdump\` never saw it.
+The \`length\` is 98 for the ping and 42 for ARP. 98 is 14 bytes of Ethernet header plus the 84-byte IP packet. So \`tcpdump\`'s \`length\` counts the 14-byte header plus the IP packet. (A veth carries no FCS at all; on a physical NIC the hardware strips it, as above.)
 
 > [!IMPORTANT]
 > The destination MAC is chosen by what the sender knows: unknown means broadcast \`ff:ff:ff:ff:ff:ff\`, known means that interface's MAC. The EtherType says what is inside.` },
@@ -92,13 +92,13 @@ The \`length\` is 98 for the ping and 42 for ARP. 98 is 14 bytes of Ethernet hea
       blocks: [
         { md: `A MAC is 48 bits, written as six hex bytes. The structure is in the first byte and the first three bytes together:
 
-- **First 3 bytes (the OUI):** the vendor prefix, handed out by the IEEE. That is how \`tcpdump\` or \`ip neigh\` tools can say which company made a NIC.
+- **First 3 bytes (the OUI):** the vendor prefix, handed out by the IEEE. Tools like Wireshark use it to say which company made a NIC.
 - **Bit 0 of the first byte, the I/G bit:** 0 means an individual (unicast) address, 1 means a group address. Broadcast \`ff:ff:ff:ff:ff:ff\` is the all-ones group address, and multicast MACs also have this bit set.
 - **Bit 1 of the first byte, the U/L bit:** 0 means universally administered (a vendor burned it in from their OUI), 1 means locally administered (someone, or some software, assigned it).
 
-That makes the first byte worth reading. \`0xb2\` is \`1011 0010\`: bit 0 is 0, bit 1 is 1.
+That makes the first byte worth reading. For example, \`0x3c\` is \`0011 1100\`: bit 0 is 0 (unicast), bit 1 is 0 (universal).
 
-A veth end has no vendor and no factory. The kernel generates a MAC for it when the interface is created.` },
+A veth end is not a factory part. The kernel generates a MAC for it when the interface is created.` },
         {
           checkpoint: {
             id: 'c2',
@@ -134,9 +134,7 @@ In practice, the U/L bit is a fast way to tell virtual from physical when readin
       id: 'filter',
       title: 'Who accepts a frame',
       blocks: [
-        { md: `Because the destination comes first, the NIC can decide what to do with a frame immediately. As far as I know, a NIC normally accepts a frame whose destination is its own MAC, a broadcast, or a multicast group it has joined, and discards the rest. **Promiscuous mode** turns that filter off and hands everything to the OS. \`tcpdump\` enables it by default, which is the same detail behind the flooding demo in chapter 2.2.
-
-A veth has no hardware, but the receive path behaves the same way from outside, and you can test it with raw frames. The lab sends three crafted ICMP echo requests from a to b's IP 10.21.0.2. Every frame has the right IP addresses, so the only difference is the destination MAC: b's real MAC, a made-up MAC \`02:00:00:00:00:99\`, and broadcast. A \`tcpdump\` on a counts the echo replies.` },
+        { md: `Because the destination comes first, a receiver can decide what to do with a frame immediately. You can test that with raw frames on the veth. The lab sends three crafted ICMP echo requests from a to b's IP 10.21.0.2. Every frame has the right IP addresses, so the only difference is the destination MAC: b's real MAC, a made-up MAC \`02:00:00:00:00:99\`, and broadcast. A \`tcpdump\` on a counts the echo replies.` },
         {
           checkpoint: {
             id: 'c3',
@@ -180,10 +178,10 @@ done`,
         },
         { md: `The output prints a \`reply:\` line *before* the \`sent …\` line of the frame that caused it, because the capture finishes first. Reading them in pairs: b's real MAC gets a reply. The made-up MAC \`02:00:00:00:00:99\` gets an empty \`reply:\` line, after the 2 s timeout. Broadcast gets a reply again, a little later.
 
-The made-up-MAC frame did arrive on b's interface. You could see it with \`tcpdump\` there. What it didn't do is reach the IP layer, because the destination MAC wasn't b's. The kernel handled the failure silently, with no ICMP error and no log line.
+That is the filtering rule. A receiver accepts a frame whose destination is its own MAC, the broadcast address, or a multicast group it has joined, and ignores the rest. On a physical NIC that filter is in hardware, and **promiscuous mode** turns it off so the OS sees everything. \`tcpdump\` enables promiscuous mode by default, the same detail behind the flooding demo in chapter 2.2. A veth has no hardware filter, so on Linux the frame is handed up marked as addressed to someone else and discarded before IP local delivery (I haven't captured on b in this lab to show the frame arriving). What a sees is silence: no reply, and no error came back.
 
 > [!IMPORTANT]
-> A frame for someone else's MAC is dropped at the interface, before IP looks at it. A correct IP address with the wrong MAC gets silence.
+> A frame for someone else's MAC is discarded before it reaches the IP stack's local delivery. A correct IP address with the wrong MAC gets silence.
 
 Routers are the other half of the story. When a packet crosses a router, the router builds a new frame: new source MAC (its own egress interface), new destination MAC (the next hop), same IP packet. Every hop rewrites both MACs, and none of them ever appear end to end. Chapter 3.2 builds on this.` },
       ],
@@ -192,7 +190,7 @@ Routers are the other half of the story. When a packet crosses a router, the rou
       id: 'twins',
       title: "Where you've met this",
       blocks: [
-        { md: `**AWS.** Every ENI has a MAC address, per the EC2 documentation. Inside an instance, \`tcpdump -e\` shows the MAC your instance uses as the next hop for off-subnet traffic. Expect one gateway MAC for everything outside the subnet. AWS doesn't publish how that MAC is produced or what it belongs to, so treat it as an address you can read, not one you can reason about.
+        { md: `**AWS.** Every ENI has a MAC address, per the EC2 documentation. Inside an instance, \`tcpdump -e\` shows the MAC your instance uses as the next hop for off-subnet traffic. You'll likely see the same MAC for everything outside the subnet, but AWS doesn't document that or what the MAC belongs to, so check with \`tcpdump -e\` rather than assuming.
 
 **Kubernetes / Cilium.** A pod has a MAC on its veth end (you just saw how that MAC is made). Which MACs appear on the wire between nodes depends on the CNI mode: in an overlay the whole frame or packet is encapsulated, so the outer MACs are the nodes' and not the pods'. Check with \`tcpdump -e\` on the node's NIC rather than assuming.
 
