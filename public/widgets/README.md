@@ -50,7 +50,7 @@ Prev/Next reveal arrows up to the current step and show its `note`. `drop: true`
 Path-MTU explorer. `hops` are drawn left to right with their MTU; a size slider (`minSize`..`maxSize`, IP bytes) plus
 "DF" and "ICMP blocked" checkboxes pick the fate at the first hop whose MTU is below the size: delivered, fragmented into N
 (IPv4: payload per fragment = floor((mtu-20)/8)*8, N = ceil((size-20)/that)), dropped with ICMP frag-needed, or a silent black hole.
-`validate` rejects fewer than 2 hops, missing names, mtu < 68 and a size outside minSize..maxSize.
+The fragment count is for the first dropping hop only. `validate` rejects fewer than 2 hops, missing names, mtu < 68 and a size outside minSize..maxSize.
 
 ```json
 { "id": "pmtu", "kind": "mtu", "title": "Where does the big packet die?", "hops": [{ "name": "pod", "mtu": 1500 }, { "name": "VXLAN tunnel", "mtu": 1450 }, { "name": "server", "mtu": 1500 }], "size": 1500, "minSize": 576, "maxSize": 9000, "df": true, "icmpBlocked": false }

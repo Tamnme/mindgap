@@ -1,13 +1,14 @@
 // Path-MTU explorer. Pure logic exported for tests; DOM only inside mount().
 export function mtuOutcome(hops, size, df, icmpBlocked) {
   const pathMtu = Math.min(...hops.map((x) => x.mtu));
-  const bad = hops.find((x) => x.mtu < size);
+  const hopIndex = hops.findIndex((x) => x.mtu < size);
+  const bad = hops[hopIndex];
   if (!bad) return { kind: 'delivered', pathMtu };
   if (!df) {
     const per = Math.floor((bad.mtu - 20) / 8) * 8;
-    return { kind: 'fragmented', hop: bad.name, fragments: Math.ceil((size - 20) / per), pathMtu };
+    return { kind: 'fragmented', hop: bad.name, fragments: Math.ceil((size - 20) / per), hopIndex, pathMtu };
   }
-  return { kind: icmpBlocked ? 'black-hole' : 'frag-needed', hop: bad.name, pathMtu };
+  return { kind: icmpBlocked ? 'black-hole' : 'frag-needed', hop: bad.name, hopIndex, hopMtu: bad.mtu, pathMtu };
 }
 
 export function validate(cfg) {
@@ -34,7 +35,7 @@ const h = (tag, cls, text) => {
 function text(o) {
   if (o.kind === 'delivered') return 'delivered';
   if (o.kind === 'fragmented') return `fragmented into ${o.fragments} at ${o.hop}`;
-  if (o.kind === 'frag-needed') return `dropped at ${o.hop}; ICMP frag-needed (type 3 code 4, next-hop MTU ${o.pathMtu}) sent back. The sender lowers its size and retries.`;
+  if (o.kind === 'frag-needed') return `dropped at ${o.hop}; ICMP frag-needed (type 3 code 4, next-hop MTU ${o.hopMtu}) sent back. The sender lowers its size and retries.`;
   return `dropped at ${o.hop} silently. The sender never learns: black hole (small requests work, large responses hang).`;
 }
 
@@ -55,15 +56,16 @@ export function mount(host, cfg) {
   const [icmp, icmpLab] = box('mt-icmp', 'ICMP blocked on the path', cfg.icmpBlocked);
   const cRow = h('div', 'mt-row'); cRow.append(dfLab, icmpLab);
   const path = h('ol', 'mt-path');
+  const note = h('p', 'mt-note', 'IPv4 rules: routers fragment only when DF is off. IPv6 routers never fragment; they always drop and send ICMPv6 Packet Too Big.');
   const out = h('p', 'mt-outcome'); out.setAttribute('aria-live', 'polite');
-  root.append(sRow, cRow, path, out);
+  root.append(sRow, cRow, path, out, note);
 
   function render() {
     const size = Number(slider.value);
     const o = mtuOutcome(cfg.hops, size, df.checked, icmp.checked);
     sVal.textContent = String(size);
-    path.replaceChildren(...cfg.hops.map((x) => {
-      const bad = o.hop === x.name;
+    path.replaceChildren(...cfg.hops.map((x, i) => {
+      const bad = o.hopIndex === i;
       const li = h('li', bad ? 'mt-hop mt-bad' : 'mt-hop');
       li.append(h('span', 'mt-name', x.name), h('span', 'mt-mtu', `MTU ${x.mtu}`));
       if (bad) li.append(h('span', 'mt-flag', o.kind === 'fragmented' ? '⚠ fragments here' : '✕ dropped here'));

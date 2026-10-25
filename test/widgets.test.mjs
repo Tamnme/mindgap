@@ -276,3 +276,10 @@ test('mtu: mount in fake DOM, slider and checkboxes change outcome, remount afte
     }
   } finally { globalThis.document = prev; }
 });
+
+test('mtu: frag-needed reports the first dropping hop MTU, not the path minimum', () => {
+  const hops = [{ name: 'a', mtu: 1500 }, { name: 'b', mtu: 1400 }, { name: 'c', mtu: 1300 }];
+  const o = mtuOutcome(hops, 1500, true, false);
+  assert.equal(o.hopMtu, 1400); assert.equal(o.pathMtu, 1300); assert.equal(o.hopIndex, 1);
+  assert.equal(mtuOutcome(hops, 1500, true, true).hopMtu, 1400);
+});
