@@ -191,3 +191,26 @@ test('timeline: mount in fake DOM, Next updates counter + note, remount after de
     }
   } finally { globalThis.document = prev; }
 });
+
+test('timeline: viewBox width follows host width (1 unit = 1 px) and long labels wrap', () => {
+  const mk = (tag) => ({ tag, children: [], attrs: {}, listeners: {}, textContent: '', className: '',
+    classList: { toggle() {} },
+    append(...k) { this.children.push(...k); },
+    replaceChildren(...k) { this.children = k; },
+    setAttribute(k, v) { this.attrs[k] = v; },
+    addEventListener(t, f) { this.listeners[t] = f; },
+    remove() {} });
+  const prev = globalThis.document;
+  globalThis.document = { createElement: mk, createElementNS: (_ns, t) => mk(t) };
+  const flat = (e) => [e, ...e.children.flatMap(flat)];
+  try {
+    const host = mk('div'); host.clientWidth = 326;
+    const long = { ...TL, scenarios: [{ name: 'L', steps: [{ from: 1, to: 0, label: 'SYN/ACK seq=300 ack=101 extra words' }] }] };
+    const w = mountTimeline(host, long);
+    const svg = flat(host).find((e) => e.tag === 'svg');
+    assert.equal(svg.attrs.viewBox.split(' ')[2], '326');
+    const texts = flat(host).filter((e) => e.attrs.class === 'tl-label');
+    assert.equal(texts.length, 2);
+    w.destroy();
+  } finally { globalThis.document = prev; }
+});

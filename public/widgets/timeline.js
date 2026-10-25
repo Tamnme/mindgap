@@ -1,12 +1,13 @@
 // Sequence-diagram stepper. Pure logic exported for tests; DOM only inside mount().
 const NS = 'http://www.w3.org/2000/svg';
-const W = 480, LEFT = 140, RIGHT = 100, TOP = 56, ROW = 52;
+const DEFAULT_W = 480, TOP = 56, ROW = 52;
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const margins = (w) => [clamp(w * 0.18, 60, 140), clamp(w * 0.15, 60, 100)];
 
 export const clampStep = (i, n) => Math.max(0, Math.min(i, Math.max(n, 1) - 1));
 
-const laneX = (i, n) => LEFT + (n < 2 ? 0 : (i * (W - LEFT - RIGHT)) / (n - 1));
-
-export function layoutSteps(steps, width = W, lanes) {
+export function layoutSteps(steps, width = DEFAULT_W, lanes) {
+  const [LEFT, RIGHT] = margins(width);
   const n = lanes || Math.max(2, ...steps.flatMap((s) => [s.from, s.to]).map((v) => v + 1));
   const x = (i) => LEFT + (i * (width - LEFT - RIGHT)) / (n - 1);
   return steps.map((s, k) => {
@@ -48,7 +49,7 @@ const s = (tag, attrs, text) => {
 const btn = (cls, text) => { const b = h('button', cls, text); b.type = 'button'; return b; };
 
 export function mount(host, cfg) {
-  let sc = 0, step = 0;
+  let sc = 0, step = 0, W = host.clientWidth || DEFAULT_W; // refined below from the svg itself // 1 SVG unit = 1 CSS px, so text stays ~12px
   const root = h('div', 'nbtimeline');
   const scnRow = h('div', 'tl-row');
   const scnBtns = cfg.scenarios.map((x, i) => {
@@ -60,7 +61,7 @@ export function mount(host, cfg) {
   const prev = btn('tl-prev', 'Prev'), next = btn('tl-next', 'Next');
   const count = h('span', 'tl-count'); count.setAttribute('aria-live', 'polite');
   const ctl = h('div', 'tl-row'); ctl.append(prev, next, count);
-  const svg = s('svg', { class: 'tl-svg', width: '100%', role: 'img', preserveAspectRatio: 'xMidYMin meet' });
+  const svg = s('svg', { class: 'tl-svg', role: 'img', preserveAspectRatio: 'xMidYMin meet' });
   const note = h('p', 'tl-note'); note.setAttribute('aria-live', 'polite');
   root.append(scnRow, ctl, svg, note);
 
@@ -74,12 +75,14 @@ export function mount(host, cfg) {
     prev.disabled = step === 0;
     next.disabled = step === steps.length - 1;
     count.textContent = `${step + 1} / ${steps.length}`;
+    const [LEFT, RIGHT] = margins(W);
+    const laneX = (i) => LEFT + (i * (W - LEFT - RIGHT)) / (n - 1);
     const height = TOP + ROW * steps.length;
     svg.setAttribute('viewBox', `0 0 ${W} ${height}`);
     svg.setAttribute('aria-label', `${cfg.scenarios[sc].name}: sequence diagram, step ${step + 1} of ${steps.length}`);
     const kids = [];
     cfg.lanes.forEach((name, i) => {
-      const x = laneX(i, n);
+      const x = laneX(i);
       const [a, ...rest] = name.split(' ');
       kids.push(s('text', { x, y: 16, 'text-anchor': 'middle', class: 'tl-lane' }, a));
       if (rest.length) kids.push(s('text', { x, y: 32, 'text-anchor': 'middle', class: 'tl-lane2' }, rest.join(' ')));
@@ -98,7 +101,13 @@ export function mount(host, cfg) {
       } else {
         g.append(s('path', { d: `M${x2} ${y} L${x2 - dir * 9} ${y - 5} L${x2 - dir * 9} ${y + 5} Z`, class: 'tl-head' }));
       }
-      g.append(s('text', { x: (x1 + x2) / 2, y: y - 8, 'text-anchor': 'middle', class: 'tl-label' }, st.label));
+      const lines = [st.label];
+      if (st.label.length * 7.2 > Math.abs(x2 - x1) - 16 && st.label.includes(' ')) {
+        const mid = st.label.length / 2;
+        const cut = [...st.label].map((c, i) => (c === ' ' ? i : -1)).filter((i) => i >= 0).sort((a, b) => Math.abs(a - mid) - Math.abs(b - mid))[0];
+        lines.splice(0, 1, st.label.slice(0, cut), st.label.slice(cut + 1));
+      }
+      lines.forEach((ln, li) => g.append(s('text', { x: (x1 + x2) / 2, y: y - 8 - 14 * (lines.length - 1 - li), 'text-anchor': 'middle', class: 'tl-label' }, ln)));
       if (st.at) g.append(s('text', { x: 4, y: y + 4, class: 'tl-at' }, st.at));
       kids.push(g);
     }
@@ -107,6 +116,15 @@ export function mount(host, cfg) {
   }
 
   host.append(root);
+  W = svg.clientWidth || W;
   render();
-  return { destroy: () => root.remove() };
+  let ro = null;
+  if (typeof ResizeObserver !== 'undefined') {
+    ro = new ResizeObserver(() => {
+      const w = Math.round(svg.clientWidth);
+      if (w && w !== W) { W = w; render(); }
+    });
+    ro.observe(svg);
+  }
+  return { destroy: () => { if (ro) ro.disconnect(); root.remove(); } };
 }

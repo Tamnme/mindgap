@@ -420,7 +420,7 @@ body.has-focus::after { content: ""; position: fixed; inset: 0; background: rgba
 .nbtimeline button:disabled { opacity: .5; cursor: default; }
 .nbtimeline .tl-scn[aria-pressed=true] { border-color: var(--accent); background: var(--tutor-bg); font-weight: 700; }
 .nbtimeline .tl-count { font-family: ui-monospace, monospace; font-size: 14px; color: var(--muted); }
-.nbtimeline .tl-svg { display: block; width: 100%; height: auto; max-width: 100%; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); font-family: ui-monospace, monospace; }
+.nbtimeline .tl-svg { display: block; width: 100%; max-width: 100%; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); font-family: ui-monospace, monospace; }
 .nbtimeline .tl-lane { font-size: 13px; font-weight: 700; fill: var(--fg); }
 .nbtimeline .tl-lane2 { font-size: 11px; fill: var(--muted); }
 .nbtimeline .tl-line { stroke: var(--border); stroke-width: 2; }
