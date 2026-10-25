@@ -110,7 +110,7 @@ NXDOMAIN is the signal that makes the resolver move on to the next candidate. Un
     },
     {
       id: 'k8s',
-      title: 'Why a pod asks four times',
+      title: 'Why a pod\'s lookups multiply',
       blocks: [
         {
           md: `Kubernetes writes a \`resolv.conf\` into every pod. The Kubernetes documentation shows its shape:
@@ -128,12 +128,12 @@ Reproduce the file on the bench, with a namespace called \`ns\`. The server answ
         {
           checkpoint: {
             id: 'c2',
-            prompt: 'With the Kubernetes-style file, how many A queries go out for example.com before it is answered, including the one that gets the answer?',
+            prompt: 'Apply the rule from the previous lab to this file. How many A queries go out for example.com, including the one that gets the answer?',
             options: [
-              'One: a name with a dot is looked up as written',
-              'Three: one for each search domain, and then the lookup gives up',
-              'Four: three suffixed names fail, then example.com works',
-              'Two: the name as written fails, then one search domain works',
+              'Single query: a name with a dot is looked up as written',
+              'Three queries, then failure: one per search domain, with no as-written try',
+              'Four queries: three suffixed names fail first, then example.com works',
+              'Two queries: the name as written fails, then one search domain works',
             ],
             key: 2,
             why: 'example.com has one dot, below ndots:5, so all three search suffixes are tried first and each returns NXDOMAIN. Only then is example.com sent as written and answered.',
