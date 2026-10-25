@@ -214,3 +214,65 @@ test('timeline: viewBox width follows host width (1 unit = 1 px) and long labels
     w.destroy();
   } finally { globalThis.document = prev; }
 });
+
+import { mtuOutcome, validate as validateMtu, mount as mountMtu } from '../public/widgets/mtu.js';
+
+const HOPS = [{ name: 'pod', mtu: 1500 }, { name: 'VXLAN tunnel', mtu: 1450 }, { name: 'server', mtu: 1500 }];
+
+test('mtu: delivered when size fits everywhere; pathMtu is the min', () => {
+  assert.deepEqual(mtuOutcome(HOPS, 1450, true, false), { kind: 'delivered', pathMtu: 1450 });
+  assert.equal(mtuOutcome(HOPS, 576, false, false).kind, 'delivered');
+});
+
+test('mtu: fragment counts use IPv4 rules', () => {
+  const a = mtuOutcome(HOPS, 1500, false, false);
+  assert.equal(a.kind, 'fragmented'); assert.equal(a.hop, 'VXLAN tunnel'); assert.equal(a.fragments, 2); assert.equal(a.pathMtu, 1450);
+  const b = mtuOutcome([{ name: 'a', mtu: 9000 }, { name: 'b', mtu: 1500 }], 9000, false, false);
+  assert.equal(b.fragments, 7);
+});
+
+test('mtu: DF on gives frag-needed or black-hole', () => {
+  const a = mtuOutcome(HOPS, 1500, true, false);
+  assert.equal(a.kind, 'frag-needed'); assert.equal(a.hop, 'VXLAN tunnel'); assert.equal(a.pathMtu, 1450);
+  const b = mtuOutcome(HOPS, 1500, true, true);
+  assert.equal(b.kind, 'black-hole'); assert.equal(b.hop, 'VXLAN tunnel');
+});
+
+test('mtu: validate', () => {
+  const ok = { hops: HOPS, size: 1500, minSize: 576, maxSize: 9000, df: true, icmpBlocked: false };
+  assert.deepEqual(validateMtu(ok), []);
+  assert.ok(validateMtu({ ...ok, hops: [HOPS[0]] }).length);
+  assert.ok(validateMtu({ ...ok, hops: [{ name: 'x', mtu: 10 }, HOPS[1]] }).length);
+  assert.ok(validateMtu({ ...ok, hops: [{ mtu: 1500 }, HOPS[1]] }).length);
+  assert.ok(validateMtu({ ...ok, size: 100 }).length);
+  assert.ok(validateMtu({ ...ok, minSize: 9000, maxSize: 576 }).length);
+});
+
+test('mtu: mount in fake DOM, slider and checkboxes change outcome, remount after destroy', () => {
+  const mk = (tag) => ({ tag, children: [], attrs: {}, listeners: {}, textContent: '', className: '',
+    append(...k) { this.children.push(...k); },
+    replaceChildren(...k) { this.children = k; },
+    setAttribute(k, v) { this.attrs[k] = v; },
+    addEventListener(t, f) { this.listeners[t] = f; },
+    remove() {} });
+  const prev = globalThis.document;
+  globalThis.document = { createElement: mk };
+  const flat = (e) => [e, ...e.children.flatMap(flat)];
+  try {
+    for (let round = 0; round < 2; round++) {
+      const host = mk('div');
+      const w = mountMtu(host, { hops: HOPS, size: 1400, minSize: 576, maxSize: 9000, df: true, icmpBlocked: false });
+      const q = (cls) => flat(host).find((e) => e.className === cls);
+      assert.equal(q('mt-outcome').textContent, 'delivered');
+      const slider = q('mt-size');
+      slider.value = '1500'; slider.listeners.input();
+      assert.match(q('mt-outcome').textContent, /^dropped at VXLAN tunnel; ICMP frag-needed \(type 3 code 4, next-hop MTU 1450\) sent back/);
+      assert.equal(q('mt-sizeval').textContent, '1500');
+      const icmp = q('mt-icmp'); icmp.checked = true; icmp.listeners.change();
+      assert.match(q('mt-outcome').textContent, /silently.*black hole/);
+      const df = q('mt-df'); df.checked = false; df.listeners.change();
+      assert.equal(q('mt-outcome').textContent, 'fragmented into 2 at VXLAN tunnel');
+      w.destroy();
+    }
+  } finally { globalThis.document = prev; }
+});

@@ -44,3 +44,14 @@ Prev/Next reveal arrows up to the current step and show its `note`. `drop: true`
 ```json
 { "id": "tcp-open", "kind": "timeline", "title": "Handshake outcomes", "lanes": ["client 10.0.0.1:51514", "server 10.0.0.2:80"], "scenarios": [{ "name": "Port open", "steps": [{ "from": 0, "to": 1, "label": "SYN seq=100" }, { "from": 1, "to": 0, "label": "SYN/ACK seq=300 ack=101" }, { "from": 0, "to": 1, "label": "ACK ack=301", "note": "connected after 1 RTT" }] }, { "name": "Firewall drops", "steps": [{ "from": 0, "to": 1, "label": "SYN", "drop": true, "at": "0 s" }, { "from": 0, "to": 1, "label": "SYN (retry)", "drop": true, "at": "+1 s", "note": "…until the timeout" }] }] }
 ```
+
+## mtu
+
+Path-MTU explorer. `hops` are drawn left to right with their MTU; a size slider (`minSize`..`maxSize`, IP bytes) plus
+"DF" and "ICMP blocked" checkboxes pick the fate at the first hop whose MTU is below the size: delivered, fragmented into N
+(IPv4: payload per fragment = floor((mtu-20)/8)*8, N = ceil((size-20)/that)), dropped with ICMP frag-needed, or a silent black hole.
+`validate` rejects fewer than 2 hops, missing names, mtu < 68 and a size outside minSize..maxSize.
+
+```json
+{ "id": "pmtu", "kind": "mtu", "title": "Where does the big packet die?", "hops": [{ "name": "pod", "mtu": 1500 }, { "name": "VXLAN tunnel", "mtu": 1450 }, { "name": "server", "mtu": 1500 }], "size": 1500, "minSize": 576, "maxSize": 9000, "df": true, "icmpBlocked": false }
+```
