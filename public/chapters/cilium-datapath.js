@@ -57,7 +57,7 @@ The tc hook on the \`lxc\` interface is where the packet from the pod meets the 
 
 The documentation also describes a newer pod-side device, **netkit**. In its default mode Cilium uses veth devices at layer 2. In netkit device mode, the netkit device replaces the veth; the Cilium documentation says the pod's BPF programs are attached inside the netkit peer device, and it requires kernel 6.8 or later and eBPF host-routing.
 
-**This chapter has one lab only, and it is small.** netlab has no Cilium and no Kubernetes, so none of this can be shown running here. What netlab can do is check that its kernel offers the two ingredients: a place to attach tc programs on a veth (the \`clsact\` qdisc is the attachment point for tc BPF programs; general knowledge, not from the fetched pages), and a netkit device. The lab loads no program, so it shows capability on this kernel, nothing about Cilium's behaviour.` },
+**This chapter has one lab only, and it is small.** netlab has no Cilium and no Kubernetes, so none of this can be shown running here. What netlab can do is check that its kernel offers the two ingredients: a place to attach tc programs on a veth (the \`clsact\` qdisc is the attachment point for tc BPF programs; general knowledge), and a netkit device. The lab loads no program, so it shows capability on this kernel, nothing about Cilium's behaviour.` },
         {
           lab: {
             explain: 'Attach a clsact hook to a veth and create a netkit pair in a scratch namespace; print what the kernel reports',
@@ -91,8 +91,8 @@ The underlay is the network between the nodes: ordinary IP routers whose tables 
             prompt: 'The routers between nodes have no routes for pod addresses, and you may not change them. Which Cilium routing mode lets a pod on A reach a pod on B?',
             options: [
               'Encapsulation: the underlay needs node-to-node IP only, and the pod packet rides inside',
-              'Native routing: Linux forwards the pod packet as it is and the routers learn the pod routes unaided',
-              'Either mode: both forward by destination IP, so both work on any underlay',
+              'Native routing: Linux forwards the pod packet as it is, and ordinary IP routing carries it to the pod\'s node',
+              'Either mode: both are overlays, so the underlay never needs pod routes',
               'Only after SNAT: pod addresses must be rewritten to node addresses before anything crosses nodes',
             ],
             key: 0,
@@ -101,9 +101,9 @@ The underlay is the network between the nodes: ordinary IP routers whose tables 
         },
         { md: `The Cilium routing documentation names both modes.
 
-**Encapsulation.** It states that encapsulation "relies on normal node to node connectivity", and that the network connecting the nodes does not need to know the PodCIDRs. The topology of the underlying network is irrelevant as long as nodes can reach each other using IP/UDP. Its table of options names VXLAN as the default encapsulation mode, with Geneve as the alternative: \`tunnel-protocol\` defaults to \`vxlan\`, and \`tunnel-port\` defaults to 8472 for VXLAN and 6081 for Geneve. That is the 8472 you printed on a bare Linux link in 5.1, and the firewalls and security groups between nodes have to allow it. The price is the chapter 5.1 arithmetic: the documentation lists "MTU Overhead" of 50 bytes per packet for VXLAN as a disadvantage, and mentions jumbo frames as a mitigation. It also says the tunnel can carry metadata, and that Cilium uses this to pass the source security identity as an optimisation, which avoids one identity lookup on the remote node.
+**Encapsulation.** It states that encapsulation "relies on normal node to node connectivity", and that the network connecting the nodes does not need to know the PodCIDRs. The topology of the underlying network is irrelevant as long as nodes can reach each other using IP/UDP. Its table of options names VXLAN as the default encapsulation mode, with Geneve as the alternative: \`tunnel-protocol\` defaults to \`vxlan\`, and \`tunnel-port\` defaults to 8472 for VXLAN and 6081 for Geneve. That is the 8472 you printed on a bare Linux link in 5.1, and the firewalls and security groups between nodes have to allow it. The price is the chapter 5.1 arithmetic: the documentation lists "MTU Overhead" of 50 bytes per packet for VXLAN as a disadvantage, and mentions jumbo frames as a mitigation.
 
-**Native routing.** Enabled with \`routing-mode: native\`. The documentation says Cilium then "delegates all packets which are not addressed to another local endpoint to the routing subsystem of the Linux kernel", so the packet is routed as if a local process had sent it. The network connecting the nodes "must be capable of routing PodCIDRs". There is no outer header and no 50-byte tax, but somebody has to put the pod routes where the routers can find them. The documentation lists options for that, such as \`auto-direct-node-routes\`, that this chapter did not fetch the details of. In the AWS ENI example, the VPC does that job, because pods get ENI addresses that are routable in the VPC.
+**Native routing.** Enabled with \`routing-mode: native\`. The documentation says Cilium then "delegates all packets which are not addressed to another local endpoint to the routing subsystem of the Linux kernel", so the packet is routed as if a local process had sent it. The network connecting the nodes "must be capable of routing PodCIDRs". There is no outer header and no 50-byte tax, but somebody has to put the pod routes where the routers can find them. The documentation lists options for that, such as \`auto-direct-node-routes\`; how they work is not covered here. In the AWS ENI example, the VPC does that job, because pods get ENI addresses that are routable in the VPC.
 
 The widget shows what the node's own table looks like in the native case. It is an illustration built from the model of chapter 5.2, not output from a Cilium node.` },
         {
@@ -153,7 +153,7 @@ Consider this rule: pods labelled \`role=frontend\` may connect to pods labelled
             why: 'Cilium assigns a security identity to groups of containers that share identical policies, attaches it to their packets and validates it at the receiving node. New frontend pods fall into the existing identity, so the rule over identities does not change. The traditional IP-filter approach is the one that needs an update on every node.',
           },
         },
-        { md: `The Cilium documentation spells out why the IP-filter approach scales badly: every time a pod with a matching label starts or stops, the rules on every node running such a pod have to be updated with the changed address list. The identity model avoids it. Its introduction says Cilium "assigns a security identity to groups of application containers which share identical security policies", associates it with all packets those containers emit, and validates it at the receiving node. That is also why the identity can ride along as tunnel metadata in encapsulation mode, as the routing page notes.
+        { md: `The Cilium documentation spells out why the IP-filter approach scales badly: every time a pod with a matching label starts or stops, the rules on every node running such a pod have to be updated with the changed address list. The identity model avoids it. Its introduction says Cilium "assigns a security identity to groups of application containers which share identical security policies", associates it with all packets those containers emit, and validates it at the receiving node. The routing page adds that encapsulation can carry metadata, and that Cilium uses this to pass the source security identity as an optimisation that avoids one identity lookup on the remote node.
 
 IP addresses are still used to route. The identity decides whether the packet is allowed, and the policy documentation extends to labels, protocols, ports, DNS names and L7 rules such as HTTP method and path.
 
@@ -164,11 +164,11 @@ Putting the chapter together, a packet from a pod meets four things on its way: 
       id: 'twins',
       title: "Where you've met this",
       blocks: [
-        { md: `**Kubernetes.** Cilium is a pod network implementation, so it is an answer to the model in chapter 5.2. The Cilium documentation recommends kernel 5.10 or later and eBPF support; netkit needs 6.8 or later.
+        { md: `**Kubernetes.** Cilium is a pod network implementation, so it is an answer to the model in chapter 5.2. The Cilium system-requirements page says "it is recommended to use kernel 5.10 or later" and lists the BPF kernel options to enable; netkit needs 6.8 or later.
 
 **AWS.** The documentation says encapsulation needs UDP 8472 (or 6081 for Geneve) open between nodes, and its system-requirements page shows AWS security-group rules for VXLAN mode. In its AWS ENI mode, pods get ENI IP addresses that are routable inside the VPC, so no tunnel is needed. How that interacts with your own VPC route tables and security groups is something to check on the real cluster.
 
-**Proxmox.** This is reasoning, not a fetched fact. If Kubernetes nodes are VMs on Proxmox, the VM NICs are the underlay. Encapsulation works over any IP path between VMs. Native routing needs the pod routes to exist somewhere the VMs and the physical network can see, so it is only as easy as your ability to add routes there.
+**Proxmox.** This is reasoning, not documented fact. If Kubernetes nodes are VMs on Proxmox, the VM NICs are the underlay. Encapsulation works over any IP path between VMs. Native routing needs the pod routes to exist somewhere the VMs and the physical network can see, so it is only as easy as your ability to add routes there.
 
 **What you cannot check from netlab.** Whether a given cluster is on a tunnel or on native routing, what its pod MTU is, whether kube-proxy is replaced, and which identity a pod holds. Those come from the real cluster's Cilium configuration and Cilium's own tooling, not from the VM used for these labs.` },
       ],
