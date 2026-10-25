@@ -4,8 +4,9 @@
 //   https://man7.org/linux/man-pages/man8/bridge.8.html (bridge vlan add: pvid, untagged),
 //   https://man7.org/linux/man-pages/man8/ip-link.8.html (vlan_default_pvid: "default PVID (native/untagged VLAN ID)"),
 //   https://pve.proxmox.com/wiki/Network_Configuration (Proxmox: VLAN-aware bridge, trunk mode on a guest NIC needs configuration in the guest).
-// Hedged, not sourced: "usable VIDs are 1-4094" (12 bits give 4096 values; 0 and 4095 being reserved is from the task brief and general knowledge, not fetched),
-//   the Direct Connect and Kubernetes notes; the Proxmox "bridge-vids 2-4094" example is from the PVE wiki page above but was not exercised here.
+// Hedged, not sourced: "usable VIDs are 1-4094" (12 bits give 4096 values; 0 and 4095 being reserved is general knowledge, none of the fetched pages lists it),
+//   https://docs.aws.amazon.com/directconnect/latest/UserGuide/create-private-vif.html (console step: "For VLAN, enter the ID number for your virtual local area network (VLAN)"),
+//   the Kubernetes note; the Proxmox "bridge-vids 2-4094" example is from the PVE wiki page above but was not exercised here.
 
 const NEED = `ip link show br26a >/dev/null 2>&1 || { echo "Run the first lab (build br26a and br26b) first."; exit 1; }`;
 // Trim a tcpdump -e line to the parts we discuss.
@@ -103,9 +104,9 @@ f69a 547b f54f   src MAC (6 bytes)
 4500 0054 ...    the IP packet
 \`\`\`
 
-That is the **802.1Q tag**: 4 bytes inserted between the source MAC and the EtherType. The first two (TPID) are always 0x8100. The next two (the TCI) split into **PCP**, a 3-bit priority; **DEI**, 1 bit marking a frame that may be dropped first under congestion; and the **VID**, 12 bits holding the VLAN ID ([IEEE 802.1Q](https://en.wikipedia.org/wiki/IEEE_802.1Q)). Here PCP and DEI are 0 and the VID is 10; the lab shows exactly this, and \`p 0\` in the tcpdump line is the priority.
+That is the **802.1Q tag**: 4 bytes inserted between the source MAC and the EtherType. The first two (TPID) are 0x8100 for a standard 802.1Q tag (802.1ad service tags use 0x88a8, per the Wikipedia page). The next two (the TCI) split into **PCP**, a 3-bit priority; **DEI**, 1 bit marking a frame that may be dropped first under congestion; and the **VID**, 12 bits holding the VLAN ID ([IEEE 802.1Q](https://en.wikipedia.org/wiki/IEEE_802.1Q)). Here PCP and DEI are 0 and the VID is 10; the lab shows exactly this, and \`p 0\` in the tcpdump line is the priority.
 
-Twelve bits give 4096 values. The usable VLAN IDs are 1 to 4094 (0 and 4095 are reserved, which this lab did not test). Because the tag adds 4 bytes, a tagged frame can be 1522 bytes where an untagged one tops out at 1518.
+Twelve bits give 4096 values. The usable VLAN IDs are 1 to 4094 (0 and 4095 are reserved; none of this chapter's sources lists that, so treat it as general knowledge). Because the tag adds 4 bytes, a tagged frame can be 1522 bytes where an untagged one tops out at 1518.
 
 > [!IMPORTANT]
 > A trunk link carries several VLANs by tagging each frame with its VLAN ID. Access ports (chapter 2.5) are where the tag is added and removed, so hosts never see it.` },
@@ -200,7 +201,7 @@ echo "VLAN 20 restored:    c -> d: $(ip netns exec n26c ping -c2 -W1 -q 10.26.20
       blocks: [
         { md: `**Proxmox.** A VLAN-aware bridge's uplink to the physical switch is a trunk. The PVE wiki's example for a VLAN-aware \`vmbr0\` sets \`bridge-vids 2-4094\` on a bridge whose port is \`eno1\`. A guest NIC *without* a VLAN tag on a VLAN-aware bridge can carry several VLANs, but then the VLANs have to be handled inside the guest, as the wiki says of trunk mode. Whether your uplink looks like \`t26a\` in \`bridge vlan show\` depends on your own config; check it there.
 
-**AWS VPC.** You never tag frames to AWS from an instance. I believe the nearest place VLAN IDs show up is a Direct Connect private virtual interface, which is configured with a VLAN ID on the physical connection; I didn't fetch that page, so check the Direct Connect documentation before relying on it.
+**AWS VPC.** You never tag frames to AWS from an instance. A Direct Connect private virtual interface takes a VLAN ID when you create it ([create a private VIF](https://docs.aws.amazon.com/directconnect/latest/UserGuide/create-private-vif.html)). AWS doesn't document how that tag is carried, so treat it as the one place a VLAN number shows up in an AWS setup.
 
 **Kubernetes / Cilium.** Pods don't see tags. A node's uplink to its top-of-rack switch can be a trunk with the VLANs the cluster uses; that is a switch-side arrangement, invisible to the pod.` },
       ],
