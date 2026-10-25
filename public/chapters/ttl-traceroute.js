@@ -2,9 +2,10 @@
 // Labs run in netlab (Ubuntu 26.04, iproute2 6.19, traceroute from the Ubuntu package) on 2026-10-25; outputs described in the prose were observed.
 // Sources: https://datatracker.ietf.org/doc/html/rfc792 (time exceeded is type 11, code 0 "time to live exceeded in transit"; the gateway that finds TTL zero must discard the datagram),
 //   https://datatracker.ietf.org/doc/html/rfc1812 (a router must decrement TTL by at least one, and must send time exceeded when it discards at zero),
-//   https://man7.org/linux/man-pages/man8/traceroute.8.html (probes start at ttl 1 and rise until "port unreachable" or TCP reset; three probes per hop by default; default method is UDP, -I is ICMP, -T is TCP).
+//   https://docs.kernel.org/networking/ip-sysctl.html (icmp_errors_use_inbound_ifaddr: disabled = ICMP errors use the primary address of the exiting interface; enabled = address of the receiving interface),
+//   https://man7.org/linux/man-pages/man8/traceroute.8.html (several probes are sent at once by default, -N 1 for one at a time; probes start at ttl 1 and rise until "port unreachable" or TCP reset; three probes per hop by default; default method is UDP, -I is ICMP, -T is TCP).
 // Hedged, not sourced: the AWS, Kubernetes and Proxmox remarks. The map node itself says AWS documents nothing about whether the VPC router appears as a hop.
-// Observed, not quoted from a spec: the reply address on each hop (the interface the probe came in on), the effect of icmp_ratelimit, and the nft drop. Those are what this kernel printed in the labs.
+// Observed, not quoted from a spec: the reply address on each hop, the effect of icmp_ratelimit, and the nft drop. Those are what this kernel printed in the labs.
 
 const NEED = `ip netns list | grep -q n38a || { echo "Run the first lab (build the A-R1-R2-R3-B chain) first."; exit 1; }`;
 
@@ -13,13 +14,13 @@ export default {
   number: '3.8',
   kicker: 'Layer 3',
   title: 'TTL and traceroute',
-  lede: 'Every IP packet carries a small counter that routers use up. Traceroute turns that safety limit into a map of the path, one expired packet at a time.',
+  lede: 'Traceroute lists the routers between you and a destination without asking any of them for its address. This chapter shows what it sends, and what comes back.',
   sections: [
     {
       id: 'ttl',
       title: 'A counter that runs out',
       blocks: [
-        { md: `Chapter 3.3 said a router forwards packets and changes the IP header while doing it. One field in that header is the **TTL** (time to live), a number the sender sets. The lab builds a path with three routers:
+        { md: `Every IPv4 header has a **TTL** (time to live) field, a number the sender sets. The lab builds a path with three routers:
 
 \`\`\`
  A ---- R1 ---- R2 ---- R3 ---- B
@@ -43,7 +44,7 @@ Every namespace starts with a default TTL, which the lab prints. A pings B once,
         },
         {
           lab: {
-            explain: 'Build the A-R1-R2-R3-B chain, print the default TTL and the ICMP rate limit, then ping B once',
+            explain: 'Build the A-R1-R2-R3-B chain, print the default TTL, the ICMP rate limit and the ICMP source-address sysctl, then ping B once',
             cmd: `for n in n38a n38b n38r1 n38r2 n38r3; do ip netns del $n 2>/dev/null; done; sleep 0.5
 mk() { ip netns add $1; ip netns exec $1 sysctl -qw net.ipv6.conf.all.disable_ipv6=1 net.ipv6.conf.default.disable_ipv6=1; ip -n $1 link set lo up; }
 for n in n38a n38r1 n38r2 n38r3 n38b; do mk $n; done
@@ -60,12 +61,12 @@ ip -n n38r2 route add 10.38.1.0/24 via 10.38.2.1; ip -n n38r2 route add 10.38.4.
 ip -n n38r3 route add default via 10.38.3.1
 ip -n n38b route add default via 10.38.4.1
 sleep 1
-ip netns exec n38b sysctl net.ipv4.ip_default_ttl net.ipv4.icmp_ratelimit
+ip netns exec n38b sysctl net.ipv4.ip_default_ttl net.ipv4.icmp_ratelimit net.ipv4.icmp_errors_use_inbound_ifaddr
 for n in n38a n38r1 n38r2 n38r3 n38b; do ip netns exec $n sysctl -qw net.ipv4.icmp_ratelimit=0; done
 ip netns exec n38a timeout 5 ping -c1 -W1 10.38.4.2 | awk 'NR==2'`,
           },
         },
-        { md: `The default TTL is 64, and the reply arrives with \`ttl=61\`. Three routers each took one. (The request had the same fate: it left A with 64 and arrived at B with 61.)
+        { md: `The default TTL is 64, and the reply arrives with \`ttl=61\`. Three routers each took one.
 
 RFC 1812 states the rule: a router *must* subtract at least one from the TTL when it forwards, and must discard the packet when the TTL reaches zero. That keeps a packet caught in a routing loop from circling forever. The router that discards it isn't silent: it sends ICMP type 11, *time exceeded* (chapter 3.7), back to the packet's source.
 
@@ -84,13 +85,13 @@ Now the question that matters for reading the output. R2 has two interfaces: \`1
             id: 'c2',
             prompt: 'Which source address does the time-exceeded reply from R2 carry?',
             options: [
-              '10.38.3.1: the interface R2 would have forwarded out of',
-              '10.38.2.1: R1 answers every probe that passes through it',
-              '10.38.2.2: the interface the probe arrived on',
-              '10.38.4.2: B answers for every hop it can see',
+              'R2’s far side (10.38.3.1): a router answers from the address nearest the destination',
+              'R1 answering (10.38.2.1): R1 answers every probe that passes through it',
+              'R2’s side facing A (10.38.2.2): the address on its interface toward the sender',
+              'B itself (10.38.4.2): B answers for every hop it can see',
             ],
             key: 2,
-            why: 'On this Linux router the reply is sourced from the address on the interface the probe arrived on, which sits on the link back toward A. Traceroute prints whatever source address the reply carried.',
+            why: 'By default Linux sends an ICMP error from the primary address of the interface it sends the error out of, here R2’s interface toward A (in this chain also the one the probe arrived on). Traceroute prints whatever source address the reply carried.',
           },
         },
         {
@@ -107,9 +108,9 @@ echo "UDP probes that reached B: $(grep -c 'proto UDP' /tmp/n38.cap)"
 grep -o -E 'ttl [0-9]+|> 10.38.4.2.[0-9]+' /tmp/n38.cap`,
           },
         },
-        { md: `The trace has four lines. Hop 1 is \`10.38.1.1\` (R1), hop 2 \`10.38.2.2\`, hop 3 \`10.38.3.2\`, and hop 4 \`10.38.4.2\` (B). Each router showed the address of its interface *facing A*, the one the probe came in on. Traceroute lists the interface addresses it was answered from, not router names, so the same router could appear under another address when traced from the other side.
+        { md: `The trace has four lines. Hop 1 is \`10.38.1.1\` (R1), hop 2 \`10.38.2.2\`, hop 3 \`10.38.3.2\`, and hop 4 \`10.38.4.2\` (B). Each router showed the address of its interface *facing A*. The lab printed \`icmp_errors_use_inbound_ifaddr = 0\`; the kernel docs say that when it is disabled, ICMP errors are sent with the primary address of the interface they leave by, and when enabled, with the address of the interface the offending packet arrived on. This chain is symmetric, so here both rules give the same address and the lab can't tell them apart. Traceroute lists the addresses it was answered from, not router names, so the same router could appear under another address when traced from the other side.
 
-On B's side, one UDP probe arrived, with \`ttl 1\`. Traceroute sent it with TTL 4, and the three routers took it down to 1. Probes 1 to 3 expired on the way and never reached B.
+On B's side, one UDP probe arrived, with \`ttl 1\`. That fits the fourth probe: TTL 4 minus three routers is 1 (the lab printed only the arriving value, so the sending TTL is inferred from the hop count). The first three expired on the way. That is true because of \`-N 1\`; with the default, probes sent in parallel with higher TTLs would also reach B.
 
 That raises a question about hop 4. B didn't send time-exceeded: the packet arrived at its destination with TTL 1, and nothing expires there. Traceroute needs some other sign that the destination has been reached.` },
         {
@@ -142,14 +143,14 @@ done`,
         },
         { md: `All three methods ended at hop 4 and B's address, but B's answers differ. For the default UDP method, B sent an ICMP *udp port … unreachable*. For \`-I\`, traceroute sent ICMP echo requests, and B replied with an *echo reply*. For \`-T -p 80\`, B (with nothing on port 80) sent a TCP packet with the \`R\` flag, a reset. The man page names the same endings: "port unreachable" or a TCP reset.
 
-Why have three methods? Firewalls treat them differently. A path that drops UDP to high ports but allows TCP to port 80 can give a broken trace by default and a complete one with \`-T -p 80\`. The routers' time-exceeded replies are the same in all three; what a firewall lets through *to the destination* is not.` },
+Why have three methods? Firewalls can treat them differently. As general knowledge (the lab doesn't test it), a path that drops UDP to high ports but allows TCP to port 80 could give a broken trace by default and a complete one with \`-T -p 80\`. The routers' time-exceeded replies are the same in all three; what a firewall lets through *to the destination* is not.` },
       ],
     },
     {
       id: 'stars',
       title: 'What a star means',
       blocks: [
-        { md: `Traceroute prints \`*\` for a probe that got no reply within the timeout. The next lab sets up one specific cause: R2 gets an nft rule, in its output hook, that drops ICMP time-exceeded messages R2 itself sends. The rule doesn't match forwarded traffic. The lab runs traceroute with two probes per hop, pings B, then lists the rule. It deletes the table at the start and again at the end, so it can be re-run.` },
+        { md: `Traceroute prints \`*\` for a probe that got no reply within the timeout. The next lab sets up one specific cause: R2 gets an nft rule, in its output hook, that drops ICMP time-exceeded messages R2 itself sends. The lab runs traceroute with two probes per hop, pings B, then lists the rule. It deletes the table at the start and again at the end, so it can be re-run.` },
         {
           checkpoint: {
             id: 'c4',
@@ -181,7 +182,7 @@ ip netns exec n38r2 nft delete table inet t38`,
         { md: `Hop 2 prints \`* *\`. Hops 3 and 4 answer, and the ping to B succeeds with \`ttl=61\`. R2 forwards traffic fine, but it never sent the one message traceroute was listening for.
 
 > [!IMPORTANT]
-> A \`*\` means **no reply was seen**, not that packets were lost. The router may filter or rate-limit its ICMP and still forward your traffic. Read the hops after the star: if they answer, the path works.
+> A \`*\` means **no reply was seen**, which is not by itself evidence of packet loss. The router may filter or rate-limit its ICMP and still forward your traffic. Read the hops after the star: if they answer, the path works.
 
 The reverse case is weaker evidence. A trace that is stars from some hop onward and never reaches the destination points to a drop at or after that hop, or to a destination that doesn't answer. Traceroute alone can't say which.` },
       ],
@@ -203,7 +204,7 @@ The reverse case is weaker evidence. A trace that is stars from some hop onward 
       blocks: [
         { md: `- Each router subtracts one from the TTL. At zero it discards the packet and sends ICMP time-exceeded (type 11) to the source. Hosts and links don't subtract.
 - Traceroute sends probes with TTL 1, 2, 3 and so on. Each time-exceeded reply names one hop.
-- The address printed is the one the reply carried. On these Linux routers it was the interface the probe arrived on.
+- The address printed is the one the reply carried. By default on Linux that is the address of the interface the error leaves by (toward the sender); \`icmp_errors_use_inbound_ifaddr\` changes it.
 - The destination ends the trace with a different reply: port unreachable for UDP, echo reply for \`-I\`, a TCP reset for \`-T\`.
 - \`*\` is no reply. Look past it: if later hops answer, the path works.` },
       ],
