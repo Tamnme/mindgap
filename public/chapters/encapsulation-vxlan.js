@@ -4,8 +4,8 @@
 //   https://datatracker.ietf.org/doc/html/rfc7348 (section 5: 8-byte VXLAN header, 24-bit VNI, outer UDP; IANA assigned 4789, which SHOULD be the default destination port, and the port SHOULD be configurable because early implementations used other values; section 8: IANA considerations)
 //   https://docs.cilium.io/en/stable/network/concepts/routing/ (encapsulation options: tunnel-protocol defaults to vxlan, tunnel-port defaults to 8472 for vxlan and 6081 for geneve; VXLAN costs 50 bytes per packet; the underlay must allow 8472/UDP or 6081/UDP)
 //   https://docs.cilium.io/en/stable/operations/system_requirements/ (Cilium's VXLAN mode uses "Linux's default VXLAN port 8472"; the AWS security-group example for VXLAN)
-//   https://pve.proxmox.com/pve-docs/chapter-pvesdn.html (VXLAN zones: "VXLAN encapsulation uses 50 bytes", MTU 50 below the physical interface; the IPsec example filters on VXLAN UDP port 4789)
-// Hedged, not sourced: how AWS builds the VPC itself (not published); that a mismatched port between two ends would fail (reasoned, not run); the Proxmox VXLAN port when no option is given.
+//   https://pve.proxmox.com/pve-docs/chapter-pvesdn.html (VXLAN zones: the plugin uses "the default destination port 4789"; "VXLAN encapsulation uses 50 bytes", MTU 50 below the physical interface; the IPsec example filters on VXLAN UDP port 4789)
+// Hedged, not sourced: how AWS builds the VPC itself (not published); that a mismatched port between two ends would fail (reasoned, not run).
 // Chapter 3.9 (mtu-pmtud) covers DF, frag-needed and the black hole; this chapter only supplies the 50 bytes and links back.
 
 const NEED = `ip netns exec n51a ip link show vx51 >/dev/null 2>&1 || { echo "Run the first lab first."; exit 1; }`;
@@ -143,7 +143,7 @@ Chapter 3.9 explained what happens when a packet meets a smaller link: with DF o
             id: 'w-vxlan-mtu',
             kind: 'mtu',
             title: 'The tunnel is the narrow hop',
-            hint: 'Start at 1500 with DF on. Find the largest size that is delivered, then compare it with the largest ping that fit in the lab.',
+            hint: 'Start at 1500 with DF on. Find the largest size that is delivered, then compare it with the lab, where 1422 + 28 = 1450 bytes of IP was the largest ping that fit.',
             takeaway: 'The 1450 limit matches the lab: 1450 bytes of IP fit, 1451 do not. Whether the sender learns it (ICMP) or hangs is the path-MTU story from chapter 3.9.',
             hops: [{ name: 'node A app (1500)', mtu: 1500 }, { name: 'vx51 (1450)', mtu: 1450 }, { name: 'node B app (1500)', mtu: 1500 }],
             size: 1500,
@@ -196,7 +196,7 @@ Two numbers, then, and they come from two different places:
 | 4789 | IANA assigned it to VXLAN. RFC 7348 section 5 says this value SHOULD be used by default, and section 8 records the assignment. |
 | 8472 | The Linux kernel's own default, which the lab just printed. The RFC notes that some early implementations used other values and says the port SHOULD be configurable. |
 
-Cilium follows Linux here. Its documentation lists \`tunnel-port\` with a default of 8472 for VXLAN and 6081 for Geneve (general knowledge, not fetched: Geneve is a sibling encapsulation with a variable-length header, and 6081 is its port), and its system-requirements page says it uses "Linux's default VXLAN port 8472". If you stand up Cilium in a cloud and open UDP 4789 between nodes, the tunnel is still blocked.
+Cilium follows Linux here. Its documentation lists \`tunnel-port\` with a default of 8472 for VXLAN and 6081 for Geneve (Geneve is a sibling encapsulation protocol, general knowledge, and 6081 is its default port on the same page), and its system-requirements page says it uses "Linux's default VXLAN port 8472". If you stand up Cilium in a cloud and open UDP 4789 between nodes, the tunnel is still blocked.
 
 If one VTEP is on 4789 and the other on 8472, the receiver has no VXLAN listener on the port the sender picked. This lab did not test a mismatch, so treat that as reasoning, not observation. The practical rule is to read the port off the real interface (\`ip -d link show\`) and never assume it.
 
@@ -208,11 +208,11 @@ If one VTEP is on 4789 and the other on 8472, the receiver has no VXLAN listener
       id: 'twins',
       title: "Where you've met this",
       blocks: [
-        { md: `**Kubernetes / Cilium.** The Cilium routing documentation names VXLAN as the encapsulation protocol by default (\`tunnel-protocol\` defaults to \`vxlan\`), says that the underlay "must allow encapsulated packets" (8472/UDP for VXLAN, 6081/UDP for Geneve), and says VXLAN costs 50 bytes per packet. That is the same 50 you derived and then measured. Its documentation notes that jumbo frames mitigate the cost: 50 bytes of overhead per 1500 bytes versus per 9000. Inference, not a fetched figure: the pod's MTU should then be lower than the node's, so check \`ip link\` on a pod's \`eth0\` instead of guessing.
+        { md: `**Kubernetes / Cilium.** The Cilium routing documentation names VXLAN as the encapsulation protocol by default (\`tunnel-protocol\` defaults to \`vxlan\`), says that the underlay "must allow encapsulated packets" (8472/UDP for VXLAN, 6081/UDP for Geneve), and says VXLAN costs 50 bytes per packet. That is the same 50 you derived and then measured. Its documentation notes that jumbo frames mitigate the cost: 50 bytes of overhead per 1500 bytes versus per 9000. Inference, not a documented figure: the pod's MTU should then be lower than the node's, so check \`ip link\` on a pod's \`eth0\` instead of guessing.
 
 **AWS.** The Cilium system-requirements page includes an AWS security-group example for VXLAN mode, and the page says UDP 8472 must be open among all nodes in that mode, so the nodes' security groups have to allow it. How AWS builds the VPC itself is not published; do not assume it uses VXLAN. Treat the VPC as a given and run any overlay you build on top of it as a separate layer, with its own 50 bytes.
 
-**Proxmox.** Proxmox SDN has a VXLAN zone type. Its documentation says "VXLAN encapsulation uses 50 bytes", so the MTU must be 50 bytes lower than the outgoing physical interface, which matches the number from this chapter. Its IPsec example filters on UDP port 4789. The page this chapter fetched does not say which port a VXLAN zone uses when you don't set one, so read it off the node with \`ip -d link\`.` },
+**Proxmox.** Proxmox SDN has a VXLAN zone type. Its documentation says "VXLAN encapsulation uses 50 bytes", so the MTU must be 50 bytes lower than the outgoing physical interface, which matches the number from this chapter. Its documentation also says the VXLAN plugin uses "the default destination port 4789", and its IPsec example filters on UDP port 4789. So Proxmox follows the IANA value, while the Linux kernel's own default and Cilium's default are 8472.` },
       ],
     },
     {
