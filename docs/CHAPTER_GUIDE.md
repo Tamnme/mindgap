@@ -33,6 +33,7 @@ Each map node in `learner/map.json` has a `truth` (the one idea the chapter must
 - The text above a checkpoint sets up the *situation* only. Any rule, definition, man-page quote or worked example that decides the answer goes *after* it. Example: don't explain "admin state vs carrier" right before asking what a downed peer looks like.
 - Don't give a worked example whose pattern matches the answer, e.g. decoding a MAC byte whose bits are exactly the ones the checkpoint asks about. Pick a byte with a different pattern.
 - A wrong option's *label* (the part before `: `) must itself be wrong. If the label is literally what the lab prints (`DOWN`), the receipt marks a true statement wrong. Make the label carry the false belief.
+- Labels must be **distinct** across a checkpoint's options. A bare number or a bare "Yes"/"No" label almost always collides with another option or with the true answer, so put the belief in the label ("Zero: the switch still knows n23c").
 - Re-read every sentence above each checkpoint, asking "could Anh answer from this alone?" If yes, move it.
 
 **Claims vs observation (found in review):**
