@@ -2,7 +2,7 @@
 // Labs run in netlab (Ubuntu 26.04, iproute2 6.19) on 2026-10-25; outputs described in the prose were observed.
 // Sources:
 //   https://docs.aws.amazon.com/vpc/latest/reachability/what-is-reachability-analyzer.html (Reachability Analyzer tests connectivity between two VPC resources and names the blocking component: security group, network ACL, route table or load balancer)
-//   https://aws.amazon.com/vpc/faqs/ (VPC Flow Logs record allowed and denied traffic with an accept or reject action)
+//   https://aws.amazon.com/vpc/faqs/ (VPC Flow Logs record allowed and denied traffic with an accept or reject action); Traffic Mirroring supports packet capture at the ENI level for EC2 instances
 //   https://kubernetes.io/docs/tasks/debug/debug-application/debug-running-pod/ (kubectl debug adds an ephemeral debug container to a running Pod)
 // Hedged: Cilium/Hubble drop visibility, and Proxmox-specific tooling (nothing Proxmox-specific was checked).
 // The labs have no DNS step: the three namespaces have no names, so the DNS rung is covered in prose only and points to 6.2 and 6.3.
@@ -175,9 +175,9 @@ The rule from this round: when requests arrive and nothing leaves, stop looking 
             why: 'Every rung that uses small packets passes, and the message that fits in one small segment arrives. What changes with the big stream is packet size, so the first rung to test is the one that sends full-size packets with DF set.',
           },
         },
-        { md: `The ladder's size rung is \`ping -M do -s N\` sets DF and sends a packet of N + 28 bytes (20 of IP header, 8 of ICMP). Bisect on N. The largest size that answers marks the path MTU, and 3.9 explains why the answer to a too-big packet normally comes back as an ICMP message, and what a black hole is when that message does not.
+        { md: `The ladder's size rung is \`ping -M do -s N\`, which sets DF and sends a packet of N + 28 bytes (20 of IP header, 8 of ICMP). Bisect on N. The largest size that answers marks the path MTU, and 3.9 explains why the answer to a too-big packet normally comes back as an ICMP message, and what a black hole is when that message does not.
 
-The lab runs the same ping at four sizes, then sends a 6-byte message and a 20000-byte stream to S over fresh TCP connections and counts the bytes that arrive. It then reads R's firewall rule (the next suspect), removes it, and repeats everything.` },
+The lab runs the same ping at four sizes, then sends a 6-byte message and a 20000-byte stream to S over fresh TCP connections and counts the bytes that arrive. It then reads R's firewall rule, because the ICMP message that should report a size drop never arrives, so the device that would have sent it is the one to inspect. The lab removes the rule and repeats everything.` },
         {
           lab: {
             explain: 'Ping at four sizes with DF, send 6 and 20000 bytes over TCP, show the rule on R, remove it, repeat, then curl S',
@@ -208,7 +208,7 @@ kill $SP 2>/dev/null; wait $SP 2>/dev/null; true`,
         },
         { md: `Sizes 56, 1000 and 1372 answer. 1472 gets no answer. Packet sizes are N + 28, so 1372 makes a 1400-byte packet that fits and 1472 makes a 1500-byte packet that does not. The TCP numbers agree: the 6-byte message arrives, the 20000-byte stream delivers 0 bytes, so the big transfer delivers nothing.
 
-The rule on R is \`icmp type destination-unreachable icmp code 4 drop\`, and code 4 is "fragmentation needed". It is the message that would have told C to send smaller packets. This was fault 3, an MTU black hole: R's \`eth1\` has an MTU of 1400, and the only message that could explain the drops is the one R was told to discard. The fix is to stop dropping it. The lab deleted the rule.
+The rule on R is \`icmp type destination-unreachable icmp code 4 drop\`, and code 4 is "fragmentation needed". It is the message that would have told C to send smaller packets. This was fault 3, an MTU black hole: R's \`eth1\` has an MTU of 1400, and the message that would have explained the drops is the one R was told to discard. The fix is to stop dropping it. The lab deleted the rule.
 
 With the rule gone, the 1472 ping prints \`Frag needed and DF set (mtu = 1400)\`, so the path now explains itself. C caches \`mtu 1400\` for S. After the cache is flushed, a fresh 20000-byte stream delivers all 20000 bytes, because the first oversize segment now triggers the message and TCP shrinks its segments. Finally \`curl\` returns \`HTTP 200\`: the application rung passes because the rungs under it do.
 
@@ -228,7 +228,7 @@ One thing the labs did not exercise: DNS. These namespaces have no names. In a r
 | Same subnet, works for some hosts only; broadcasts do not arrive | L2 VLAN or bridge | \`bridge vlan show\` | 2.4 to 2.7 |
 | Interface has no address | L3 configuration | \`ip -br addr\` | 3.1; 6.1 DHCP |
 | "Network is unreachable", or a router reports "Net Unreachable" | L3 route | \`ip route get DST\` | 3.4, 3.5, 3.2 |
-| Traceroute stops at one hop | L3, past that hop | \`traceroute -n DST\` | 3.8 TTL and traceroute |
+| Traceroute stops at one hop | L3, past that hop (or replies filtered or rate-limited) | \`traceroute -n DST\` | 3.8 TTL and traceroute |
 | "Connection refused" | L4, port closed (an RST came back) | \`ss -ltn\` on the server | 4.1, 4.4 |
 | Connect times out, nothing came back | L4, packets dropped, or no return path | capture at the far end | 4.4, 4.5, 4.6, 4.7 |
 | Connects, then stalls on large transfers; small pings work | MTU | \`ping -M do -s N DST\` | 3.9; 5.1 for tunnel overhead |
@@ -250,7 +250,7 @@ Four reading rules sit behind the table:
       id: 'twins',
       title: "Where you've met this",
       blocks: [
-        { md: `**AWS.** The ladder maps onto the tools AWS gives you, with one caveat: there is generally no capture point on the VPC's own links (general knowledge, not checked in the docs below). [Reachability Analyzer](https://docs.aws.amazon.com/vpc/latest/reachability/what-is-reachability-analyzer.html) tests connectivity between a source and a destination resource and, when the destination is not reachable, names the blocking component: a security group, network ACL, route table or load balancer. That is rungs 3 and 4 as a configuration check. [VPC Flow Logs](https://aws.amazon.com/vpc/faqs/) record allowed and denied traffic with an accept or reject action, which is the silent-drop evidence you cannot capture yourself. Whether either tool would show an MTU black hole like the one in this chapter was not checked; use \`ping -M do -s N\` from an instance for that rung.
+        { md: `**AWS.** The ladder maps onto the tools AWS gives you, with one caveat about capture: [Traffic Mirroring](https://aws.amazon.com/vpc/faqs/) supports packet capture at an instance's ENI, but there is no capture point on the VPC's internal links (for example the implied router), a point the FAQ does not address and that is general knowledge. [Reachability Analyzer](https://docs.aws.amazon.com/vpc/latest/reachability/what-is-reachability-analyzer.html) tests connectivity between a source and a destination resource and, when the destination is not reachable, names the blocking component: a security group, network ACL, route table or load balancer. That is rungs 3 and 4 as a configuration check. [VPC Flow Logs](https://aws.amazon.com/vpc/faqs/) record allowed and denied traffic with an accept or reject action, which is the silent-drop evidence when mirroring is not set up. Whether either tool would show an MTU black hole like the one in this chapter was not checked; use \`ping -M do -s N\` from an instance for that rung.
 
 **Kubernetes.** Run the ladder from inside the cluster, not from your laptop. [\`kubectl debug\`](https://kubernetes.io/docs/tasks/debug/debug-application/debug-running-pod/) adds an ephemeral debug container to a running Pod, so you can run \`ip route get\`, \`nc\` and \`curl\` in that Pod's network namespace. Test the pod IP first, then the Service name, so a failure splits into "network" and "Service or DNS" (see 5.2 and 6.3). Cilium and Hubble can report drops at the datapath; that was not checked here, and 5.3 is the chapter for the datapath.
 
