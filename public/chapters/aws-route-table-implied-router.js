@@ -136,7 +136,7 @@ Two things the docs call out:
 
 A different way to say "everything", from the same page: replace the local route's target with the appliance's interface, so that all traffic for the VPC CIDR, including subnets you add later, goes through it.
 
-**When this arrived.** The AWS News Blog post "New – VPC Ingress Routing", dated 3 December 2019, announced routing for inbound traffic through an appliance: a route table associated with the internet gateway whose row sends traffic to the appliance's network interface. The fetched User Guide page for the subnet-table form quoted here carries no date, and a dated announcement for that form returned a 404 when fetched, so treat 2019 as the date for the gateway-table form only.` },
+**When this arrived.** The AWS News Blog post "New – VPC Ingress Routing", dated 3 December 2019, announced routing for inbound traffic through an appliance: a route table associated with the internet gateway whose row sends traffic to the appliance's network interface. The User Guide page for the subnet-table form quoted here carries no date, and a dated announcement for that form returned a 404 when requested, so treat 2019 as the date for the gateway-table form only.` },
         {
           widget: {
             id: 'w-aws-rt',

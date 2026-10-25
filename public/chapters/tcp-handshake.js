@@ -208,7 +208,7 @@ wait`,
 
 So the handshake is the kernel's business. The listening socket answers SYNs and finishes handshakes on its own, and parks each completed connection in a queue until the application calls \`accept()\`. That queue is bounded by the \`listen()\` backlog. The observation: the listener passed a backlog of 1 and two connections completed, and the \`LISTEN\` row read \`2 1\` in its two queue columns. Why backlog 1 admitted two wasn't investigated here, and the \`ss\` man page doesn't define those columns; as in chapter 4.1, the numbers are noted as observed, not explained.
 
-The cause of the unanswered SYNs is general knowledge, not something this lab captured: Linux drops new SYNs when the accept queue is full and \`tcp_abort_on_overflow\` is 0 (its default), which is why the clients kept retrying instead of being refused. The kernel documentation for \`tcp_abort_on_overflow\` wasn't fetched in this session.
+The cause of the unanswered SYNs is general knowledge, not something this lab captured: Linux drops new SYNs when the accept queue is full and \`tcp_abort_on_overflow\` is 0 (its default), which is why the clients kept retrying instead of being refused. The kernel documentation for \`tcp_abort_on_overflow\` is not cited here.
 
 > [!IMPORTANT]
 > An established connection can exist with nobody having called accept(). In this lab, clients beyond the queue saw SYNs that never got an answer, not a refusal.` },
@@ -220,7 +220,7 @@ The cause of the unanswered SYNs is general knowledge, not something this lab ca
       blocks: [
         { md: `**AWS.** Security groups track connections, and the EC2 connection-tracking page says responses to allowed traffic flow back whatever the other direction's rules are. The likely reading, not stated on that page: the rule that matters is the one that admits the opening SYN. A missing inbound rule would then show up as a SYN that gets no answer, the same SYN-SENT you saw for clients 3 and 4 though from a different cause. Chapters 4.4 and 4.5 test this.
 
-**Kubernetes / Cilium.** With a Service, the SYN is sent to the ClusterIP and rewritten to a backend pod by kube-proxy or Cilium, so the SYN/ACK comes from the pod's address and is translated back. This is general knowledge, not fetched here; chapter 4.7 tests conntrack-based rewriting.
+**Kubernetes / Cilium.** With a Service, the SYN is sent to the ClusterIP and rewritten to a backend pod by kube-proxy or Cilium, so the SYN/ACK comes from the pod's address and is translated back. This is general knowledge; chapter 4.7 tests conntrack-based rewriting.
 
 **Proxmox.** The handshake is run by each guest's kernel, as in the lab. The Proxmox firewall tracks state per VM; its documentation wasn't checked here, so treat the detail as unverified.` },
       ],

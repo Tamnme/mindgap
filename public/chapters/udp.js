@@ -214,11 +214,11 @@ So a UDP application gets message boundaries for free and must handle loss, reor
       id: 'twins',
       title: "Where you've met this",
       blocks: [
-        { md: `**AWS.** Security groups track connections, and the connection-tracking page covers UDP: a response to an allowed request is let back whatever the other direction's rules say. A NAT gateway supports TCP, UDP and ICMP. Both are in the vendor docs. How an SG or NACL drop looks to a UDP sender wasn't fetched here; test it in your own account instead of assuming the lab's silence carries over.
+        { md: `**AWS.** Security groups track connections, and the connection-tracking page covers UDP: a response to an allowed request is let back whatever the other direction's rules say. A NAT gateway supports TCP, UDP and ICMP. Both are in the vendor docs. How an SG or NACL drop looks to a UDP sender isn't covered here; test it in your own account instead of assuming the lab's silence carries over.
 
-**Kubernetes.** From general knowledge, not fetched here: CoreDNS answers on UDP port 53, and VXLAN and Geneve tunnels ride on UDP. A UDP Service whose backend is gone may leave a client with timeouts instead of a refusal. That is the unconnected-socket pattern from lab 2, which this chapter did not test through a Service.
+**Kubernetes.** From general knowledge: CoreDNS answers on UDP port 53, and VXLAN and Geneve tunnels ride on UDP. A UDP Service whose backend is gone may leave a client with timeouts instead of a refusal. That is the unconnected-socket pattern from lab 2, which this chapter did not test through a Service.
 
-**Proxmox.** A firewall rule that drops UDP produces the lab-3 silence: a timeout and no error. The Proxmox firewall's own behaviour wasn't fetched here, so this is what the lab showed on a plain iptables rule, not a Proxmox claim.` },
+**Proxmox.** A firewall rule that drops UDP produces the lab-3 silence: a timeout and no error. The Proxmox firewall's own behaviour isn't covered here, so this is what the lab showed on a plain iptables rule, not a Proxmox claim.` },
       ],
     },
     {

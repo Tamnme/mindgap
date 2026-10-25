@@ -216,7 +216,7 @@ The same connection-tracking page has a catch that explains why a security group
 
 **Proxmox.** The Proxmox VE firewall page says that with the input or output policy set to DROP or REJECT, traffic for already established connections is still allowed. That is the same rule as \`ct state established,related accept\`, and the page says the firewall can be inspected with \`iptables-save\`. The page does not spell out the exact rule it generates, so the equivalence is the same behaviour, not a confirmed rule text.
 
-**Kubernetes / Cilium.** Cilium's NetworkPolicy is generally described as stateful: allowing ingress to a pod lets its replies out. This chapter did not fetch Cilium's documentation, so treat that as general knowledge.` },
+**Kubernetes / Cilium.** Cilium's NetworkPolicy is generally described as stateful: allowing ingress to a pod lets its replies out. Cilium's documentation is not cited here, so treat that as general knowledge.` },
       ],
     },
     {

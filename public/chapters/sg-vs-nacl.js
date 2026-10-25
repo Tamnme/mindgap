@@ -246,7 +246,7 @@ The refusal on 8444 is also information. A packet that was refused got through t
 > [!IMPORTANT]
 > A timeout means a drop on the path, and the connect() call does not say where. An immediate refusal means the packet reached a host and was answered. In AWS, a security group and a NACL both produce the timeout.
 
-AWS has tooling aimed at this question, such as VPC Flow Logs and Reachability Analyzer. This chapter did not fetch their documentation, so treat them as pointers, not as claims about their output. Without them, the method is the one the lab used: check each layer separately, starting with whichever one you can inspect cheaply.` },
+AWS has tooling aimed at this question, such as VPC Flow Logs and Reachability Analyzer. Their documentation is not cited here, so treat them as pointers, not as claims about their output. Without them, the method is the one the lab used: check each layer separately, starting with whichever one you can inspect cheaply.` },
       ],
     },
     {
@@ -280,9 +280,9 @@ Two details from the NACL pages are worth carrying with you. Each NACL has an as
 
 The security group page adds that some traffic is not filtered by security groups at all, such as instance metadata and the Amazon Time Sync Service.
 
-**Kubernetes / Cilium.** A Kubernetes NetworkPolicy is usually described as per-workload, allow-style and stateful, which makes it resemble a security group more than a NACL. This chapter did not fetch the Kubernetes or Cilium documentation, so treat that as general knowledge. If the nodes sit in a VPC, the node's security group and subnet NACL still apply underneath it.
+**Kubernetes / Cilium.** A Kubernetes NetworkPolicy is usually described as per-workload, allow-style and stateful, which makes it resemble a security group more than a NACL. The Kubernetes and Cilium documentation is not cited here, so treat that as general knowledge. If the nodes sit in a VPC, the node's security group and subnet NACL still apply underneath it.
 
-**Proxmox.** The Proxmox firewall applies rules per VM, closest to a security group in spirit. A subnet-level stateless filter with numbered allow and deny rules has no direct equivalent unless you build it on a router, which is what the lab did. This chapter did not fetch the Proxmox documentation either, so that is general knowledge.` },
+**Proxmox.** The Proxmox firewall applies rules per VM, closest to a security group in spirit. A subnet-level stateless filter with numbered allow and deny rules has no direct equivalent unless you build it on a router, which is what the lab did. The Proxmox documentation is not cited here either, so that is general knowledge.` },
       ],
     },
     {

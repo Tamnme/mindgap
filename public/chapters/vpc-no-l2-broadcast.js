@@ -125,7 +125,7 @@ That's the shape of the idea: the owner of an address isn't the one answering AR
       id: 'failover',
       title: 'What breaks, and what AWS gives you instead',
       blocks: [
-        { md: `Think of a pair of servers sharing a virtual IP with keepalived and VRRP. When the active one dies, the standby takes over the VIP and sends a **gratuitous ARP**, as in the last lab of 2.8, so every neighbour's cache switches to the standby's MAC. That recipe needs a segment where the broadcast reaches every neighbour. What a VPC does with a gratuitous ARP an instance sends isn't covered in the AWS pages fetched for this chapter, so don't design around it, and don't assume it works.
+        { md: `Think of a pair of servers sharing a virtual IP with keepalived and VRRP. When the active one dies, the standby takes over the VIP and sends a **gratuitous ARP**, as in the last lab of 2.8, so every neighbour's cache switches to the standby's MAC. That recipe needs a segment where the broadcast reaches every neighbour. What a VPC does with a gratuitous ARP an instance sends isn't covered in the AWS pages cited here, so don't design around it, and don't assume it works.
 
 AWS documents other ways to move an address. In the EC2 docs, one stated use case for secondary private IPs is to "Redirect internal traffic to a standby instance in case your instance fails, by reassigning the secondary IP address to the standby instance." In the network-interface docs, there's a hot-standby pattern: re-attach the failed instance's ENI to a replacement instance.` },
         {
@@ -142,9 +142,9 @@ AWS documents other ways to move an address. In the EC2 docs, one stated use cas
             why: 'The docs say the ENI keeps its private IPs, Elastic IPs and MAC address. If the MAC stays the same, every cached IP-to-MAC pair is still right and nothing has to be announced.',
           },
         },
-        { md: `The same page says the interface "maintains its private IP addresses, Elastic IP addresses, and MAC address", and that "no changes to the route table or your DNS server are required". That's the contrast with the VRRP recipe. On a shared segment you move the IP and *announce a new MAC*. With an ENI move, the MAC travels with the IP, so there's nothing to announce. Reassigning a secondary IP to a different instance's ENI is the other documented route. Whether neighbours then see a new MAC is not described in the page fetched, so test with \`ip neigh\` on an instance rather than assuming either answer.
+        { md: `The same page says the interface "maintains its private IP addresses, Elastic IP addresses, and MAC address", and that "no changes to the route table or your DNS server are required". That's the contrast with the VRRP recipe. On a shared segment you move the IP and *announce a new MAC*. With an ENI move, the MAC travels with the IP, so there's nothing to announce. Reassigning a secondary IP to a different instance's ENI is the other documented route. Whether neighbours then see a new MAC is not described in the AWS page cited here, so test with \`ip neigh\` on an instance rather than assuming either answer.
 
-A third pattern is a route-table update: point a route's target at the standby, as a failover script would. The fetched route-table pages list the possible targets but don't describe failover, so treat this one as a common pattern, not a documented recipe, and check the current docs for which targets a route can take.
+A third pattern is a route-table update: point a route's target at the standby, as a failover script would. The route-table pages cited here list the possible targets but don't describe failover, so treat this one as a common pattern, not a documented recipe, and check the current docs for which targets a route can take.
 
 > [!IMPORTANT]
 > In a VPC, fail over by moving the thing the network tracks (an ENI, a secondary IP, or a route target), not by announcing a MAC. A gratuitous ARP is an L2 broadcast, and AWS says it doesn't support broadcast in a VPC.` },

@@ -151,7 +151,7 @@ TCP behaves differently (a closed port gets a RST, chapter 4.4). That is the con
       id: 'twins',
       title: "Where you've met this",
       blocks: [
-        { md: `**AWS.** The EC2 MTU page says that in IPv4 an oversize packet with DF set is answered with an ICMP destination-unreachable, fragmentation-needed message (type 3, code 4), and that this is how a sender learns the path MTU. So blocking ICMP type 3 code 4 anywhere on that path breaks the mechanism. How security groups and NACLs treat other ICMP types is in their own documentation, which this chapter didn't fetch. When ping fails but TCP works, check whether ICMP is allowed before blaming routing.
+        { md: `**AWS.** The EC2 MTU page says that in IPv4 an oversize packet with DF set is answered with an ICMP destination-unreachable, fragmentation-needed message (type 3, code 4), and that this is how a sender learns the path MTU. So blocking ICMP type 3 code 4 anywhere on that path breaks the mechanism. How security groups and NACLs treat other ICMP types is in their own documentation, which is not covered here. When ping fails but TCP works, check whether ICMP is allowed before blaming routing.
 
 **Kubernetes / Cilium.** Whether a NetworkPolicy affects ICMP depends on the CNI. Test with \`ping\` from a debug pod instead of assuming.
 

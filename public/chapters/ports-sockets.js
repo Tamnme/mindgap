@@ -202,7 +202,7 @@ This explains a common surprise. A service that listens on \`127.0.0.1\` is reac
 
 The arithmetic from lab 2's range: 60999 - 32768 + 1 = 28,232 ephemeral ports. If a Linux client uses its whole default range (general knowledge, not tested here), one source IP can hold at most 28,232 simultaneous connections to one destination IP, port and protocol. That is below the 55,000 the NAT gateway page quotes, which suggests the gateway does not allocate from that default Linux range; the page gives no more detail than that.
 
-**Kubernetes.** A Service maps a ClusterIP and port to a pod IP and port, so the destination half of the tuple is rewritten on the way. conntrack tracks each connection by its tuple. That is general knowledge here, not something this chapter fetched; chapter 4.7 tests it.
+**Kubernetes.** A Service maps a ClusterIP and port to a pod IP and port, so the destination half of the tuple is rewritten on the way. conntrack tracks each connection by its tuple. That is general knowledge here; chapter 4.7 tests it.
 
 **Proxmox.** A port forward on the host (iptables DNAT) rewrites the destination half of a connection's tuple and conntrack remembers the mapping, again from general knowledge and not tested here.` },
       ],

@@ -31,6 +31,7 @@ for (const id of ids) {
     const FIRST_PERSON = /(?<![-/\w])(I|I'm|I've|I'd)(?![/\w])|\b(my|me)\b/g; // I/G, -I and quoted speech are not first person
     const prose = [...blocks.filter((b) => b.md).map((b) => b.md), ...cps.map((c) => c.why), ...blocks.filter((b) => b.lab).map((b) => b.lab.explain)];
     for (const t of prose) assert.ok(!new RegExp(FIRST_PERSON.source, 'i').test(t.replace(/`[^`]*`|"[^"]*"/g, '')), `first person in chapter text: ${t.match(new RegExp(FIRST_PERSON.source, 'i'))?.[0]} in "${t.slice(0, 60)}"`);
+    for (const t of prose) assert.ok(!/\bfetch(ed|ing)?\b/i.test(t), `learner text mentions fetching: "${t.match(/.{0,40}\bfetch(ed|ing)?\b.{0,20}/i)?.[0]}"`);
     for (const b of blocks) {
       const kinds = ['md', 'checkpoint', 'widget', 'lab'].filter((k) => b[k]);
       assert.equal(kinds.length, 1, 'each block is exactly one kind');
