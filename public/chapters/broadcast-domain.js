@@ -146,7 +146,7 @@ Now change the cabling. Leave the router and every IP address alone, and add a p
             id: 'c3',
             prompt: 'With a cable joining br24a and br24b, n24a broadcasts an ARP request for 10.24.1.3. Does n24b (10.24.2.2/24) see it?',
             options: [
-              'It sees it: the cable makes the two bridges one L2 segment, whatever the IPs say',
+              'One segment via the cable: the cable makes the two bridges one L2 segment, whatever the IPs say',
               'Subnet filter: n24b is in 10.24.2.0/24, so it never receives anything for another subnet',
               'Router drops it: the router sits between them and drops the broadcast',
               'Target only: n24b sees it only because it is the one being asked for',

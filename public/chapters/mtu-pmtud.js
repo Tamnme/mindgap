@@ -27,7 +27,7 @@ The lab builds the chain you know from chapter 3.7: A, R and B. The difference i
             id: 'c1',
             prompt: 'With DF set, which is the largest `-s` that gets through the 1400-byte link?',
             options: [
-              'Data only counts (-s 1400): the limit applies to the data in the request',
+              'Limit applies to data only (-s 1400): the limit applies to the data in the request',
               'IP and ICMP headers count (-s 1372): the limit covers the whole IP packet',
               'Ethernet header counts too (-s 1358): the limit covers the whole frame',
             ],
@@ -202,7 +202,7 @@ The widget below has the same failure with ICMP blocked on the path. Two fixes: 
 
 **Kubernetes / Cilium.** An overlay wraps each packet in outer headers, so the pod's usable MTU is smaller than the node's. The widget's 1450 is the node MTU minus VXLAN's usual 50 bytes of outer headers, which is general knowledge, not a fetched Cilium figure. How Cilium sets the pod MTU depends on its mode and configuration, so read the real value from the pod's interface (\`ip link\`) instead of trusting a number. "Small requests work, large transfers hang" is the black-hole shape from the lab.
 
-**Proxmox.** A guest MTU larger than the path it uses will fail the same way: oversize packets with DF set are dropped. Match the bridge, the guest NIC and the physical path. A Linux bridge forwards frames and sends no ICMP of its own, so don't expect it to report the problem.` },
+**Proxmox.** A guest MTU larger than the path it uses will fail the same way: oversize packets with DF set are dropped. Match the bridge, the guest NIC and the physical path. A Linux bridge forwards frames without reading IP, so by itself it shouldn't send ICMP errors (general knowledge; no lab here used a bridge), and you shouldn't expect it to report the problem.` },
       ],
     },
     {
