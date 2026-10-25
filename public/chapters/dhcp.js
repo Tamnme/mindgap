@@ -25,7 +25,7 @@ export default {
       title: 'A host with nothing',
       blocks: [
         {
-          md: `You already know two things that make this problem hard. A packet needs a source and a destination IP before it can leave a NIC (UDP is no exception, see the UDP chapter), and a broadcast reaches only the hosts in the same broadcast domain.
+          md: `You already know two things that make this problem hard. A packet needs a source and a destination IP before it can leave a NIC (UDP is no exception, see the UDP chapter).
 
 Now boot a new VM on a segment where a DHCP server exists somewhere. The link is up. The host has a MAC address, and that is all. It has no IP, no subnet mask, no default gateway, no DNS server, and it has never heard the server's address.
 
@@ -38,7 +38,7 @@ It still has to send one packet to start the conversation. Every field in that p
             options: [
               'Unicast to the default gateway: the gateway is where unknown traffic goes',
               'Self-assigned 169.254.x.x to the subnet broadcast: it must pick a link-local address first',
-              'Source 0.0.0.0, destination 255.255.255.255: it has no address and does not know any server',
+              'Source 0.0.0.0, destination 255.255.255.255: no address, no known server',
               'Unicast to the well-known DHCP server address: that address is built into every client',
             ],
             key: 2,
@@ -46,12 +46,12 @@ It still has to send one packet to start the conversation. Every field in that p
           },
         },
         {
-          md: `This is the hard part of DHCP, and the rest of the protocol is built around it. The client sends from \`0.0.0.0\` to \`255.255.255.255\`, the "this network, everyone" address. Routers do not forward that destination, so the packet reaches the broadcast domain it was sent into and nothing beyond it.
+          md: `This is the hard part of DHCP, and the rest of the protocol is built around it. The client sends from \`0.0.0.0\` to \`255.255.255.255\`, the "this network, everyone" address.
 
 Two port numbers keep the conversation recognisable. A DHCP server listens on UDP **67** and a client uses UDP **68**. The client binds port 68 before it has an address, so the DHCP reply can find it.
 
 > [!IMPORTANT]
-> The first DHCP packet is a limited broadcast: source \`0.0.0.0\`, destination \`255.255.255.255\`, UDP 68 → 67. It only travels as far as the client's own segment.`,
+> The first DHCP packet is a limited broadcast: source \`0.0.0.0\`, destination \`255.255.255.255\`, UDP 68 → 67.`,
         },
       ],
     },
@@ -72,20 +72,20 @@ client                                         server
 
 The DISCOVER asks the segment for any server. An OFFER proposes an address and the options that go with it: subnet mask, router (the default gateway), DNS servers, domain name, and so on. The REQUEST names the offer the client accepts, and the ACK confirms it and starts the lease clock. Only after the ACK does the client configure the address on its interface.
 
-The next checkpoint is about the Ethernet destination of each of the four.`,
+The labs in this chapter use **dhcpcd** as the client and **dnsmasq** as the server. The next checkpoint is about the Ethernet destination of each of the four in a capture of that pair.`,
         },
         {
           checkpoint: {
             id: 'c2',
-            prompt: 'In the capture of one full DORA, which messages go to the broadcast MAC ff:ff:ff:ff:ff:ff?',
+            prompt: 'In a capture of one full DORA between dhcpcd (client) and dnsmasq (server), which messages go to the broadcast MAC ff:ff:ff:ff:ff:ff?',
             options: [
-              'All four: the client has no address until the ACK, so nothing can be unicast to it',
+              'All four broadcast: the client has no address until the ACK, so nothing can be unicast to it',
               'Only the DISCOVER: once a server answered, both sides know each other and use unicast',
               'The two server messages: the server has to shout because the client cannot be addressed',
               'The two client messages: the server replies straight to the client’s MAC',
             ],
             key: 3,
-            why: 'The client never knows a server MAC before the exchange ends, and the REQUEST still goes to 255.255.255.255 (other servers need to see which offer was taken). The server does know the client MAC from the DISCOVER and can address its replies to it.',
+            why: 'For this pair, the client never knows a server MAC before the exchange ends, so both of its messages are broadcast, while dnsmasq addresses its replies to the client MAC it learned from the DISCOVER. A client that sets the BROADCAST flag asks for broadcast replies, so other pairs can differ.',
           },
         },
         {
@@ -113,7 +113,7 @@ kill $(cat /tmp/n61.pid); echo "dnsmasq stopped"`,
           },
         },
         {
-          md: `Read the four lines against the diagram. The DISCOVER and the REQUEST are broadcasts at both layers: Ethernet destination \`ff:ff:ff:ff:ff:ff\`, IP \`0.0.0.0\` to \`255.255.255.255\`. The OFFER and the ACK go to the client's own MAC and to the address it is being offered, even though the client has not configured that address yet. The client's NIC accepts the frame because the MAC matches.
+          md: `Read the four lines against the diagram. The DISCOVER and the REQUEST are broadcasts at both layers: Ethernet destination \`ff:ff:ff:ff:ff:ff\`, IP \`0.0.0.0\` to \`255.255.255.255\`. The OFFER and the ACK go to the client's own MAC and to the address it is being offered, even though the client has not configured that address yet. The client's NIC accepts the frame because the MAC matches. General knowledge, not shown by this lab: a client with no configured address can still read the reply because DHCP clients such as dhcpcd receive it on a raw packet socket instead of through the normal IP stack.
 
 That unicast reply is a choice, not a law. RFC 2131 gives the client a BROADCAST flag it can set to ask for broadcast replies, "a client that cannot receive unicast IP datagrams until its protocol software has been configured with an IP address SHOULD set the BROADCAST bit". In this capture the flags field printed \`Flags [none]\`, so dhcpcd did not ask for broadcast replies and dnsmasq answered with unicast. With other client and server pairs, the OFFER and ACK could look different. This lab tested one pair.
 
@@ -125,7 +125,7 @@ The ACK also carried the settings the client uses. The lease time is 120 seconds
     },
     {
       id: 'lease',
-      title: 'Leases, and how far a broadcast reaches',
+      title: 'Leases, and finding the server',
       blocks: [
         {
           md: `The address is not given away, it is **leased**. The server records who holds which address and until when, and the client has to renew before the lease runs out. The ACK told the client two renewal times along with the lease. dnsmasq set a 120 s lease with timers of 60 s (\`RN\`, renewing) and 105 s (\`RB\`, rebinding), which are 50% and 87.5% of the lease. RFC 2131 describes the roles. At T1 the client sends a unicast REQUEST to the server that gave it the address. At T2 it gives up on that server and broadcasts to any server. The values in this lab are what dnsmasq chose.
@@ -156,9 +156,9 @@ Now the other half of the problem. DISCOVER is a limited broadcast, so what if t
             id: 'c3',
             prompt: 'The isolated client keeps trying for a few seconds. How many DHCP packets from its MAC does dnsmasq’s link see?',
             options: [
-              'None: a broadcast stays on the link it was sent into',
-              'All of them: the machine forwards a broadcast to every interface it has',
-              'Some of them: after a timeout the client falls back to the last server it knew',
+              'Nothing arrives: a broadcast stays on the link it was sent into',
+              'Every DISCOVER arrives: both links are in one machine, so they share a broadcast domain',
+              'Later retries arrive: after a timeout the client falls back to the last server it knew',
             ],
             key: 0,
             why: 'A limited broadcast is not forwarded between links, and nothing in this setup relays it. The server’s link sees only what the other client (which is on that link) sends.',
@@ -193,6 +193,8 @@ kill $(cat /tmp/n61.pid); echo "dnsmasq stopped"`,
           md: `The isolated client's DISCOVER (one in this window) was visible on \`v61d\`, which proves that capture was running. None showed up on the server's link, where the other client's two packets did (its DISCOVER and REQUEST), so that capture was running too. The isolated client ends with no address. Nothing answered because no server saw its broadcast.
 
 In real networks the server is often *not* on the client's segment. Running a server per VLAN would be unmanageable, so a router (or L3 switch) on the client's segment acts as a **relay agent**. It listens for the broadcast, then forwards it as a unicast to a configured server and writes its own address on that segment into the packet's \`giaddr\` field. RFC 2131 says the server uses that field to pick the pool: the address is chosen "based on the subnet from which the message was received (if 'giaddr' is 0) or on the address of the relay agent that forwarded the message ('giaddr' when not 0)". This lab did not run a relay, so the relay mechanics here come from the RFC, not from a capture.
+
+Routers do not forward the limited broadcast 255.255.255.255 (general knowledge, consistent with nothing crossing between the two links here), which is why the server has to be on the client's segment or reachable through a relay.
 
 > [!IMPORTANT]
 > DHCP needs the server in the client's broadcast domain, or a relay agent in it that forwards the DISCOVER by unicast and sets \`giaddr\`.`,
