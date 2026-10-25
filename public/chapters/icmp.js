@@ -116,9 +116,9 @@ In each case the packet is delivered all the way to the last segment, and the qu
             id: 'c2',
             prompt: 'A sends UDP to B on port 9999, where nothing is listening. Which device sends the "port unreachable" error back to A?',
             options: [
-              'R: it forwards the packet and sees the port is closed',
-              'B: its own kernel answers for the closed port',
-              'A: its own kernel gives up before the packet leaves',
+              'The router R: it forwards the packet and sees the port is closed',
+              'The destination B: its own kernel answers for the closed port',
+              'The sender A: its own kernel gives up before the packet leaves',
               'None: UDP is connectionless, so nobody sends an error',
             ],
             key: 1,
@@ -137,9 +137,9 @@ sleep 0.5; kill %1 2>/dev/null; wait 2>/dev/null
 echo; grep -v 'echo request' /tmp/n37.cap | cut -c16-`,
           },
         },
-        { md: `The ping to 10.37.2.99 comes back \`Destination Host Unreachable\` from **10.37.1.1**, which is R. R accepted the packet, found the address on its connected subnet, and couldn't get an answer to its ARP request (chapter 2.8). So R reported host unreachable.
+        { md: `The ping to 10.37.2.99 comes back \`Destination Host Unreachable\` from **10.37.1.1**, which is R. R accepted the packet and found the address on its connected subnet. The usual explanation is that R sent an ARP request (chapter 2.8) and got no answer, so it reported host unreachable. The lab didn't capture R's side, so that is general Linux behaviour, not something it printed.
 
-The UDP datagram produced \`ICMP 10.37.2.2 udp port 9999 unreachable\`, and the sender is **10.37.2.2**: B itself. \`nc\` exited with 1 because the kernel turned that ICMP message into a connection-refused error on A's socket. R forwarded the datagram and could not have known the port was closed.
+The UDP datagram produced \`ICMP 10.37.2.2 udp port 9999 unreachable\`, and the sender is **10.37.2.2**: B itself. \`nc\` exited with 1. Linux normally turns such an ICMP message into a connection-refused error on the sender's socket, which would explain that, but the lab didn't show it. R forwarded the datagram and could not have known the port was closed.
 
 TCP behaves differently (a closed port gets a RST, chapter 4.4). That is the contrast to remember: UDP has no handshake of its own, so ICMP is how a closed UDP port is reported.
 
@@ -151,11 +151,11 @@ TCP behaves differently (a closed port gets a RST, chapter 4.4). That is the con
       id: 'twins',
       title: "Where you've met this",
       blocks: [
-        { md: `**AWS.** The EC2 MTU page says that in IPv4 an oversize packet with DF set is answered with \`Destination Unreachable: Fragmentation Needed and Don't Fragment was Set\` (type 3, code 4), and that this is how a sender learns the path MTU. So blocking ICMP type 3 code 4 anywhere on that path breaks the mechanism. How security groups and NACLs treat other ICMP types is in their own documentation, which this chapter didn't fetch. When ping fails but TCP works, check whether ICMP is allowed before blaming routing.
+        { md: `**AWS.** The EC2 MTU page says that in IPv4 an oversize packet with DF set is answered with an ICMP destination-unreachable, fragmentation-needed message (type 3, code 4), and that this is how a sender learns the path MTU. So blocking ICMP type 3 code 4 anywhere on that path breaks the mechanism. How security groups and NACLs treat other ICMP types is in their own documentation, which this chapter didn't fetch. When ping fails but TCP works, check whether ICMP is allowed before blaming routing.
 
 **Kubernetes / Cilium.** Whether a NetworkPolicy affects ICMP depends on the CNI. Test with \`ping\` from a debug pod instead of assuming.
 
-**Proxmox.** The firewall can filter ICMP per VM or at the host. A Linux bridge on its own never generates ICMP errors, because it forwards frames without looking at IP. If a ping returns \`Destination Host Unreachable\`, the sender of that message is an L3 device, and the \`From\` address names which one.` },
+**Proxmox.** The firewall can filter ICMP per VM or at the host. A Linux bridge forwards frames without looking at IP, so by itself it shouldn't generate ICMP errors (general knowledge; no lab here used a bridge). If a ping returns \`Destination Host Unreachable\`, the sender of that message is an L3 device, and the \`From\` address names which one.` },
       ],
     },
     {
