@@ -23,13 +23,14 @@ export default {
 
 In an ordinary network you want it to stay that way. A flooded frame costs every port a copy, and every host on the segment gets to see traffic that wasn't meant for it. So the interesting question is the opposite one: **what puts a switch back into the "no entry" state?**
 
-Three kinds of frame take the flood path, and the industry has a name for the group, **BUM**: **B**roadcast (always), **U**nknown unicast (no entry), **M**ulticast (flooded by default unless the bridge tracks group membership). This chapter is about the U.
+Three kinds of frame take the flood path, and the industry has a name for the group, **BUM**: **B**roadcast (always), **U**nknown unicast (no entry), **M**ulticast (on a plain switch, flooded like the others). This chapter is about the U.
 
 Build a bridge, \`br23\`, with three hosts **n23a, n23b, n23c**. Its \`ageing_time\` is set to 3 seconds. We'll get to what that setting does in a moment. ARP is pinned between n23a and n23c, so the only frames you'll count are unicast ones. The table starts empty.` },
         {
           lab: {
             explain: 'Build br23 (ageing_time 300 = 3 s) with three hosts and pinned ARP; expect 0 learned entries',
             cmd: `for n in n23a n23b n23c; do ip netns del $n 2>/dev/null; done; ip link del br23 2>/dev/null
+for i in 1 2 3; do ip link del v23$i 2>/dev/null; done; sleep 0.5
 ip link add br23 type bridge ageing_time 300 && ip link set br23 up
 i=1; for n in n23a n23b n23c; do
   ip netns add $n
@@ -56,10 +57,10 @@ Then the setup for the checkpoint: after those 5 seconds, n23a sends **one more*
             id: 'c1',
             prompt: 'Both MACs were learned, then 5 quiet seconds passed. n23a sends one more unicast frame to n23c. How many copies does n23b see?',
             options: [
-              '0: the switch learned n23c earlier and sends it out one port',
-              '1: the switch no longer has an entry for n23c, so it floods',
-              '0: n23b is not the destination, so its NIC drops it before tcpdump',
-              '1: only if the frame is an ARP broadcast; unicast never reaches n23b twice',
+              'Zero: the switch still knows n23c and sends it out one port',
+              'One: the table forgot n23c, so the frame floods again',
+              'Zero: the NIC filters it before tcpdump can see it',
+              'One, only for ARP: a unicast frame never floods twice',
             ],
             key: 1,
             why: 'Learned entries are not permanent. After ageing_time without a frame from that MAC the bridge forgets it, and the next frame for it is an unknown unicast again.',
@@ -88,16 +89,16 @@ ip netns exec n23b timeout 5 tcpdump -nl -i eth0 icmp 2>/dev/null | grep -c 'ech
 sleep 1; ip netns exec n23a ping -c3 -i1 -q 10.23.0.3 >/dev/null; wait
 sleep 5
 echo "== 2 pings, 5 s apart (entry expires in between)"
-ip netns exec n23b timeout 8 tcpdump -nl -i eth0 icmp 2>/dev/null | grep -c 'echo request' &
+ip netns exec n23b timeout 7 tcpdump -nl -i eth0 icmp 2>/dev/null | grep -c 'echo request' &
 sleep 1; ip netns exec n23a ping -c2 -i5 -q 10.23.0.3 >/dev/null; wait`,
           },
         },
         { md: `With pings 1 s apart n23b saw **1** request: the first one flooded, and the entries never expired afterwards. With pings 5 s apart it saw **2** of 2: every ping arrived at a table that had already forgotten n23c.
 
 > [!IMPORTANT]
-> Flooding returns whenever the entry for a destination is missing: the host has been quiet for longer than \`ageing_time\`, the table was flushed, or the switch never saw that MAC send anything.
+> Flooding returns whenever the entry for a destination is missing: the host has been quiet for longer than \`ageing_time\`, or the table was flushed.
 
-The last part of that sentence is where the real-world trouble lives. Flushing is also the quick way to reproduce a flood on demand, which is why chapter 2.2 used \`fdb_flush\` to make the table forget everything. Ageing is the same forgetting, done by a timer instead of by you.` },
+Flushing is also the quick way to reproduce a flood on demand, which is why chapter 2.2 used \`fdb_flush\` to make the table forget everything. Ageing is the same forgetting, done by a timer instead of by you.` },
         {
           widget: {
             id: 'w-flood-again',
@@ -128,7 +129,7 @@ The last part of that sentence is where the real-world trouble lives. Flushing i
             why: 'The switch learns only from source addresses. If no frame from C ever arrives at S1, the entry for C never appears, so every frame for C is an unknown unicast.',
           },
         },
-        { md: `That's **asymmetric forwarding**: the forward and return paths differ, and the switch on the forward path never hears the return traffic. The flood is not a one-off here. It repeats for every frame. A host that never sends can never be learned, so a busy receiver that rarely transmits gets flooded to for as long as the sender keeps talking.
+        { md: `That's **asymmetric forwarding**: the forward and return paths differ, and the switch on the forward path never hears the return traffic. In table terms, S1 has *never seen C as a source*, which is a second way an entry stays missing, besides expiry. The flood is not a one-off here. It repeats for every frame. A host that never sends can never be learned, so a busy receiver that rarely transmits gets flooded to for as long as the sender keeps talking.
 
 The classic way it appears is a mismatch of timers. A host's ARP cache can hold C's MAC for longer than a switch holds C's MAC-table entry. After the switch forgets C, A keeps sending unicast straight to C's MAC without any new ARP, and if C's replies don't pass through that switch, nothing ever refills the entry. This is general L2 behaviour; no lab here reproduces it, and the timers differ per system.
 
@@ -140,10 +141,10 @@ Linux bridges also give you per-port flags for this, \`learning\` and \`flood\`,
             id: 'c3',
             prompt: "With flood off on n23b's port: n23a sends an ARP request (a broadcast) for 10.23.0.3. Does n23b's NIC see it?",
             options: [
-              'No: flood off means the bridge floods nothing toward that port',
-              'No: ARP is a layer 3 protocol, so the bridge does not forward it',
-              'Yes: flood off is about unicast with no entry, and broadcasts take their own flag',
-              'Yes, but only once; the bridge learns n23b and stops',
+              'Not seen: flood off means nothing is flooded toward that port',
+              'Not seen: ARP is layer 3, so the bridge does not forward it',
+              'Seen: flood off covers unknown unicast, and broadcasts take their own flag',
+              'Seen once: the bridge then learns n23b and stops sending',
             ],
             key: 2,
             why: 'The flood flag covers only unicast frames whose destination is not in the table. The ARP request goes to ff:ff:ff:ff:ff:ff, and broadcast flooding is controlled separately by bcast_flood, which is still on.',
