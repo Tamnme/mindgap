@@ -23,7 +23,7 @@ export default {
       id: 'two',
       title: 'Two ways a connect() fails',
       blocks: [
-        { md: `Chapter 4.3 ended with a single reset: a SYN sent to a port with no listener came straight back with \`[R.]\`. This chapter puts that next to the other way a connection attempt can die, because the two look nothing alike from the application's side, and people read them wrongly in both directions.
+        { md: `Chapter 4.3 showed what happens when a SYN reaches a port with no listener. This chapter puts that next to the other way a connection attempt can die, because the two look nothing alike from the application's side, and people read them wrongly in both directions.
 
 Anyone who has run \`curl\` or \`nc\` against a service that will not talk has seen both messages:
 
@@ -40,11 +40,11 @@ Before running it, consider the message the application is about to print: \`Con
             options: [
               'Only a firewall refuses: a closed port would simply ignore the packet',
               'The program on that port said no: the app chose to turn the client away',
-              'Something answered: a reset or an ICMP error came back to the client',
+              'Something answered: a reset came back to the client',
               'The SYN was lost: the packet died somewhere along the path',
             ],
             key: 2,
-            why: 'The client\'s kernel reports a refusal only when a packet comes back that ends the attempt (a RST, or an ICMP error). Silence cannot produce it, and the packet does not say who sent it: a stack with a closed port does exactly this too.',
+            why: 'The client\'s kernel reports a refusal when a reset comes back and ends the attempt. Silence cannot produce it, and a reset does not say who sent it: a stack with a closed port sends one too.',
           },
         },
         {
@@ -87,10 +87,10 @@ echo "packets captured: $(grep -c -E 'Flags|ICMP' /tmp/c44a.cap)"`,
 
 That reset is the server's kernel answering for a socket that does not exist. RFC 9293 (section 3.5.2) says that if no connection exists, a reset is sent in response to any incoming segment except another reset, and that a SYN matching no connection is rejected this way. On the receiving side (section 3.5.3), a client in SYN-SENT accepts a RST if its ACK field acknowledges the SYN, aborts, and tells the application. That is the whole path from "no listener" to \`ECONNREFUSED\`: no application code runs on the server, because there is no application.
 
-So "refused" has a precise meaning, and it is smaller than people assume. A packet came back and ended the attempt. The lab cannot tell you what sent it. Here the server's kernel did, because nothing listens, but the client would see the same packet from a firewall rule built to imitate that, or from a middlebox in the path.
+So "refused" has a precise meaning, and it is smaller than people assume. A reset came back and ended the attempt. The lab cannot tell you what sent it. Here the server's kernel did, because nothing listens, but the client would see the same reset from a firewall rule built to imitate that, or from a middlebox in the path.
 
 > [!IMPORTANT]
-> **Refused** is produced by a packet arriving (a RST, or an ICMP error). Whoever produced that packet is a separate question.` },
+> **Refused** is produced by a reset arriving. Whoever sent that reset is a separate question.` },
       ],
     },
     {
@@ -136,11 +136,11 @@ ip netns exec n44c sysctl net.ipv4.tcp_syn_linear_timeouts net.ipv4.tcp_syn_retr
 kill $LP 2>/dev/null; ip netns exec n44s nft delete table inet f44; true`,
           },
         },
-        { md: `The application's result was \`timed out after 12.00 s\`. That is the application's own timer, not the kernel's. The capture shows eight SYNs from the same client port, at about +0, 1.0, 2.1, 3.1, 4.1, 5.1, 7.2 and 11.2 seconds, and **zero** packets back from the server. The server's rule counter reads 8 packets: all eight SYNs reached the server's input hook and died there, so in this lab the loss happened at the rule, not somewhere on the path. General knowledge, not measured here: the input hook runs before a packet is delivered to a socket, so the listener's program has no way to know anyone tried.
+        { md: `The application's result was \`timed out after 12.00 s\`. That is the application's own timer, not the kernel's. The capture shows eight SYNs from the same client port, at about +0, 1, 2, 3, 4, 5, 7 and 11 seconds, and **zero** packets back from the server. The server's rule counter reads 8 packets: all eight SYNs reached the server's input hook and died there, so in this lab the loss happened at the rule, not somewhere on the path. General knowledge, not measured here: the input hook runs before a packet is delivered to a socket, so the listener's program has no way to know anyone tried.
 
 The spacing is the client's retransmission timer. It is not a doubling sequence from 1 s, which is what the textbook RTO backoff would give (1, 2, 4, 8). The lab printed \`tcp_syn_linear_timeouts = 4\` and \`tcp_syn_retries = 6\`, and the kernel documentation for the first one says that with an initial RTO of 1 s and a value of 4 the SYN RTOs are 1, 1, 1, 1, 1, 2, 4 and so on: linear for a few tries, then exponential. The capture matches that sequence. The same page says that with the default \`tcp_syn_retries\` of 6 the final timeout of an active connection attempt happens after 131 seconds. This lab cut the attempt off at 12 s, so the 131 s figure is the documentation's, not something it measured.
 
-A drop produces a timeout that no packet ever announces. The "timed out" message comes from a timer inside the client. There is no error packet to catch, no code to look up, and no way to tell from the client alone whether the SYN was dropped by a firewall, lost on a broken link, or sent to an address that nobody owns. The lab can tell those apart only because it has the server's counter.
+A drop produces a timeout that no packet ever announces. The "timed out" message comes from a timer inside the client. There is no error packet to catch, no code to look up, and no way to tell from the client alone whether the SYN was dropped by a firewall, or lost somewhere along the path. (General knowledge, not run here: on the client's own subnet, an address that nobody owns fails differently, because ARP goes unanswered and the stack reports EHOSTUNREACH.) The lab can tell those apart only because it has the server's counter.
 
 > [!IMPORTANT]
 > **Timed out** is produced by a timer expiring. Nothing arrived, so nothing says why. Retransmitted SYNs with no reply are what it looks like on the wire.` },
@@ -164,7 +164,7 @@ The variants are \`reject with tcp reset\`, plain \`reject\` (the nftables wiki 
               'Connection refused: the stack treats this ICMP error like a reset',
             ],
             key: 3,
-            why: 'The kernel maps an ICMP port-unreachable for a TCP connection attempt to the same error as a RST, ECONNREFUSED. Which packet came back differs; the application cannot tell.',
+            why: 'On this kernel, an ICMP port-unreachable for a TCP connect gives ECONNREFUSED, the same error a RST gives (observed in the lab; other stacks are not claimed). Which packet came back differs; the application cannot tell.',
           },
         },
         {
@@ -178,11 +178,11 @@ for verdict in "reject with tcp reset" "reject" "reject with icmp type admin-pro
   ip netns exec n44s nft add table inet f44
   ip netns exec n44s nft add chain inet f44 in '{ type filter hook input priority 0; policy accept; }'
   ip netns exec n44s nft add rule inet f44 in tcp dport 8080 $verdict
-  ip netns exec n44c timeout 3 tcpdump -nl -tt -i eth0 'tcp or icmp' 2>/dev/null > /tmp/c44c.cap &
+  ip netns exec n44c timeout 3 tcpdump -nl -tt -i eth0 'tcp or icmp' 2>/dev/null > /tmp/c44c.cap & TP=$!
   sleep 0.5
   echo "=== nft rule: $verdict"
   ip netns exec n44c python3 /tmp/probe44.py 8080 2
-  sleep 1; wait %2 2>/dev/null
+  sleep 1; wait $TP 2>/dev/null
   bash /tmp/show44.sh /tmp/c44c.cap
 done
 kill $LP 2>/dev/null; ip netns exec n44s nft delete table inet f44; true`,
@@ -196,7 +196,7 @@ kill $LP 2>/dev/null; ip netns exec n44s nft delete table inet f44; true`,
 | \`reject\` (default) | \`ICMP ... tcp port 8080 unreachable\` | \`ECONNREFUSED\` |
 | \`reject with icmp type admin-prohibited\` | an ICMP unreachable, shown by tcpdump as \`ICMP host 10.44.0.2 unreachable - admin prohibited filter\` | \`EHOSTUNREACH\` (No route to host) |
 
-The first two give the same application error from different packets. A program, or a person reading its log line, cannot tell them apart; only a capture can. The first row is also indistinguishable on the wire from the closed port in the first lab: a \`[R.]\` is a \`[R.]\`, whether the kernel produced it for a missing socket or a firewall rule produced it on purpose.
+On this kernel the first two give the same application error from different packets. A program, or a person reading its log line, cannot tell them apart; only a capture can. The first row is also indistinguishable on the wire from the closed port in the first lab: a \`[R.]\` is a \`[R.]\`, whether the kernel produced it for a missing socket or a firewall rule produced it on purpose.
 
 The third row shows that "Connection refused" is not the only fast failure. An answer came back there too, and the application reported *No route to host* for a host that is perfectly reachable. The application sees a few distinct outcomes, and each one is a specific packet or the lack of one.
 
@@ -232,7 +232,7 @@ The widget replays all three situations from this chapter, with the retransmissi
                 name: 'REJECT',
                 steps: [
                   { from: 0, to: 1, label: '[S] to port 8080', at: '0.00 s' },
-                  { from: 1, to: 0, label: 'ICMP port unreachable', at: '+0.00 s', note: 'Default reject: an ICMP error instead of a RST. The app still sees ECONNREFUSED. With "reject with tcp reset" the reply is a [R.]; with admin-prohibited the app sees EHOSTUNREACH.' },
+                  { from: 1, to: 0, label: 'ICMP port unreachable', at: '+0.00 s', note: 'Default reject: an ICMP error instead of a RST. On this kernel the app still sees ECONNREFUSED. With "reject with tcp reset" the reply is a [R.]; with admin-prohibited the app sees EHOSTUNREACH.' },
                 ],
               },
             ],
@@ -252,17 +252,16 @@ The widget replays all three situations from this chapter, with the retransmissi
 
 **Kubernetes / Cilium.** A Service whose pods are all down often fails fast rather than hanging, but how fast, and with which packet, depends on the datapath. This chapter did not test it. Use \`curl -v\` and read whether it reports refused or timed out, rather than assuming.
 
-**Using it.** Next time a connection fails, the first question is which of the two it was. Refused means a packet came back, so the path is working and the question is what answered. Timed out means nothing came back, so the question is where a SYN could have disappeared: a firewall, a missing route, a wrong address, or a host that is down. \`tcpdump\` on both ends splits that question in one run: SYNs arriving at the server and no answer leaving means a rule on the server, and no SYNs arriving at all means the path.` },
+**Using it.** Next time a connection fails, the first question is which of the two it was. Refused means a packet came back, so the path is working and the question is what answered. Timed out means nothing came back, so the question is where a SYN could have disappeared: a firewall, a wrong address, or a host that is down somewhere along a routed path. On the local subnet, an unanswered ARP or a missing route usually produces a different error (EHOSTUNREACH or ENETUNREACH; general knowledge, not run here). \`tcpdump\` on both ends splits that question in one run: SYNs arriving at the server and no answer leaving means a rule on the server, and no SYNs arriving at all means the path.` },
       ],
     },
     {
       id: 'keep',
       title: 'What to keep',
       blocks: [
-        { md: `- Refused is an arriving packet: a RST, or an ICMP error that the kernel maps to the same error. It arrives as fast as the round trip.
+        { md: `- Refused is an arriving reset. On this kernel an ICMP port-unreachable gave the same error, and admin-prohibited gave \`EHOSTUNREACH\` instead. Either arrives as fast as the round trip.
 - Timed out is a timer. The client resends the SYN, and in this lab saw eight SYNs in 11 s with no reply, until the application gave up at 12 s.
 - A RST does not say who sent it. A closed port and \`reject with tcp reset\` produce the same \`[R.]\`.
-- ICMP admin-prohibited gave \`EHOSTUNREACH\`, a third outcome, not a refusal.
 - DROP and REJECT both block the SYN. They differ in what the client experiences: a wait of seconds or minutes for DROP, an immediate error for REJECT.` },
       ],
     },
