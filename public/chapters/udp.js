@@ -198,12 +198,12 @@ time.sleep(1)
 """])
 print("receiver read", [len(r.recvfrom(70000)[0]) for _ in range(2)], "bytes per datagram")'
 wait
-awk '/UDP, length/ { if (n) print "UDP payload " len ": " n " IP packets"; len = $NF; n = 1; next } { n++ } END { print "UDP payload " len ": " n " IP packets" }' /tmp/n42.cap`,
+awk 'NF == 0 { next } /UDP, length/ { if (n) print "UDP payload " len ": " n " IP packets"; len = $NF; n = 1; next } { n++ } END { print "UDP payload " len ": " n " IP packets" }' /tmp/n42.cap`,
           },
         },
         { md: `The UDP reads returned \`[b'a', b'bb', b'ccc']\`: three reads, three messages, each exactly as sent. The TCP read returned \`b'abbccc'\`: one read, all six bytes, with the edges gone. TCP delivers the same bytes in the same order, but it makes no promise to keep the sends separate. That is how it behaves in this lab, after a half-second wait.
 
-The second half of the lab was about size. On the 1500-byte link, a 3000-byte datagram was accepted, and tcpdump counted **3 IP packets** for it, yet the receiver read one datagram of 3000 bytes. The kernel split it into IP fragments and the far end reassembled it before handing it up, which is the fragmentation from chapter 3.9. A payload of 65507 bytes was accepted too (46 IP packets), and 65508 failed with \`Message too long\`. The limit is arithmetic: the IPv4 total-length field is 16 bits, so a packet is at most 65535 bytes, minus 20 for the IP header and 8 for the UDP header leaves 65507.
+The second half of the lab was about size. On the 1500-byte link, a 3000-byte datagram was accepted, and tcpdump counted **3 IP packets** for it, yet the receiver read one datagram of 3000 bytes. The kernel split it into IP fragments and the far end reassembled it before handing it up, which is the fragmentation from chapter 3.9. A payload of 65507 bytes was accepted too (45 IP packets: 65,515 bytes of UDP at 1,480 bytes per fragment is 44.3, rounded up to 45), and 65508 failed with \`Message too long\`. The limit is arithmetic: the IPv4 total-length field is 16 bits, so a packet is at most 65535 bytes, minus 20 for the IP header and 8 for the UDP header leaves 65507.
 
 The lab doesn't test loss, so the next point is general knowledge: every fragment must arrive for the datagram to be reassembled, so losing any one loses the whole datagram, and UDP has no retransmission to repair it. Applications that care keep datagrams small enough to fit in one packet.
 
