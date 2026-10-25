@@ -29,6 +29,16 @@ Each map node in `learner/map.json` has a `truth` (the one idea the chapter must
 - `why`: one or two sentences that make the answer inevitable. The tutor sees it as well.
 - A checkpoint may ask Anh to predict a lab's output, with the lab placed *after* it (see `c3` in the reference chapter). This is the strongest kind: the prediction gets tested against reality.
 
+**Spoiler traps (found in review, so check each one):**
+- The text above a checkpoint sets up the *situation* only. Any rule, definition, man-page quote or worked example that decides the answer goes *after* it. Example: don't explain "admin state vs carrier" right before asking what a downed peer looks like.
+- Don't give a worked example whose pattern matches the answer, e.g. decoding a MAC byte whose bits are exactly the ones the checkpoint asks about. Pick a byte with a different pattern.
+- A wrong option's *label* (the part before `: `) must itself be wrong. If the label is literally what the lab prints (`DOWN`), the receipt marks a true statement wrong. Make the label carry the false belief.
+- Re-read every sentence above each checkpoint, asking "could Anh answer from this alone?" If yes, move it.
+
+**Claims vs observation (found in review):**
+- Claim only what a lab printed. "You could see it with tcpdump on b" needs a lab that runs tcpdump on b. An inference from a virtual interface (veth has no FCS) is not evidence about physical NICs; label general knowledge as such.
+- Don't put tool behaviour in a tool's mouth (e.g. `ip neigh` does not resolve vendors). If unsure, run it.
+
 ## Labs (run every one)
 
 Labs run as root in the OrbStack machine `netlab` (Ubuntu 26.04, iproute2 6.19, tcpdump available) via `orb -m netlab -u root bash -lc '<cmd>'`.
