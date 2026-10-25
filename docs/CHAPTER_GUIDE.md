@@ -48,6 +48,7 @@ Labs run as root in the OrbStack machine `netlab` (Ubuntu 26.04, iproute2 6.19, 
 - Each lab must finish in under 25 s and be under 4000 characters.
 - **Names are per chapter, to avoid collisions in the shared VM.** Use the chapter number without the dot, e.g. chapter 3.4 → bridge `br34`, netns `n34a`, `n34b`, veths `v34a`. Interface names must be at most 15 characters. `switch-mac-table` uses `sw0`/`hA`; don't reuse those.
 - The first lab builds the topology from scratch and must be idempotent: delete what it creates (`ip netns del … 2>/dev/null`, `ip link del … 2>/dev/null`), then create.
+- Deleting a netns does not always remove the host-side veth at once, and a quick rebuild then fails with `RTNETLINK answers: File exists`. In the first lab, also `ip link del <host-veth> 2>/dev/null` for each veth, then `sleep 0.5`, before creating anything.
 - Any later lab starts with a guard that prints a friendly message if the first lab hasn't run: `ip link show br34 >/dev/null 2>&1 || { echo "Run the first lab first."; exit 1; }`.
 - Counting frames or table entries: disable IPv6 inside each netns before links come up (`sysctl -qw net.ipv6.conf.all.disable_ipv6=1 net.ipv6.conf.default.disable_ipv6=1`). Otherwise router solicitations and DAD fill tables and captures by themselves.
 - Use background `tcpdump` plus `timeout`, never an unbounded wait. Use `-n`, `-l`, and a filter.
