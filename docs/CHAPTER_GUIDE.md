@@ -51,7 +51,8 @@ Labs run as root in the OrbStack machine `netlab` (Ubuntu 26.04, iproute2 6.19, 
 - Deleting a netns does not always remove the host-side veth at once, and a quick rebuild then fails with `RTNETLINK answers: File exists`. In the first lab, also `ip link del <host-veth> 2>/dev/null` for each veth, then `sleep 0.5`, before creating anything.
 - Any later lab starts with a guard that prints a friendly message if the first lab hasn't run: `ip link show br34 >/dev/null 2>&1 || { echo "Run the first lab first."; exit 1; }`.
 - Counting frames or table entries: disable IPv6 inside each netns before links come up (`sysctl -qw net.ipv6.conf.all.disable_ipv6=1 net.ipv6.conf.default.disable_ipv6=1`). Otherwise router solicitations and DAD fill tables and captures by themselves.
-- Use background `tcpdump` plus `timeout`, never an unbounded wait. Use `-n`, `-l`, and a filter.
+- Use background `tcpdump` plus `timeout`, never an unbounded wait. Record its PID (`TP=$!`) and `wait $TP`; don't rely on `wait %N`.
+- **A zero count needs a positive control.** "0 packets seen" is also what a capture that never started prints. In the same capture, also count something known to be non-zero (e.g. the host's own handshake), and print both. Count with a pattern match (`grep -c`), never by counting lines; tcpdump output can contain blank lines. Use `-n`, `-l`, and a filter.
 - `explain` is one line telling Anh what the lab does and, where useful, what to look for (e.g. "(expect 0)").
 - Use 2 to 4 labs per chapter. A chapter with nothing to run (a pure AWS concept, say) may have 0 to 1 labs, but say why in the file's header comment.
 
