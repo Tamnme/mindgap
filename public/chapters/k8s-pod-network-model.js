@@ -32,22 +32,22 @@ It also says who builds the network. The container runtime creates the pod's net
 
 Compare that with what you know. In chapter 3.1 you carved subnets, and in chapter 1.1 you built a pod-shaped network namespace with a veth pair: the pod's \`eth0\` is one end, and the other end sits in the node's root namespace. Put those together and a pod on a node is a namespace with an \`eth0\`, an IP, and a cable to the node. That much is a given. The open question is what the *node* does with a packet that arrives on one cable and is addressed to a pod on another.
 
-Picture one node with two pods. **pod1** has \`10.52.0.11\` and **pod2** has \`10.52.0.12\`. Each is connected to the node by its own veth pair. The node holds the other end of each pair, in the interface names \`l52a\` (pod1's cable) and \`l52b\` (pod2's cable). pod1 pings pod2.` },
+Picture one node with two pods. **pod1** has \`10.52.0.11\` and **pod2** has \`10.52.0.12\`. Each is connected to the node by its own veth pair, and the node has no bridge device. The node holds the other end of each pair, in the interface names \`l52a\` (pod1's cable) and \`l52b\` (pod2's cable). pod1 pings pod2.` },
         {
           checkpoint: {
             id: 'c1',
             prompt: "pod1's packet for 10.52.0.12 arrives at the node on the veth end l52a. What does the node consult to choose l52b as the way out?",
             options: [
-              'A MAC table: it learned pod2\'s MAC behind l52b, as a switch would',
+              'A firewall rule: a netfilter forward rule names the veth for each pod address',
               'A route: a host route for 10.52.0.12 pointing at l52b',
               'A NAT table: it rewrites both pod addresses and tracks the flow',
               'A neighbour entry only: the ARP cache for 10.52.0.12 names the veth by itself',
             ],
             key: 1,
-            why: 'The node forwards the packet as a router would: it looks up the destination IP in its routing table and the matching route names the interface. A MAC table belongs to a bridge or switch, which this node does not need. NAT is not required, and a neighbour entry only maps an IP to a MAC after a route has chosen the interface.',
+            why: 'The node looks up the destination IP in its routing table and the matching route names the interface. Firewall rules filter or rewrite packets but do not pick the egress interface, NAT is not required, and a neighbour entry only maps an IP to a MAC after a route has chosen the interface.',
           },
         },
-        { md: `The node is acting as a **router** with one interface per pod. For each pod it needs a **/32 host route**: "this one address is reachable through that one veth." Every pod's address is an exact match, so no subnet is shared between the cables.
+        { md: `The node has one interface per pod. For each pod it needs a **/32 host route**: "this one address is reachable through that one veth." Every pod's address is an exact match, so no subnet is shared between the cables.
 
 That also tells you what the CNI plugin has to do on every pod start, in three steps:
 
@@ -57,7 +57,7 @@ That also tells you what the CNI plugin has to do on every pod start, in three s
 
 The Cilium routing documentation shows exactly this in its AWS ENI example. The node's routing table has an exact-match entry, \`192.168.105.44 dev lxc5a4def8d96c5\`, to steer traffic into the veth that is "hooked into the pod". Chapter 5.3 comes back to what Cilium attaches to that interface.
 
-Build a node of this shape in netlab: a namespace \`n52node\` plays the node, and two more, \`n52p1\` and \`n52p2\`, play the pods. The node has forwarding turned on. The pods get /32 addresses. The other lines you will see in the lab are there so the pods can find the way out, and they get explained after you have seen them run.` },
+Build a node of this shape in netlab: a namespace \`n52node\` plays the node, and two more, \`n52p1\` and \`n52p2\`, play the pods. The pods get /32 addresses. The other lines you will see in the lab are there so the pods can find the way out, and they get explained after you have seen them run.` },
         {
           lab: {
             explain: 'Build a node with two pod namespaces joined by veths; print the pod addresses and the routes',
@@ -108,8 +108,7 @@ The request travels down the veth and arrives on \`l52a\` in the node. After the
             options: [
               'One forwarding hop: the node routes the reply, so ttl=63',
               'No router in between: same node, so ttl=64 arrives untouched',
-              'Two hops: one per veth cable crossed, so ttl=62',
-              'No ttl at all: replies inside one host are delivered without an IP header',
+              'Counted per veth cable: each cable crossed takes one off, so ttl=62',
             ],
             key: 0,
             why: 'The reply leaves pod2 with ttl 64 and crosses the node once. The node forwards it as a router, which takes one off. Each veth is a link, not a hop, so it does not decrement.',
@@ -135,11 +134,11 @@ echo "pod2 eth0 MAC: $(ip -n n52p2 -br link show eth0 | awk '{print $3}')"`,
         },
         { md: `Three things come out of that output.
 
-**The node is a router hop.** The reply line shows \`ttl=63\`: one below the usual 64, which is the node's forwarding hop. The two pods are on the same node and still one routed hop apart, not one switch apart.
+**The node is a router hop.** The reply line shows \`ttl=63\`: one below the usual 64, which is the node's forwarding hop (the lab turned on \`ip_forward\` in the node). The two pods are on the same node and still one routed hop apart, not one switch apart.
 
 **No translation happened.** The capture inside pod2 shows the echo request with source \`10.52.0.11\`, pod1's own address, not an address owned by the node. The positive control, two ICMP lines in the capture, shows the capture ran, so the count of one request line is real. That is the "no NAT between pods" part of the model, here for pods on the same node. The lab does not test pods on different nodes.
 
-**The node answered the ARP.** pod1's neighbour entry for 10.52.0.12 holds the MAC of \`l52a\`, the node's end of pod1's own cable, not pod2's. The lab turned on \`proxy_arp\` for both veth ends, and that is what let the node answer on behalf of 10.52.0.12. The usual rule for proxy ARP is that the node answers when its routing table sends that address out of a different interface (general knowledge; the lab did not test the condition). pod1 then sends the frame to that MAC, the node receives it, looks up the destination IP in its routing table, finds the host route to \`l52b\` and sends it on with a new Ethernet header (general knowledge of routing; this lab only captured inside pod2). The two pods never share a layer-2 segment; each lives on its own two-device segment with the node, and the node routes between them.
+**The node answered the ARP.** pod1's neighbour entry for 10.52.0.12 holds the MAC of \`l52a\`, the node's end of pod1's own cable, not pod2's. The lab turned on \`proxy_arp\` for both veth ends, which is consistent with the node answering on behalf of 10.52.0.12. There was no run without it, so the lab does not isolate that cause. The usual rule for proxy ARP is that the node answers when its routing table sends that address out of a different interface (general knowledge; the lab did not test the condition). pod1 then sends the frame to that MAC, the node receives it, looks up the destination IP in its routing table, finds the host route to \`l52b\` and sends it on with a new Ethernet header (general knowledge of routing; this lab only captured inside pod2). The two pods never share a layer-2 segment; each lives on its own two-device segment with the node, and the node routes between them.
 
 > [!IMPORTANT]
 > Pod-to-pod on one node is routing. The pod's veth leads to the node, the node has a /32 route per pod, and the packet is forwarded at layer 3. The source IP arrives unchanged.
@@ -168,9 +167,9 @@ ip -n n52node -o link show | awk -v p="$P" -F': ' '$1==p{print "node-side interf
       blocks: [
         { md: `**Kubernetes / Cilium.** This chapter's lab is a model of the Kubernetes page's pieces: a namespace per pod, an interface per pod, an address per pod, and a route to each. The Cilium routing documentation states that the pod's \`eth0\` is one end of a veth pair named \`lxcXXXXXX\` in the host namespace, and that the node has an exact-match host route for the pod's IP pointing at that interface. Its IPAM page covers where the addresses come from, which the lab simply typed in by hand.
 
-**AWS.** In the AWS ENI mode of Cilium, the routing documentation says pods are assigned ENI IPs "directly routable in the AWS VPC", which avoids SNAT. In that mode, the VPC route tables are what carries pod addresses between nodes. AWS's own VPC CNI is a different implementation, and this chapter fetched nothing on its wiring, so treat any claim about it as unchecked here. With an overlay CNI instead, pod IPs exist only inside the tunnel; chapter 5.1 built that tunnel.
+**AWS.** In the AWS ENI mode of Cilium, the routing documentation says pods are assigned ENI IPs "directly routable in the AWS VPC", which avoids SNAT. In that mode, the VPC route tables are what carries pod addresses between nodes. AWS's own VPC CNI is a different implementation, and its wiring was not checked here, so treat any claim about it as unchecked. With an overlay CNI instead, pod IPs exist only inside the tunnel; chapter 5.1 built that tunnel.
 
-**Proxmox.** If Kubernetes nodes are Proxmox VMs, the VM NICs are the underlay between nodes. This is reasoning, not a fetched fact: the pod addresses in this chapter are only known to the node that hosts the pod, so something has to carry them between VMs, either a tunnel over the VM NICs or routes the physical network knows about.
+**Proxmox.** If Kubernetes nodes are Proxmox VMs, the VM NICs are the underlay between nodes. This is reasoning, not documented fact: the pod addresses in this chapter are only known to the node that hosts the pod, so something has to carry them between VMs, either a tunnel over the VM NICs or routes the physical network knows about.
 
 The part this chapter does not cover is crossing from one node to another. That is exactly where the two designs split, tunnel or routed, and chapter 5.3 starts there.` },
       ],
