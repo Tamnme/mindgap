@@ -274,8 +274,9 @@ function renderSide() {
     dl.append(el('dt', { text: 'Sources' }), el('dd', {}, [ul]));
   }
 
+  const teachLabel = state.chapters.includes(n.id) ? 'Read the chapter' : 'Teach me this';
   const actions = el('div', { class: 'actions' }, [
-    el('button', { class: 'primary', 'data-action': 'teach', onclick: () => startLesson(n.id, 'teach'), text: state.chapters.includes(n.id) ? 'Read the chapter' : 'Teach me this' }),
+    el('button', { class: 'primary', 'data-action': 'teach', onclick: () => startLesson(n.id, 'teach'), text: teachLabel }),
   ]);
   if (status === 'shaky' || status === 'solid') {
     actions.append(el('button', { 'data-action': 'practice', onclick: () => startLesson(n.id, 'practice'), text: 'Practice' }));
@@ -284,7 +285,7 @@ function renderSide() {
     actions.append(el('button', { 'data-action': 'probe', onclick: () => startLesson(n.id, 'probe'), text: 'Quick check' }));
   }
   const hint = status === 'untested'
-    ? el('p', { class: 'muted small', text: 'Read the chapter teaches. Quick check measures what you already know without teaching (a few questions; updates the map).' })
+    ? el('p', { class: 'muted small', text: `${teachLabel} teaches the topic. Quick check measures what you already know without teaching: a few questions, and it updates the map.` })
     : null;
 
   side.append(

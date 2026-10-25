@@ -369,10 +369,10 @@ body.has-focus::after { content: ""; position: fixed; inset: 0; background: rgba
 .nbsubnet .sn-row label[for$='-p'] { flex: 0 0 100%; }
 .nbsubnet .sn-row input[type=range] { flex: 1 1 0; }
 .nbsubnet input[type=text] { font: inherit; font-family: ui-monospace, monospace; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--fg); min-width: 0; width: 12em; max-width: 100%; }
-.nbsubnet input[type=text][aria-invalid=true] { border-color: #c92a2a; }
+.nbsubnet input[type=text][aria-invalid=true] { border-color: var(--danger); }
 .nbsubnet input[type=range] { flex: 1 1 160px; min-width: 0; accent-color: var(--accent); }
 .nbsubnet .sn-prefix { font-family: ui-monospace, monospace; font-weight: 700; min-width: 3ch; }
-.nbsubnet .sn-err { margin: 0; font-size: 13px; color: #c92a2a; }
+.nbsubnet .sn-err { margin: 0; font-size: 13px; color: var(--danger); }
 .nbsubnet .sn-err::before { content: "⚠ "; }
 .nbsubnet .sn-bits { font-family: ui-monospace, monospace; font-size: 15px; display: flex; flex-wrap: nowrap; align-items: flex-end; white-space: nowrap; overflow-x: auto; background: var(--code-bg); color: var(--code-fg); padding: 10px 12px; border-radius: 8px; }
 .nbsubnet .sn-bits > * { flex: none; }
@@ -393,10 +393,10 @@ body.has-focus::after { content: ""; position: fixed; inset: 0; background: rgba
 .nbroutes .rt-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .nbroutes label { font-weight: 600; font-size: 14px; }
 .nbroutes input[type=text] { font: inherit; font-family: ui-monospace, monospace; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--fg); min-width: 0; width: 12em; max-width: 100%; }
-.nbroutes input[type=text][aria-invalid=true] { border-color: #c92a2a; }
+.nbroutes input[type=text][aria-invalid=true] { border-color: var(--danger); }
 .nbroutes .rt-preset { font: inherit; font-family: ui-monospace, monospace; padding: 5px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); color: var(--fg); cursor: pointer; white-space: nowrap; }
 .nbroutes .rt-preset:hover { border-color: var(--accent); }
-.nbroutes .rt-err { margin: 0; font-size: 13px; color: #c92a2a; }
+.nbroutes .rt-err { margin: 0; font-size: 13px; color: var(--danger); }
 .nbroutes .rt-err::before { content: "⚠ "; }
 .nbroutes .rt-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
 .nbroutes .rt-table { border-collapse: collapse; width: 100%; font-size: 14px; }
@@ -428,8 +428,8 @@ body.has-focus::after { content: ""; position: fixed; inset: 0; background: rgba
 .nbtimeline .tl-head { fill: var(--muted); }
 .nbtimeline .tl-label { font-size: 12px; fill: var(--fg); }
 .nbtimeline .tl-at { font-size: 11px; fill: var(--muted); }
-.nbtimeline .tl-x { stroke: #c92a2a; stroke-width: 2.5; fill: none; }
-.nbtimeline .tl-drop { font-size: 11px; font-weight: 700; fill: #c92a2a; }
+.nbtimeline .tl-x { stroke: var(--danger); stroke-width: 2.5; fill: none; }
+.nbtimeline .tl-drop { font-size: 11px; font-weight: 700; fill: var(--danger); }
 .nbtimeline .tl-cur .tl-shaft { stroke: var(--accent); stroke-width: 3; }
 .nbtimeline .tl-cur .tl-head { fill: var(--accent); }
 .nbtimeline .tl-cur .tl-label { font-weight: 700; }
