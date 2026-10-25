@@ -130,10 +130,10 @@ Reproduce the file on the bench, with a namespace called \`ns\`. The server answ
             id: 'c2',
             prompt: 'Apply the rule from the previous lab to this file. How many A queries go out for example.com, including the one that gets the answer?',
             options: [
-              'Single query: a name with a dot is looked up as written',
+              'Single query, dotted names go as written: the search list is not used',
               'Three queries, then failure: one per search domain, with no as-written try',
-              'Four queries: three suffixed names fail first, then example.com works',
-              'Two queries: the name as written fails, then one search domain works',
+              'Four queries, suffixes first: three suffixed names fail, then example.com works',
+              'Two queries, as written then one suffix: the bare name fails, then one search domain works',
             ],
             key: 2,
             why: 'example.com has one dot, below ndots:5, so all three search suffixes are tried first and each returns NXDOMAIN. Only then is example.com sent as written and answered.',
