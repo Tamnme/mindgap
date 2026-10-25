@@ -140,8 +140,8 @@ In practice, the U/L bit is a fast way to tell virtual from physical when readin
             options: [
               'Only b’s real MAC: any other destination is simply not for b',
               'b’s MAC and broadcast: both are addresses b accepts, the made-up one is not',
-              'All three: the IP header says 10.21.0.2, so the MAC is irrelevant',
-              'None: the sender used a raw frame instead of a real ARP exchange',
+              'Any destination MAC works: the IP header says 10.21.0.2, so the MAC is irrelevant',
+              'No reply at all: the sender used a raw frame instead of a real ARP exchange',
             ],
             key: 1,
             why: 'Frames are accepted on destination MAC first. b’s own MAC and the broadcast address both pass. A made-up MAC belongs to somebody else, so b discards it before it reaches the IP stack’s local delivery.',

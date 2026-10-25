@@ -87,9 +87,9 @@ Now ask the kernel where it would send packets to two destinations, with no defa
             id: 'c2',
             prompt: 'With only that connected route, which of 10.31.0.100 and 10.31.0.130 can the host send to?',
             options: [
-              'Both: they share the first three octets, so both are local',
+              'Both are local: they share the first three octets, so both are local',
               'Only 10.31.0.100: .130 matches no route at all',
-              'Neither: without a gateway configured, nothing is reachable',
+              'Neither is reachable: without a gateway configured, nothing is reachable',
             ],
             key: 1,
             why: '.100 is inside 10.31.0.64/26 (64 to 127), so the connected route covers it. .130 is in the next block, 128 to 191, and with no default route nothing matches it.',

@@ -119,7 +119,7 @@ In each case the packet is delivered all the way to the last segment, and the qu
               'The router R: it forwards the packet and sees the port is closed',
               'The destination B: its own kernel answers for the closed port',
               'The sender A: its own kernel gives up before the packet leaves',
-              'None: UDP is connectionless, so nobody sends an error',
+              'Nobody replies: UDP is connectionless, so no error is sent',
             ],
             key: 1,
             why: 'R only forwards by destination address and never reads the UDP header. The host that owns the port is the only one that knows nothing is listening, so B sends it.',

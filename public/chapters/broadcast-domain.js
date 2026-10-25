@@ -109,7 +109,7 @@ Now cross the router. n24a pings n24b at 10.24.2.2. n24b isn't in n24a's subnet,
             prompt: 'n24a pings n24b through the router. Which ARP requests does n24b’s NIC see?',
             options: [
               'n24a’s request for 10.24.1.254: the router forwarded it',
-              'None: the router blocks everything broadcast, ARP included',
+              'No ARP request reaches it: the router blocks everything broadcast, ARP included',
               'One from the router asking for 10.24.2.2, with the router’s own IP as sender',
               'One from n24a asking for 10.24.2.2 directly, as the router is transparent',
             ],

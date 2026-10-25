@@ -169,7 +169,7 @@ Now add a third route, more specific than both: \`10.35.4.128/25 via 10.35.1.1 m
               'Longer prefix first: the /25 wins and the metric never gets asked',
               'Lowest metric overall: 50 beats 500, so the /24 wins',
               'Oldest route: whichever was added first',
-              'Neither: two conflicting matches make the kernel drop the packet',
+              'The packet is dropped: two conflicting matches make the kernel give up',
             ],
             key: 0,
             why: 'Prefix length is compared before anything else. The metric only separates routes with the same destination prefix, so the /25 wins even with the much higher number.',
