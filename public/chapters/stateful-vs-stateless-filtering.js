@@ -92,10 +92,7 @@ kill $LP 2>/dev/null; true`,
         },
         { md: `Without a filter the client connected at once. With the default-drop chain, the connect timed out after 3.0 s. The server's side of the story is in its own capture: it sent 4 SYN/ACKs in the 4 second capture, and the client's end-of-chain counter reads 4 packets. The lab does not separate answers to the client's retransmitted SYNs (chapter 4.4) from the server's own SYN/ACK retransmissions. Each SYN/ACK arrived and was dropped. The SYN itself left without trouble, because outbound was never filtered, which is why the server answered at all.
 
-The connection died on the way back. What a packet filter can read in one packet is the IP addresses, the protocol, the ports and the TCP flags. A **stateless** filter decides from those fields alone. A **stateful** filter also keeps a table of the connections it has seen, and can match a packet against that table. This client's filter has no rule that mentions the outgoing SYN, so nothing connects it to the SYN/ACK. The reply to an allowed connection is a separate packet that enters the input hook, and a filter with no memory sees nothing about it except its header. This is also why default-deny inbound, which sounds like a rule about who may *start* a conversation, breaks every outgoing request on a machine unless something decides what counts as a reply.
-
-> [!IMPORTANT]
-> A filter that judges each packet alone cannot tell a reply from an unsolicited packet. A reply is just another inbound packet.` },
+The connection died on the way back. The SYN/ACK entered the client's input hook as an inbound packet and fell to the default drop, so the client never completed the handshake. Default-deny inbound sounds like a rule about who may *start* a conversation, but it also breaks every outgoing TCP and UDP request on a machine unless some rule lets the replies in.` },
       ],
     },
     {
@@ -138,6 +135,8 @@ kill $LP $LC 2>/dev/null; true`,
           },
         },
         { md: `Both connections went through. The client's connect to the server worked, so the hand-written return rule does its job. The second line is the cost: the server, using source port 8080, reached a port on the client that the client had never contacted, and the handshake completed. The rule matched the *port*, and the filter had no way to know whether the packet was a reply.
+
+A packet filter can read, in one packet, the IP addresses, the protocol, the ports and the TCP flags. A **stateless** filter decides from those fields alone, so a reply is just another inbound packet to it. A **stateful** filter also keeps a table of the connections it has seen, and can match a packet against that table.
 
 That is the general weakness of stateless return rules. The reply to an outbound request is identified only by a property of its header, such as a source port or a range of destination ports. Anything else carrying those fields gets the same treatment. For a client that talks to many servers on different ports, the rule has to cover a whole range, and the range is often wide: the destination port of a reply is the *client's ephemeral port*, which the filter cannot predict.
 
