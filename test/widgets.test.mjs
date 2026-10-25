@@ -94,3 +94,29 @@ test('routes: validate', () => {
   assert.ok(validateRoutes({ ...ok, dest: 'nope' }).length);
   assert.ok(validateRoutes({ ...ok, presets: ['1.2.3'] }).length);
 });
+
+import { mount as mountRoutes } from '../public/widgets/routes.js';
+
+test('routes: mount runs against a fake DOM and renders winner + verdict', () => {
+  const mk = (tag) => {
+    const el = { tag, children: [], attrs: {}, listeners: {}, textContent: '', className: '',
+      classList: { toggle() {} },
+      append(...k) { this.children.push(...k); }, // returns undefined, like the real DOM
+      replaceChildren(...k) { this.children = k; },
+      setAttribute(k, v) { this.attrs[k] = v; },
+      addEventListener(t, f) { this.listeners[t] = f; },
+      remove() {} };
+    return el;
+  };
+  const prev = globalThis.document;
+  globalThis.document = { createElement: mk };
+  try {
+    const host = mk('div');
+    const w = mountRoutes(host, { routes: R('10.0.0.0/16', '0.0.0.0/0'), dest: '10.0.3.4', presets: ['8.8.8.8'] });
+    const flat = (e) => [e, ...e.children.flatMap(flat)];
+    const all = flat(host);
+    assert.ok(all.some((e) => e.textContent === 'winner'));
+    assert.ok(all.some((e) => e.className === 'rt-verdict' && e.textContent.startsWith('→ t via 10.0.0.0/16')));
+    w.destroy();
+  } finally { globalThis.document = prev; }
+});

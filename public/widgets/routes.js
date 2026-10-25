@@ -62,8 +62,8 @@ export function mount(host, cfg) {
   const table = h('table', 'rt-table');
   if (cfg.caption) table.append(h('caption', null, cfg.caption));
   const head = h('tr'); for (const t of ['Prefix', 'Length', 'Target', 'Status']) head.append(h('th', null, t));
-  table.append(h('thead')).firstChild.append(head);
-  table.append(tbody);
+  const thead = h('thead'); thead.append(head);
+  table.append(thead, tbody);
   const wrap = h('div', 'rt-wrap'); wrap.tabIndex = 0; wrap.setAttribute('role', 'region'); wrap.setAttribute('aria-label', cfg.caption || 'Route table'); wrap.append(table);
   const verdict = h('p', 'rt-verdict'); verdict.setAttribute('aria-live', 'polite');
   root.append(row, err, wrap, verdict);
