@@ -96,9 +96,7 @@ The \`length\` is 98 for the ping and 42 for ARP. 98 is 14 bytes of Ethernet hea
 - **Bit 0 of the first byte, the I/G bit:** 0 means an individual (unicast) address, 1 means a group address. Broadcast \`ff:ff:ff:ff:ff:ff\` is the all-ones group address, and multicast MACs also have this bit set.
 - **Bit 1 of the first byte, the U/L bit:** 0 means universally administered (a vendor burned it in from their OUI), 1 means locally administered (someone, or some software, assigned it).
 
-That makes the first byte worth reading. For example, \`0x3c\` is \`0011 1100\`: bit 0 is 0 (unicast), bit 1 is 0 (universal).
-
-A veth end is not a factory part. The kernel generates a MAC for it when the interface is created.` },
+That makes the first byte worth reading. For example, \`0x3c\` is \`0011 1100\`: bit 0 is 0 (unicast), bit 1 is 0 (universal).` },
         {
           checkpoint: {
             id: 'c2',
@@ -146,7 +144,7 @@ In practice, the U/L bit is a fast way to tell virtual from physical when readin
               'None: the sender used a raw frame instead of a real ARP exchange',
             ],
             key: 1,
-            why: 'Frames are accepted on destination MAC first. b’s own MAC and the broadcast address both pass. A made-up MAC belongs to somebody else, so b drops it before the IP layer reads the destination IP.',
+            why: 'Frames are accepted on destination MAC first. b’s own MAC and the broadcast address both pass. A made-up MAC belongs to somebody else, so b discards it before it reaches the IP stack’s local delivery.',
           },
         },
         {
@@ -178,7 +176,7 @@ done`,
         },
         { md: `The output prints a \`reply:\` line *before* the \`sent …\` line of the frame that caused it, because the capture finishes first. Reading them in pairs: b's real MAC gets a reply. The made-up MAC \`02:00:00:00:00:99\` gets an empty \`reply:\` line, after the 2 s timeout. Broadcast gets a reply again, a little later.
 
-That is the filtering rule. A receiver accepts a frame whose destination is its own MAC, the broadcast address, or a multicast group it has joined, and ignores the rest. On a physical NIC that filter is in hardware, and **promiscuous mode** turns it off so the OS sees everything. \`tcpdump\` enables promiscuous mode by default, the same detail behind the flooding demo in chapter 2.2. A veth has no hardware filter, so on Linux the frame is handed up marked as addressed to someone else and discarded before IP local delivery (I haven't captured on b in this lab to show the frame arriving). What a sees is silence: no reply, and no error came back.
+That is the filtering rule. A receiver accepts a frame whose destination is its own MAC, the broadcast address, or a multicast group it has joined, and ignores the rest. On a physical NIC that filter is in hardware, and **promiscuous mode** turns it off so the OS sees everything. \`tcpdump\` enables promiscuous mode by default, the same detail behind the flooding demo in chapter 2.2. A veth has no hardware filter, so on Linux the frame is handed up marked as addressed to someone else and discarded before IP local delivery (I haven't captured on b in this lab to show the frame arriving). What a sees is silence: no reply came back.
 
 > [!IMPORTANT]
 > A frame for someone else's MAC is discarded before it reaches the IP stack's local delivery. A correct IP address with the wrong MAC gets silence.
@@ -204,7 +202,7 @@ Routers are the other half of the story. When a packet crosses a router, the rou
         { md: `- A frame starts with destination MAC, source MAC, then the EtherType (\`0x0800\` IPv4, \`0x0806\` ARP, \`0x86DD\` IPv6, \`0x8100\` VLAN tag). \`tcpdump\` doesn't show the FCS.
 - A MAC names one interface on one segment. Unknown destination means broadcast \`ff:ff:ff:ff:ff:ff\`.
 - First byte: bit 0 is group vs individual, bit 1 is locally vs universally administered. Software-made MACs (veth, bridges) are local, unicast.
-- A frame for another MAC is dropped before IP reads it, and every router rewrites both MACs.
+- A frame for another MAC is discarded before it reaches the IP stack's local delivery, and every router rewrites both MACs.
 - \`tcpdump -e\` shows the MACs. Use it when "the IP is right but nothing arrives".` },
       ],
     },
