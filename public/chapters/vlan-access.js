@@ -13,15 +13,15 @@ export default {
   number: '2.5',
   kicker: 'Layer 2',
   title: 'VLAN access ports',
-  lede: 'Give the ports of one switch different VLANs, keep every host in the same IP subnet, and see what can still talk. The hosts are never told about the VLANs, so whatever happens is decided at the port.',
+  lede: 'Put the ports of one switch in different VLANs, keep every host in the same IP subnet, and see what can still talk.',
   sections: [
     {
       id: 'same',
       title: 'Same subnet, different VLAN',
       blocks: [
-        { md: `Chapter 2.4 defined a broadcast domain as the set of ports a broadcast reaches, and showed that cabling decides it, not IP addresses. A plain switch has exactly one such set: every port. A **VLAN** is how you carve several out of one box.
+        { md: `Chapter 2.4 defined a broadcast domain as the set of ports a broadcast reaches, and showed that cabling decides it, not IP addresses.
 
-Take one VLAN-aware bridge, \`br25\`, with three hosts. **a** and **b** are plugged into ports configured for VLAN 10. **c** is plugged into a port configured for VLAN 20. All three hosts have addresses in the same subnet, 10.25.0.0/24, and none of them has any VLAN setting of its own.
+Take one VLAN-aware bridge, \`br25\`, with three hosts. **a** and **b** are plugged into ports configured for VLAN 10. **c** is plugged into a port configured for VLAN 20. All three hosts have addresses in the same subnet, 10.25.0.0/24.
 
 \`\`\`
    a 10.25.0.1    b 10.25.0.2    c 10.25.0.3
@@ -39,15 +39,15 @@ a pings c. a looks at 10.25.0.3, sees it is inside its own /24, and decides c is
             prompt: 'a pings c (10.25.0.3), which sits on a port in a different VLAN but the same /24. What happens?',
             options: [
               'Yes, same subnet: hosts in one /24 are on-link, so the switch delivers it',
+              'Blocked: the ARP request stays inside VLAN 10, so c never even receives it',
               'Yes, once learned: one flood teaches the switch where c is, and later frames get through',
               'Yes, tagged: the switch marks the frame VLAN 20 and delivers it to c',
-              'No: the frame is kept inside VLAN 10, so c never even receives the ARP request',
             ],
-            key: 3,
+            key: 1,
             why: 'The switch decides which VLAN a frame belongs to from the port it arrived on, and only forwards it to ports in that VLAN. The IP subnet is a label the hosts use; it does not override the port. Without the ARP answer, a cannot even build the frame.',
           },
         },
-        { md: `Build it and see. Each host port gets \`vid 10\` or \`vid 20\`; the lab also deletes the default \`vid 1\` from the port so each port is in exactly one VLAN. The flags are explained right after the output.` },
+        { md: `Build it and see. Each host port gets \`vid 10\` or \`vid 20\`. A port you don't touch comes up as a member of VLAN 1 (\`1 PVID Egress Untagged\`, as chapter 2.6's e and f ports show), so the lab also deletes that default \`vid 1\` to leave each port in exactly one VLAN. The flags are explained after the second lab.` },
         {
           lab: {
             explain: 'Build br25 (vlan_filtering) with a,b on VLAN 10 and c on VLAN 20; ping b then c from a (expect 2 received, then 0)',
@@ -110,7 +110,7 @@ echo
 for p in v25a v25b v25c; do bridge vlan show dev $p | grep -v port; done`,
           },
         },
-        { md: `The capture shows an ordinary Ethernet header and no \`vlan\` field. The request is \`ba:… > ff:ff:ff:ff:ff:ff, ethertype ARP\` (the MACs differ on your run) and the reply is the unicast back. b's own interface details contain 0 lines mentioning VLAN, so b is a plain host.
+        { md: `The capture shows an ordinary Ethernet header and no \`vlan\` field. The request is \`xx:… > ff:ff:ff:ff:ff:ff, ethertype ARP\` (the MACs differ on every run) and the reply is the unicast back. b's own interface details contain 0 lines mentioning VLAN, so b is a plain host: nothing on the host was told about the VLANs, and the frames it sends and receives are untagged.
 
 \`bridge vlan show\` lists \`10 PVID Egress Untagged\` on the two VLAN 10 ports and \`20 PVID Egress Untagged\` on c's. Those words are the flags you passed to \`bridge vlan add\`:
 
@@ -128,23 +128,9 @@ That pair is what makes a port an **access port**: untagged in, untagged out, on
     },
     {
       id: 'domain',
-      title: 'Who hears the broadcast',
+      title: 'Who hears what',
       blocks: [
-        { md: `Last test, closer to chapter 2.4. a pings c again, so a broadcasts an ARP request for 10.25.0.3. The lab listens for ARP on b and c at the same time. b is in a's VLAN but is not the target; c is the target but is in the other VLAN.` },
-        {
-          checkpoint: {
-            id: 'c3',
-            prompt: 'a broadcasts an ARP request for c (10.25.0.3). Which of b and c receives it?',
-            options: [
-              'Both: a broadcast is flooded to every port of the bridge',
-              'Only c: it is the host the request is asking for',
-              'Neither: the bridge only forwards a broadcast once it knows the target',
-              'Only b: it shares a’s VLAN, even though the request is not meant for it',
-            ],
-            key: 3,
-            why: 'A broadcast floods to every port in the ingress VLAN except the ingress port. b is such a port; c is not, whatever the request asks about.',
-          },
-        },
+        { md: `Now closer to chapter 2.4. a pings c again, so a broadcasts an ARP request for 10.25.0.3. The lab listens for ARP on b and c at the same time. b is in a's VLAN but is not the target; c is the target but is in the other VLAN.` },
         {
           lab: {
             explain: 'a pings c; report whether b and c saw an ARP request (expect b yes, c no)',
@@ -159,16 +145,54 @@ for n in b c; do grep -q Request $d/$n && r=yes || r=no; echo "n25$n saw an ARP 
 rm -rf $d`,
           },
         },
-        { md: `b saw it, c did not. b received a question about someone else and discarded it, as in chapter 2.2. c was the one being asked and never heard.
+        { md: `b saw the request, c did not. b ignored a question about someone else, as in chapter 2.2. c was the one being asked and never heard.
 
-Try the same thing in the simulator. All four hosts carry addresses from one subnet; A and B are on VLAN 10 ports and C and D on VLAN 20 ports.` },
+One more case. Suppose the switch has learned c, because c has sent a frame, and a then sends a *unicast* frame straight to c's MAC. The lab makes c send something (a ping to an address nobody owns, which produces an ARP broadcast), pins a's ARP entry for c to c's real MAC so no broadcast is needed, and then a pings c. It listens for the echo request on b and c.` },
+        {
+          checkpoint: {
+            id: 'c3',
+            prompt: 'The switch has learned c’s MAC on c’s port. a sends a unicast frame addressed to that MAC. What does the switch do with it?',
+            options: [
+              'Out c’s port: the switch knows that MAC, so it forwards the frame there',
+              'Dropped on arrival: a frame for a MAC in another VLAN is discarded at once',
+              'Flooded to every port: any frame that reaches the switch is copied everywhere',
+              'Flooded inside VLAN 10: VLAN 10 has no entry for that MAC, so b gets it and c does not',
+            ],
+            key: 3,
+            why: 'The switch learned c in VLAN 20, but a’s frame belongs to VLAN 10. Lookups happen per VLAN, so VLAN 10 has no entry for c’s MAC, and the frame is flooded only to ports in VLAN 10.',
+          },
+        },
+        {
+          lab: {
+            explain: 'Flush the table, let c send a frame, pin a’s ARP entry for c, ping; report who saw the echo request, then the table (expect b yes, c no)',
+            cmd: `${NEED}
+for n in a b c; do ip -n n25$n neigh flush all; done
+ip link set br25 type bridge fdb_flush
+macc=$(ip -n n25c -br link show eth0 | awk '{print $3}')
+ip netns exec n25c ping -c1 -W1 -q 10.25.0.9 >/dev/null
+ip -n n25a neigh replace 10.25.0.3 lladdr $macc dev eth0 nud permanent
+d=$(mktemp -d)
+for n in b c; do ip netns exec n25$n timeout 3 tcpdump -nl -i eth0 icmp > $d/$n 2>/dev/null & done
+sleep 1
+ip netns exec n25a ping -c1 -W1 -q 10.25.0.3 >/dev/null
+wait
+for n in b c; do grep -q 'echo request' $d/$n && r=yes || r=no; echo "n25$n saw the echo request: $r"; done
+rm -rf $d
+echo; bridge fdb show br br25 | grep -v permanent`,
+          },
+        },
+        { md: `b saw the echo request and c did not, even though the switch had c's MAC in its table. The table at the end lists two learned entries, each ending \`vlan 10\` or \`vlan 20\`: a's MAC on \`v25a\` in VLAN 10 and c's on \`v25c\` in VLAN 20. b's MAC is absent, since b never sent anything.
+
+So the MAC table is **per VLAN**: an entry is (VLAN, MAC) → port. A frame from VLAN 10 is looked up among VLAN 10's entries only. c's MAC is in VLAN 20's set, so VLAN 10 has no entry for it, and the switch floods the frame inside VLAN 10 as it would for any unknown unicast (chapter 2.3). A host in another VLAN stays out of reach even when the switch knows its address.
+
+Try the same thing in the simulator. All four hosts carry addresses from one subnet; A and B are on VLAN 10 ports and C and D on VLAN 20 ports. The table has a VLAN column for exactly this reason.` },
         {
           widget: {
             id: 'w-vlan',
             sim: 'vlan-broadcast',
             title: 'Two VLANs, one switch',
-            hint: 'Click "A ARP broadcast", then "C ARP broadcast", then "A → C (unicast)". Watch which hosts each frame reaches, and the VLAN column of the table.',
-            takeaway: 'A’s broadcast reaches only B and C’s only D. The unicast from A to C is flooded inside VLAN 10 and **never reaches C**, even though the switch has learned C.',
+            hint: 'Click "A ARP broadcast", then "C ARP broadcast", then "A → C (unicast)". Watch which hosts each frame reaches, and which VLAN each table row belongs to.',
+            takeaway: 'A’s broadcast reaches only B and C’s only D. The switch keeps a separate table per VLAN, so VLAN 10 has no entry for C: the unicast from A to C is flooded inside VLAN 10 and **never reaches C**.',
           },
         },
       ],
@@ -189,6 +213,7 @@ Try the same thing in the simulator. All four hosts carry addresses from one sub
       title: 'What to keep',
       blocks: [
         { md: `- A VLAN splits one switch into several broadcast domains. Frames and broadcasts stay inside the VLAN of the port they entered.
+- The MAC table is per VLAN: (VLAN, MAC) → port. Knowing a MAC in VLAN 20 does not help a frame in VLAN 10.
 - An access port is one VLAN, untagged both ways. \`bridge vlan add dev X vid N pvid untagged\` makes one on a VLAN-aware bridge.
 - Hosts know nothing about it: same /24 on two VLANs still means no ARP reply and no ping.
 - Connecting two VLANs takes a router. Diagnose the symptom \`INCOMPLETE\` in \`ip neigh\` by checking the VLANs of both ports first.` },
