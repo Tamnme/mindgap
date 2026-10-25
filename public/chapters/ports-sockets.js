@@ -51,7 +51,7 @@ sleep 1
 ip netns exec n41s ss -H -tanp | sed 's/,pid=[0-9]*,fd=[0-9]*//'`,
           },
         },
-        { md: `One line: a \`LISTEN\` socket on \`0.0.0.0:8080\`, owned by python3. The \`0.0.0.0\` means "any local address", and the \`*\` for the peer means it isn't talking to anyone yet. The \`8\` in the Send-Q column matches the backlog I passed to \`listen()\`. The columns are from \`ss -tanp\`: TCP, all states, numeric, with the owning process.
+        { md: `One line: a \`LISTEN\` socket on \`0.0.0.0:8080\`, owned by python3. The \`0.0.0.0\` means "any local address", and the \`*\` for the peer means it isn't talking to anyone yet. The \`8\` in the Send-Q column equals the backlog the listener code passed to \`listen(8)\`; that is an observation here, since the \`ss\` man page doesn't define the column. The command is \`ss -tanp\`: TCP, all states, numeric, with the owning process.
 
 Now three clients connect to that one port: **A opens two connections** to 10.41.1.1:8080 from n41a, and **B opens one** from n41b. Hold all three open, then list the server's sockets again.` },
         {
@@ -141,7 +141,7 @@ print("---"); import subprocess
 print(subprocess.run("ss -H -tuln sport = :9000", shell=True, capture_output=True, text=True).stdout, end="")'`,
           },
         },
-        { md: `Three binds worked and the fourth failed with \`Address already in use\`: TCP 9000 on 10.41.1.1 a second time. \`ss\` lists three sockets on port 9000: one UDP and two TCP \`LISTEN\`, on 10.41.1.1 and 10.41.2.1. Same number, three sockets. That is what you tested, on this kernel and with \`SO_REUSEADDR\` set on every socket, so what you saw is "protocol and local IP changed the outcome", nothing broader.
+        { md: `Three binds worked and the fourth failed with \`Address already in use\`: TCP 9000 on 10.41.1.1 a second time. \`ss\` lists three sockets on port 9000: one UDP and two TCP \`LISTEN\`, on 10.41.1.1 and 10.41.2.1. Same number, three sockets. That was tested on this kernel with \`SO_REUSEADDR\` set on every socket, so what the lab shows is that protocol and local IP changed the outcome, nothing broader.
 
 That is why \`53/tcp\` and \`53/udp\` are two different things, and why "port 8080 is open" is an incomplete sentence: open on which IP, over which protocol?
 
@@ -158,14 +158,49 @@ Put the two labs together and a connection is named by five values, the **5-tupl
 > [!IMPORTANT]
 > A connection is identified by the whole 5-tuple. A server's port is shared by every connection to it, and the client's ephemeral port is what keeps one client's connections apart.
 
-RFC 9293 says it in older words: "a connection is defined by a pair of sockets", where a socket is an address plus a port. Whether the kernel lets two connections share a client port when only the destination differs is general knowledge, and I did not test it here.` },
+RFC 9293 says it in older words: "a connection is defined by a pair of sockets", where a socket is an address plus a port. Whether the kernel lets two connections share a client port when only the destination differs is general knowledge, and not tested here.` },
+      ],
+    },
+    {
+      id: 'bind',
+      title: 'Which address a listener answers on',
+      blocks: [
+        { md: `Lab 1's listener showed \`0.0.0.0:8080\`. That first half of the socket address is the local IP the socket was bound to, and there are three kinds of choice. A **specific address** such as 10.41.1.1 matches only packets sent to that address. \`0.0.0.0\` is a wildcard that matches any local address. \`127.0.0.1\` is the loopback address, which only the host itself can send to.
+
+The next lab starts three more listeners in the server namespace, on ports 8083 (bound to 127.0.0.1), 8084 (bound to 10.41.1.1) and 8085 (bound to 0.0.0.0). Clients then try a TCP connect with \`nc -z -w1\` (connect and close, one second limit) to the port on the server address they can reach, and \`ss -tln\` lists the listeners.` },
+        {
+          lab: {
+            explain: 'Listen on 127.0.0.1:8083, 10.41.1.1:8084 and 0.0.0.0:8085; probe each from the clients; list the listeners',
+            cmd: `${NEED}
+ip netns exec n41s timeout 6 python3 -c '
+import socket, time
+keep = []
+for ip, port in (("127.0.0.1", 8083), ("10.41.1.1", 8084), ("0.0.0.0", 8085)):
+    s = socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1); s.bind((ip, port)); s.listen(4); keep.append(s)
+time.sleep(5)' &
+sleep 1
+try() { ip netns exec $1 nc -z -w1 $2 $3 >/dev/null 2>&1 && echo "$1 -> $2:$3  connected" || echo "$1 -> $2:$3  failed (nc exit $?)"; }
+try n41a 10.41.1.1 8083
+try n41a 10.41.1.1 8084
+try n41b 10.41.2.1 8084
+try n41a 10.41.1.1 8085
+try n41b 10.41.2.1 8085
+ip netns exec n41s ss -H -tln | awk '{print $1, $4}' | sort -k2
+wait`,
+          },
+        },
+        { md: `Port 8083 failed from n41a: the listener is on 127.0.0.1, and a packet addressed to 10.41.1.1:8083 doesn't match that socket. Port 8084 worked at 10.41.1.1 and failed at 10.41.2.1, so a socket bound to one address ignored the same port on the server's other address. Port 8085 worked at both addresses. The lab doesn't capture whether the failures were refusals or silence; both end in \`nc\` exit status 1 here (chapter 4.4 tells them apart).
+
+This explains a common surprise. A service that listens on \`127.0.0.1\` is reachable from the same machine and from nowhere else, however open the firewall is. To serve other hosts it must bind a specific external address or \`0.0.0.0\`. When a container or a pod works from \`localhost\` but not through its IP, the bind address is the first thing to read in \`ss -tln\`.` },
       ],
     },
     {
       id: 'twins',
       title: "Where you've met this",
       blocks: [
-        { md: `**AWS.** The NAT gateway docs state its limits in exactly these terms: each IPv4 address supports up to 55,000 simultaneous connections to each unique destination, and a unique destination is a destination IP, destination port and protocol. My reading, not stated on that page: the limit is the 5-tuple running out of distinct source ports for one destination. The same page says NAT gateways use ports 1024-65535. Adding more addresses to the gateway adds more source IPs, and so more tuples.
+        { md: `**AWS.** The NAT gateway docs state its limits in exactly these terms: each IPv4 address supports up to 55,000 simultaneous connections to each unique destination, and a unique destination is a destination IP, destination port and protocol. AWS doesn't state the cause; the likely reading is the 5-tuple running out of distinct source ports for one destination. The same page says NAT gateways use ports 1024-65535. Adding more addresses to the gateway adds more source IPs, and so more tuples.
+
+The arithmetic from lab 2's range: 60999 - 32768 + 1 = 28,232 ephemeral ports. If a Linux client uses its whole default range (general knowledge, not tested here), one source IP can hold at most 28,232 simultaneous connections to one destination IP, port and protocol. That is below the 55,000 the NAT gateway page quotes, which suggests the gateway does not allocate from that default Linux range; the page gives no more detail than that.
 
 **Kubernetes.** A Service maps a ClusterIP and port to a pod IP and port, so the destination half of the tuple is rewritten on the way. conntrack tracks each connection by its tuple. That is general knowledge here, not something this chapter fetched; chapter 4.7 tests it.
 
