@@ -24,6 +24,9 @@ for (const id of ids) {
       assert.ok(c.prompt && c.why, `${c.id} has prompt and why`);
       const labels = c.options.map((o) => String(o).split(': ')[0]);
       assert.equal(new Set(labels).size, labels.length, `${c.id} receipt labels are distinct: ${JSON.stringify(labels)}`);
+      for (const l of labels) {
+        assert.ok(/[A-Za-z]{3,}/.test(l.replace(/(^|\s)-\w+/g, '')) && !/^(yes|no)$/i.test(l.trim()), `${c.id} receipt label must carry a belief, not a bare value: ${JSON.stringify(l)}`);
+      }
     }
     for (const b of blocks) {
       const kinds = ['md', 'checkpoint', 'widget', 'lab'].filter((k) => b[k]);
