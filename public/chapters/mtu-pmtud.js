@@ -13,28 +13,29 @@ export default {
   number: '3.9',
   kicker: 'Layer 3',
   title: 'MTU and path MTU discovery',
-  lede: 'Every link has a largest packet it can carry. When a packet is too big, the network either splits it or tells the sender to shrink it, and if that message goes missing the sender never finds out.',
+  lede: 'Every link has a largest packet it can carry. This chapter follows what happens to a packet that is too big for one of them.',
   sections: [
     {
       id: 'limit',
       title: 'A size limit on every link',
       blocks: [
-        { md: `The **MTU** (maximum transmission unit) of a link is the largest IP packet it carries, headers included. Ethernet's usual value is 1500. The limit belongs to each link separately, so a path is only as roomy as its smallest link.
+        { md: `Each link has an **MTU** (maximum transmission unit), a size limit that belongs to that link alone. Ethernet's usual value is 1500.
 
-The lab builds the chain you know from chapter 3.7: A, R and B. The difference is that R's link toward B is set to MTU 1400, while A's link to R stays at 1500. A will send a single echo request with \`ping -M do -s N\`: \`-M do\` sets the DF ("don't fragment") flag on the packet, and \`-s\` sets the size of the data in the request. The lab tries two sizes that sit right either side of the limit.` },
+The lab builds the chain you know from chapter 3.7: A, R and B. The difference is that R's link toward B is set to MTU 1400, while A's link to R stays at 1500. A will send a single echo request with \`ping -M do -s N\`: \`-M do\` sets the DF ("don't fragment") flag on the packet, and \`-s N\` chooses the size. The lab tries two values of N that sit right either side of the limit.` },
         {
           checkpoint: {
             id: 'c1',
             prompt: 'With DF set, which is the largest `-s` that gets through the 1400-byte link?',
             options: [
-              '-s 1400: the number is the packet size',
-              '-s 1372: the IP and ICMP headers count against the 1400',
-              '-s 1358: IP, ICMP and Ethernet headers all count against the 1400',
+              'Data only counts (-s 1400): the limit applies to the data in the request',
+              'IP and ICMP headers count (-s 1372): the limit covers the whole IP packet',
+              'Ethernet header counts too (-s 1358): the limit covers the whole frame',
             ],
             key: 1,
             why: 'MTU measures the IP packet: 20 bytes of IP header, 8 of ICMP header, then the data. 1400 - 28 = 1372. The Ethernet header is not part of the MTU.',
           },
         },
+        { md: `The MTU is the largest IP packet a link carries, headers included, and the path's MTU is that of its smallest link. \`ping -s\` counts only the data in the echo request, which follows an 8-byte ICMP header and a 20-byte IP header.` },
         {
           lab: {
             explain: 'Build A-R-B with a 1400 link, send DF pings of -s 1372 and -s 1373, show the ICMP that came back and the route A cached',
@@ -61,7 +62,9 @@ echo "A's route to B: $(ip -n n39a route get 10.39.2.2 | tr '\\n' ' ' | grep -o 
         },
         { md: `The two sizes behave differently. \`-s 1372\` makes a 1400-byte packet (20 + 8 + 1372), exactly the limit, and it gets an answer. \`-s 1373\` is 1401 bytes and A gets \`Frag needed and DF set (mtu = 1400)\` instead, from \`10.39.1.1\`, which is R. The capture on A shows what R sent: \`ICMP 10.39.2.2 unreachable - need to frag (mtu 1400)\`. That is the type 3, code 4 message from chapter 3.7. RFC 1191 requires the router to put the next-hop MTU in it, so A learns the number, not just that something failed.
 
-A kept that number. The last line of the lab shows a cached entry on A's route to B with \`mtu 1400\` and an expiry time. Later packets to B are sized from it.
+A kept that number. The last line of the lab shows a cached entry on A's route to B with \`mtu 1400\` and an expiry time. Linux normally sizes later packets to that destination from such an entry (general behaviour; the labs below clear it before each test instead of relying on it).
+
+The first line of the lab printed the MTUs: 1500 on A and on R's A-side, 1400 on R's B-side and on B. Those numbers decided every result in this chapter, and on a real host or pod \`ip link\` is where to start.
 
 > [!IMPORTANT]
 > A packet's size is the whole IP packet, headers included. The router that can't forward an oversize DF packet drops it and returns ICMP type 3 code 4 carrying the MTU to use.` },
@@ -200,14 +203,6 @@ The widget below has the same failure with ICMP blocked on the path. Two fixes: 
 **Kubernetes / Cilium.** An overlay wraps each packet in outer headers, so the pod's usable MTU is smaller than the node's. The widget's 1450 is the node MTU minus VXLAN's usual 50 bytes of outer headers, which is general knowledge, not a fetched Cilium figure. How Cilium sets the pod MTU depends on its mode and configuration, so read the real value from the pod's interface (\`ip link\`) instead of trusting a number. "Small requests work, large transfers hang" is the black-hole shape from the lab.
 
 **Proxmox.** A guest MTU larger than the path it uses will fail the same way: oversize packets with DF set are dropped. Match the bridge, the guest NIC and the physical path. A Linux bridge forwards frames and sends no ICMP of its own, so don't expect it to report the problem.` },
-        {
-          lab: {
-            explain: 'Read the MTU of every interface in R',
-            cmd: `${NEED}
-ip -n n39r -o link show | grep -E 'eth' | awk '{print $2, $4, $5}'`,
-          },
-        },
-        { md: `It prints \`eth0@if…: mtu 1500\` and \`eth1@if…: mtu 1400\`, the same two numbers that decided every result in this chapter. On a real host or pod, the same command is where to start.` },
       ],
     },
     {
