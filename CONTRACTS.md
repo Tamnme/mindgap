@@ -15,6 +15,8 @@ prompts/teacher.md         # system prompt, mode=teach
 prompts/practice.md        # system prompt, mode=practice
 prompts/prober.md          # system prompt, mode=probe
 prompts/chapter.md         # system prompt, mode=chapter
+prompts/course.md          # system prompt, mode=course
+prompts/course-schema.json # course-session output schema (turn schema + goal, assessment, plan, approved)
 lib/labs.mjs               # lab runner: one Docker container per course, approval, runLab/labStatus
 lib/tutors/                # tutor CLI adapters (claude, agy), chosen by MINDGAP_TUTOR
 scripts/                   # migrate-learner-v1.mjs (old layout), tutor-gate.mjs, lab-parity.mjs
@@ -52,6 +54,10 @@ courses/<slug>/chapters/<node_id>.json  # chapter content, see Chapters below
 Fields: `say`, `question{kind,prompt,options,wants_confidence}|null`, `sim{scenario}|null`,
 `lab{cmd,explain}|null`, `node_updates[{id,status,note}]`, `propositions[{claim,because,node}]`, `lesson_done`.
 Sim scenarios: `switch-learning | switch-flood | vlan-broadcast | vlan-trunk`.
+
+## Course session
+
+The schema is per mode: `schemaFor(mode)` in `server.mjs` picks `prompts/course-schema.json` for `course`, else `turn-schema.json`. Details: Task 3.
 
 ## How the server calls the tutor (adapters in `lib/tutors/`)
 `MINDGAP_TUTOR` picks one adapter: `claude` (default) or `agy`. Each adapter exports `buildCall({systemPrompt, schemaText, message, sessionId, model, schemaFile}) -> {bin, args}` and `parseOutput(stdout) -> {turn, sessionId, error}`. Binaries come from `CLAUDE_BIN` / `AGY_BIN`.

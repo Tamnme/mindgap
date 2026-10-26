@@ -671,3 +671,12 @@ test('a non-string lab.hostname is reported on the course page as unavailable, n
   assert.equal(info.json.lab.available, false);
   assert.match(info.json.lab.reason, /lab\.hostname/);
 });
+
+test('course schema extends the turn schema: same seven fields, four more required', async () => {
+  const turn = JSON.parse(await readFile(path.join(PROMPTS, 'turn-schema.json'), 'utf8'));
+  const course = JSON.parse(await readFile(path.join(PROMPTS, 'course-schema.json'), 'utf8'));
+  assert.deepEqual(course.required, [...turn.required, 'goal', 'assessment', 'plan', 'approved']);
+  for (const key of Object.keys(turn.properties)) {
+    assert.deepEqual(course.properties[key], turn.properties[key], key);
+  }
+});

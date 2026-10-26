@@ -14,7 +14,8 @@ import { labStatus, labRequest, isApproved, approve, runLab, ApprovalMismatch } 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(HERE, 'public');
 const PROMPTS_DIR = path.join(HERE, 'prompts');
-const SCHEMA_PATH = path.join(PROMPTS_DIR, 'turn-schema.json');
+const SCHEMAS = { course: 'course-schema.json' };
+const schemaFor = (mode) => path.join(PROMPTS_DIR, SCHEMAS[mode] ?? 'turn-schema.json');
 const DATA_DIR = path.resolve(process.env.MINDGAP_DATA_DIR || path.join(HERE, 'learner'));
 const COURSE_OPTS = {
   coursesDir: path.resolve(process.env.MINDGAP_COURSES_DIR || path.join(HERE, 'courses')),
@@ -28,7 +29,7 @@ if (!TUTORS.includes(TUTOR)) {
 }
 const tutor = getTutor(TUTOR);
 const MODEL = process.env.MINDGAP_MODEL || (TUTOR === 'claude' ? 'opus' : undefined);
-const MODES = { teach: 'teacher.md', practice: 'practice.md', probe: 'prober.md', chapter: 'chapter.md' };
+const MODES = { teach: 'teacher.md', practice: 'practice.md', probe: 'prober.md', chapter: 'chapter.md', course: 'course.md' };
 const BODY_LIMIT = 256 * 1024;
 const TUTOR_TIMEOUT_MS = 180_000;
 const LAB_CMD_MAX = 4000;
@@ -219,7 +220,7 @@ async function systemPrompt(c, mode) {
 
 // Every tutor call runs in a fresh empty cwd (holds the turn schema, no repo access), removed afterwards.
 async function callTutor(c, meta, message) {
-  const schema = await readFile(SCHEMA_PATH, 'utf8');
+  const schema = await readFile(schemaFor(meta.mode), 'utf8');
   const sys = await systemPrompt(c, meta.mode);
   const cwd = await mkdtemp(path.join(tmpdir(), 'mindgap-turn-'));
   try {
@@ -269,7 +270,7 @@ async function startLesson(body) {
   const c = await openCourse(body.course);
   const { node_id, mode } = body;
   if (!validId(node_id)) throw new HttpError(400, 'node_id is required');
-  if (!Object.hasOwn(MODES, mode) || mode === 'chapter') {
+  if (!Object.hasOwn(MODES, mode) || mode === 'chapter' || mode === 'course') {
     throw new HttpError(400, `mode must be one of: ${Object.keys(MODES).join(', ')}`);
   }
   const map = await loadMap(c);
