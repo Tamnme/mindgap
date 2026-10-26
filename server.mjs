@@ -1,5 +1,6 @@
 // mindgap HTTP server. Contracts: CONTRACTS.md. No npm deps.
 import { createServer } from 'node:http';
+import { existsSync } from 'node:fs';
 import { readFile, writeFile, rename, appendFile, readdir } from 'node:fs/promises';
 import { spawn, execFile } from 'node:child_process';
 import path from 'node:path';
@@ -472,6 +473,11 @@ const server = createServer(async (req, res) => {
     else res.end();
   }
 });
+
+if (existsSync(path.join(DATA_DIR, 'map.json'))) {
+  console.error(`Old data layout found in ${DATA_DIR}. Run: node scripts/migrate-learner-v1.mjs`);
+  process.exit(1);
+}
 
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`mindgap listening on http://127.0.0.1:${server.address().port}`);
