@@ -1,6 +1,6 @@
 # Chapter guide
 
-How to write an mindgap chapter. The reference chapter is `public/chapters/switch-mac-table.js`: read it in full before writing. The learner approved its format, so match its voice, density and structure. The file format is in `CONTRACTS.md` ("Chapters").
+How to write a mindgap chapter. The reference chapter is `public/chapters/switch-mac-table.js`: read it in full before writing. The learner approved its format, so match its voice, density and structure. The file format is in `CONTRACTS.md` ("Chapters").
 
 ## Who is reading
 
