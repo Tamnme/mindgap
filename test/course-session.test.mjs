@@ -159,6 +159,26 @@ test('applyPlan marks out-of-scope nodes, leaves other fields and the input unto
   for (const node of full.nodes) assert.equal('in_scope' in node, false);
 });
 
+test('approval with meta lacking plan_presented is refused with booleans', () => {
+  const r = reviewTurn({
+    meta: { goal: GOAL, assessment: ASSESSMENT, pending_plan: null },
+    turn: turn({ approved: true, lesson_done: true }),
+    map,
+  });
+  assert.equal(r.turn.approved, false);
+  assert.equal(r.turn.lesson_done, false);
+  assert.ok(r.notes.some((n) => n.startsWith('approved refused')));
+});
+
+test('malformed in_scope is refused, not thrown', () => {
+  for (const bad of [{ approach: 'x', in_scope: 'a' }, { approach: 'x', in_scope: [1] }]) {
+    const r = reviewTurn({ meta: assessedMeta(), turn: turn({ plan: bad }), map });
+    assert.equal(r.turn.plan, null);
+    assert.equal(r.meta.plan_presented, false);
+    assert.ok(r.notes.some((n) => n.startsWith('plan refused')));
+  }
+});
+
 test('checkPlan returns null for a valid plan', () => {
   assert.equal(checkPlan(map, PLAN(['a', 'b'])), null);
 });
