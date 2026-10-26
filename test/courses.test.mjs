@@ -41,6 +41,7 @@ test('loadCourse rejects invalid or unknown slugs with CourseNotFound', async ()
   await assert.rejects(loadCourse(opts, '../alpha'), CourseNotFound);
   await assert.rejects(loadCourse(opts, 'Alpha'), CourseNotFound);
   await assert.rejects(loadCourse(opts, 'nope'), CourseNotFound);
+  await assert.rejects(loadCourse(opts, undefined), CourseNotFound);
 });
 
 test('ensureState seeds map.json once and never overwrites it', async () => {
