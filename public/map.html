@@ -10,14 +10,15 @@
   <main style="padding: 16px; max-width: 1400px; margin: 0 auto;">
     <header style="margin-bottom: 12px;">
       <h1 id="course-title">mindgap · your map</h1>
-      <p class="muted small">New here? Run a <strong>Placement check</strong> to find your gaps. Then work top to bottom; click a topic to open it.</p>
+      <p class="muted small">New here? Click <strong>New goal</strong> to say what you want to learn; mindgap measures what you know and proposes a plan.</p>
     </header>
 
     <div class="map-toolbar">
       <button id="btn-next" class="primary" disabled>Next lesson</button>
       <button id="btn-practice" disabled>Practice shaky (0)</button>
-      <button id="btn-probe" disabled>Placement check (0 untested)</button>
+      <button id="btn-goal">New goal</button>
       <button id="btn-debug" disabled>Debug drill</button>
+      <label id="off-goal-row" class="small muted hidden"><input type="checkbox" id="show-off"> <span id="show-off-text"></span></label>
       <span id="busy" class="small muted hidden"><span class="spinner"></span><span id="busy-text">Starting lesson… this can take up to a minute.</span></span>
     </div>
     <div id="error" class="notice error hidden" role="alert"></div>

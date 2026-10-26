@@ -460,3 +460,6 @@ body.has-focus::after { content: ""; position: fixed; inset: 0; background: rgba
 .nbmtu .mt-note { margin: 0; font-size: 13px; color: var(--muted); }
 @media (max-width: 520px) { .nbmtu { padding: 12px; } .nbmtu .mt-hop { flex-basis: 100%; } }
 .widget.focused .nbmtu { max-width: min(860px, 100%); margin: 0 auto; font-size: 16px; }
+.map-svg .node.off-goal { opacity: 0.4; }
+.plan-card { margin: 8px 0; }
+.plan-card .plan-nodes { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }

@@ -2,6 +2,7 @@
 // Model text is rendered with renderMarkdown (escapes first); everything else uses textContent.
 
 import { renderMarkdown } from './md.js';
+import { planNodes } from './map-logic.js';
 import { createLabCard, fillLabCard, runLabCommand, setLabBusy } from './labcard.js';
 
 const $ = (id) => document.getElementById(id);
@@ -12,6 +13,7 @@ const mapUrl = `map.html?course=${encodeURIComponent(course || '')}`;
 const S = {
   meta: null,
   node: null,
+  mapNodes: [],      // all course map nodes, for plan cards
   turn: null,        // latest tutor turn
   waiting: false,    // /api/turn in flight
   labRunning: false,
@@ -107,8 +109,35 @@ function appendLabRun(out) {
 }
 
 // A tutor turn in the thread: the message, then any simulator or lab it opened.
+function appendAssessment(a) {
+  const card = el('div', { class: 'card assessment-card' }, [el('div', { class: 'who', text: 'Assessment' })]);
+  for (const r of a.strands || []) {
+    card.append(el('p', {}, [el('strong', { text: r.strand }), ': ', el('span', { text: r.assessment })]));
+  }
+  if (a.summary) card.append(el('p', { text: a.summary }));
+  $('thread').append(card);
+}
+
+function appendPlan(plan) {
+  const { nodes, rest } = planNodes(plan, S.mapNodes);
+  const approach = el('div');
+  approach.innerHTML = renderMarkdown(plan.approach || '');
+  const card = el('div', { class: 'card plan-card' }, [el('div', { class: 'who', text: 'Proposed plan' }), approach]);
+  const list = el('ol', { class: 'plan-nodes' });
+  for (const n of nodes) {
+    const s = ['untested', 'gap', 'shaky', 'solid'].includes(n.status) ? n.status : 'untested';
+    list.append(el('li', {}, [el('span', { text: `${n.title || n.id} ` }), el('span', { class: `chip ${s}`, text: s })]));
+  }
+  card.append(list);
+  if (rest > 0) card.append(el('p', { class: 'muted small', text: `${rest} topics set aside` }));
+  card.append(el('p', { class: 'muted small', text: 'Reply below to agree or ask for changes.' }));
+  $('thread').append(card);
+}
+
 function appendTurn(turn) {
   const bubble = turn.say ? appendTutor(turn.say) : null;
+  if (turn.assessment) appendAssessment(turn.assessment);
+  if (turn.plan) appendPlan(turn.plan);
   if (turn.sim && turn.sim.scenario && turn.sim.scenario !== S.scenario) openSim(turn.sim.scenario);
   if (turn.lab && turn.lab.cmd) appendLabCard(turn.lab);
   return bubble;
@@ -215,7 +244,7 @@ function renderBanner() {
   banner.classList.toggle('hidden', !S.done);
   if (S.done) {
     banner.replaceChildren(
-      el('span', { text: 'Lesson complete — ' }),
+      el('span', { text: S.meta?.mode === 'course' ? 'Plan approved — ' : 'Lesson complete — ' }),
       el('a', { href: mapUrl, text: 'back to map' }),
     );
   }
@@ -384,10 +413,16 @@ async function init() {
     if (courseRes.ok) S.lab = (await courseRes.json()).lab ?? null;
     if (mapRes.ok) {
       const map = await mapRes.json();
-      S.node = (map.nodes || []).find(n => n.id === meta.node_id) || null;
+      S.mapNodes = map.nodes || [];
+      S.node = S.mapNodes.find(n => n.id === meta.node_id) || null;
     }
-    $('title').textContent = S.node?.title || meta.node_id || 'Lesson';
-    setStatusChip(S.node?.status);
+    if (meta.mode === 'course') {
+      $('title').textContent = 'New goal';
+      $('status-chip').classList.add('hidden');
+    } else {
+      $('title').textContent = S.node?.title || meta.node_id || 'Lesson';
+      setStatusChip(S.node?.status);
+    }
     if (meta.mode) {
       const m = $('mode-chip');
       m.textContent = meta.mode;
