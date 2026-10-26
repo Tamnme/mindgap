@@ -109,6 +109,7 @@ const tail = (s) => s.slice(-TAIL).trimEnd();
 const useVm = process.argv.includes('--vm');
 const course = await loadCourse({ coursesDir: COURSES_DIR, dataDir: DATA_DIR }, COURSE);
 const rows = await collect();
+if (rows.length === 0) throw new Error('no lab commands collected');
 
 await removeContainer();
 const docker = [];
@@ -120,7 +121,8 @@ if (useVm) for (const r of rows) vm.push(await runVm(r.cmd));
 const results = rows.map((r, i) => {
   const d = docker[i];
   const v = useVm ? vm[i] : null;
-  const differ = useVm ? d.code !== v.code : d.code !== 0;
+  // A timeout (null) is never agreement: null on either side counts as a difference.
+  const differ = useVm ? (d.code === null || v.code === null || d.code !== v.code) : d.code !== 0;
   return { ...r, d, v, differ };
 });
 
