@@ -13,7 +13,7 @@ The tutor's teaching method comes from [learnharness](https://github.com/amosblo
 1. **Map.** 33 topics from L1 to DNS, each with its prerequisites. Every topic starts as `untested`.
 2. **Placement check.** The tutor asks prediction questions and marks each topic `gap`, `shaky` or `solid`, with a note recording what you said.
 3. **Chapters.** Each topic has a written chapter. Checkpoints ask you to commit to a prediction (with a confidence) before the page reveals the answer. Wrong options are beliefs a smart person could hold, so a miss tells the tutor something.
-4. **Labs.** Chapters include commands that run in a real Linux VM (`ip`, `tcpdump`, `bridge`, `conntrack`, ...). You predict the output, then run it.
+4. **Labs.** Chapters include commands that run in a real Linux container (`ip`, `tcpdump`, `bridge`, `conntrack`, ...). You predict the output, then run it.
 5. **Tutor.** Claude reads your answers in a side drawer, teaches into the gap it finds, and updates the map. You can also run teach, practice and debug-drill sessions from the map.
 
 Each idea is meant to land as something you could have derived, not a fact to memorise: a security group is stateful *because* of conntrack, a pod reaches another node *because* of encapsulation.
@@ -22,16 +22,17 @@ Each idea is meant to land as something you could have derived, not a fact to me
 
 - **Node.js 22 or newer.** No npm dependencies.
 - **[Claude Code](https://claude.com/claude-code)** or **agy**, logged in. The server calls the tutor CLI for every turn, on your subscription. Pick with `MINDGAP_TUTOR`.
-- **[OrbStack](https://orbstack.dev)** on macOS, for the labs. Optional: chapters and the tutor work without it, but lab commands won't run.
+- **Docker** for the labs: Docker Desktop, OrbStack or Docker Engine. Optional: chapters and the tutor work without it, but lab commands won't run.
 
 ## Quickstart
 
 ```sh
 git clone https://github.com/Tamnme/mindgap.git
 cd mindgap
-labs/setup-netlab.sh   # optional: creates the "netlab" Ubuntu VM and installs the tools
 node server.mjs
 ```
+
+Labs need Docker. The first lab run builds the lab image (a minute or two) and asks for your approval.
 
 Open http://localhost:4810 and start with **Placement check**.
 
@@ -44,6 +45,10 @@ On first run the server copies `learner/map.seed.json` to `learner/map.json`. Yo
 | `MINDGAP_DATA_DIR` | `learner/` | Where your map, propositions and transcripts live |
 | `PORT` | `4810` | |
 
+## Tutors
+
+mindgap calls one tutor CLI for every turn. **Claude Code** and **agy** are supported; both passed `scripts/tutor-gate.mjs` on 2026-10-26. **Codex** is pending: its gate has not been run yet (`node scripts/tutor-gate.mjs codex` once an adapter exists).
+
 ## Topics
 
 - **Physical:** Links, NICs and virtual cables
@@ -55,7 +60,7 @@ On first run the server copies `learner/map.seed.json` to `learner/map.json`. Yo
 
 ## Safety
 
-Lab commands run only inside the OrbStack VM (`orb -m netlab -u root bash -lc ...`), never on your host. They run only when you click **Run**, with a 30-second timeout and 64 KB of output. The server listens on `127.0.0.1` only. The tutor runs with `--safe-mode` and no tools, so it can't touch your files or your Claude Code config.
+Lab commands run only inside a Docker container, never on your host. The container has no network and no extra Linux capabilities by default. A course that needs more (network access, or capabilities such as `NET_ADMIN`) shows you exactly what it asks for on the first Run; nothing beyond the defaults runs until you approve that request. Commands run only when you click **Run**, with a 30-second timeout and 64 KB of output. The server listens on `127.0.0.1` only. The tutor runs with `--safe-mode` and no tools, so it can't touch your files or your Claude Code config.
 
 ## Development
 

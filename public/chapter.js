@@ -2,7 +2,7 @@
 // Chapter prose is authored and model text comes from the tutor: both go through renderMarkdown (escapes first).
 
 import { renderMarkdown } from './md.js';
-import { createLabCard, fillLabCard } from './labcard.js';
+import { createLabCard, fillLabCard, runLabCommand, setLabBusy } from './labcard.js';
 import { firstOpenCheckpoint, flatBlocks, answerEvent, answersFrom, sectionState } from './chapter-logic.js';
 
 const $ = (id) => document.getElementById(id);
@@ -14,6 +14,7 @@ const S = {
   lessonId: null,
   answers: {},      // checkpoint id -> learner event
   units: [],        // [{el, block}] in reading order, one per block
+  lab: null,        // course lab state: {available, reason?, request, approved}
   queue: [],        // learner events waiting for the tutor
   sending: false,
   unread: 0,
@@ -191,18 +192,17 @@ function widgetCard(w) {
 // ---------- labs ----------
 
 async function runLab(card) {
-  const btn = card.querySelector('.run');
-  btn.disabled = true;
-  btn.textContent = '… Running';
+  setLabBusy(card, true);
   try {
-    const out = await postJson('/api/lab', { course, lesson_id: S.lessonId, cmd: card.dataset.cmd });
-    fillLabCard(card, { cmd: card.dataset.cmd, ...out });
-    showError('');
+    const out = await runLabCommand(card, { course, lessonId: S.lessonId });
+    if (out) {
+      fillLabCard(card, { cmd: card.dataset.cmd, ...out });
+      showError('');
+    }
   } catch (err) {
     showError(`Lab run failed: ${err.message}`);
   } finally {
-    btn.disabled = false;
-    btn.textContent = '↻ Run again';
+    setLabBusy(card, false);
   }
 }
 
@@ -222,7 +222,7 @@ function renderArticle() {
       if (block.md) node = md(block.md);
       else if (block.checkpoint) node = checkpointCard(block.checkpoint);
       else if (block.widget) node = widgetCard(block.widget);
-      else if (block.lab) node = createLabCard(block.lab, runLab);
+      else if (block.lab) node = createLabCard(block.lab, runLab, S.lab);
       const unit = el('div', { class: 'unit' }, [node]);
       sec.append(unit);
       S.units.push({ el: unit, block, section: s.id });
@@ -386,6 +386,7 @@ async function init() {
       postJson('/api/chapter', { course, node_id: nodeId }),
     ]);
     S.chapter = chapter;
+    S.lab = info.lab;
     S.map = map;
     S.chapterIds = info.chapters || [];
     S.node = S.map.nodes.find((n) => n.id === nodeId) || { layer: '', title: S.chapter.title };

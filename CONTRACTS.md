@@ -16,7 +16,6 @@ prompts/practice.md        # system prompt, mode=practice
 prompts/prober.md          # system prompt, mode=probe
 prompts/chapter.md         # system prompt, mode=chapter
 public/                    # UI (still on the pre-course API until the UI task lands)
-labs/setup-netlab.sh       # OrbStack VM (Phase 6)
 courses/<slug>/course.json           # {slug, title, layers:[{id,name}], lab}
 courses/<slug>/map.seed.json         # clean knowledge map, committed; nodes use links
 courses/<slug>/prompt.md             # course-specific text appended to every mode prompt (optional)
@@ -38,7 +37,7 @@ courses/<slug>/chapters/<node_id>.json  # chapter content, see Chapters below
   "prereqs": ["frames-mac"],
   "truth": "A switch forwards frames by destination MAC only; it learns MAC→port from each frame's source.",
   "links": [{ "label": "AWS", "text": "..." }],   // per-node notes
-  "lab": "One-line lab idea for OrbStack",
+  "lab": "One-line lab idea for the Docker lab",
   "sim": "switch-learning",           // scenario name or null
   "sources": ["https://..."],
   "status": "gap",                     // untested | gap | shaky | solid
@@ -66,12 +65,13 @@ Binds 127.0.0.1 only. Unknown or invalid course slugs → 404. A malformed `cour
 | Method | Path | Body → Response |
 |---|---|---|
 | GET | `/api/courses` | → `[{slug, title}]` |
-| GET | `/api/courses/:slug` | → `{...course.json, chapters: string[]}` (`chapters` = `chapters/index.json`, `[]` if absent) |
+| GET | `/api/courses/:slug` | → `{...course.json, chapters: string[], lab}` (`chapters` = `chapters/index.json`, `[]` if absent; `lab` = `{available, reason?, request:{caps, network}, approved}`, `reason` set when Docker is unavailable) |
 | GET | `/api/courses/:slug/map` | → state map.json (seeded on first access) |
 | GET | `/api/courses/:slug/chapters/:id` | → chapter JSON, 404 if absent |
 | POST | `/api/lesson` | `{course, node_id, mode}` → `{lesson_id, turn}` (starts a tutor session, first turn) |
 | POST | `/api/turn` | `{course, lesson_id, event}` → `{turn}` |
-| POST | `/api/lab` | `{course, lesson_id, cmd}` → `{stdout, stderr, code}`. Also appended to the transcript as a `lab` event. The next `/api/turn` should include it. |
+| POST | `/api/courses/:slug/lab-approval` | `{caps, network}` (must equal the course's `lab.request` exactly) → 204, or 400 on mismatch. Writes `<stateDir>/lab-approval.json`. |
+| POST | `/api/lab` | `{course, lesson_id, cmd}` → `{stdout, stderr, code}`. Also appended to the transcript as a `lab` event. The next `/api/turn` should include it. 503 `{error: reason}` when Docker is unavailable; 428 `{error: 'lab needs approval', request}` until the course's request is approved. |
 | POST | `/api/chapter` | `{course, node_id}` → `{lesson_id, meta, events[]}`. Reuses the node's latest `chapter`-mode lesson or creates one **without** a tutor call; 404 when `courses/<course>/chapters/<node_id>.json` doesn't exist. `/api/lesson` refuses mode `chapter`. |
 | GET | `/api/lesson/:id?course=<slug>` | → `{meta, events[]}` (for reload). Missing or unknown course → 404. |
 
@@ -88,5 +88,10 @@ Chapters: `courses/<slug>/chapters/<node_id>.json`, listed in `courses/<slug>/ch
 
 After each turn the server applies `node_updates` to the course's state/map.json (status + evidence = note) and appends `propositions` (with lesson_id, ts) to its propositions.jsonl.
 
-## Lab safety
-`/api/lab` runs only: `orb -m netlab -u root bash -lc <cmd>`, with a 30 s timeout and output capped at 64 KB. It never runs on the host shell. The command only executes when the learner clicks Run.
+## Lab safety (Docker)
+- One container per course, named `mindgap-<slug>`, built from the course's `lab.dockerfile` on first use. Commands run with `docker exec … bash -lc <cmd>`, never on the host shell.
+- Defaults: `--network none`, no added capabilities, not privileged.
+- Extra capabilities and network come only from the course's request (`lab.caps`, `lab.network` in `course.json`). Nothing beyond the defaults runs until the learner approves exactly that request. The approval is stored in `<data>/courses/<slug>/state/lab-approval.json`.
+- The container is labelled `mindgap.request` with the request it was made for. If the request changes, the container is removed and recreated.
+- 30 s timeout (the docker client is killed; a process already running in the container is not), 64 KB output cap, 4000-character command cap.
+- Commands run only when the learner clicks Run. The UI shows the approval prompt on the first Run that needs it, and "Labs need Docker: <reason>" with no Run button when `lab.available` is false.

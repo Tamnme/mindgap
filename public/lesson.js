@@ -2,7 +2,7 @@
 // Model text is rendered with renderMarkdown (escapes first); everything else uses textContent.
 
 import { renderMarkdown } from './md.js';
-import { createLabCard, fillLabCard } from './labcard.js';
+import { createLabCard, fillLabCard, runLabCommand, setLabBusy } from './labcard.js';
 
 const $ = (id) => document.getElementById(id);
 const course = new URLSearchParams(location.search).get('course');
@@ -22,6 +22,7 @@ const S = {
   scenario: null,    // last simulator scenario opened in the thread
   sim: null,         // {card, instance} of the live simulator
   simToken: 0,
+  lab: null,         // course lab state: {available, reason?, request, approved}
 };
 
 class HttpError extends Error {
@@ -93,7 +94,7 @@ function appendLearner(summary) {
 
 // A command the tutor suggested: code on top, Run bar, output panel once it has run.
 function appendLabCard(lab) {
-  const card = createLabCard(lab, runLab);
+  const card = createLabCard(lab, runLab, S.lab);
   $('thread').append(card);
   return card;
 }
@@ -311,25 +312,20 @@ function onAsk() {
 }
 
 async function runLab(card) {
-  const cmd = card.dataset.cmd;
-  const btn = card.querySelector('.run');
   S.labRunning = true;
-  btn.textContent = '… Running';
+  setLabBusy(card, true);
   refreshControls();
   try {
-    const res = await fetch('/api/lab', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ course, lesson_id: lessonId, cmd }),
-    });
-    if (!res.ok) throw new HttpError(res.status, await errorText(res));
-    fillLabCard(card, { cmd, ...(await res.json()) });
-    showError('');
+    const out = await runLabCommand(card, { course, lessonId });
+    if (out) {
+      fillLabCard(card, { cmd: card.dataset.cmd, ...out });
+      showError('');
+    }
   } catch (err) {
     showError(`Lab run failed: ${err.message}`);
   } finally {
     S.labRunning = false;
-    btn.textContent = '↻ Run again';
+    setLabBusy(card, false);
     refreshControls();
   }
 }
@@ -377,13 +373,15 @@ async function init() {
 
   try {
     const c = encodeURIComponent(course);
-    const [lessonRes, mapRes] = await Promise.all([
+    const [lessonRes, mapRes, courseRes] = await Promise.all([
       fetch(`/api/lesson/${encodeURIComponent(lessonId)}?course=${c}`),
       fetch(`/api/courses/${c}/map`),
+      fetch(`/api/courses/${c}`),
     ]);
     if (!lessonRes.ok) throw new Error(await errorText(lessonRes));
     const { meta = {}, events = [] } = await lessonRes.json();
     S.meta = meta;
+    if (courseRes.ok) S.lab = (await courseRes.json()).lab ?? null;
     if (mapRes.ok) {
       const map = await mapRes.json();
       S.node = (map.nodes || []).find(n => n.id === meta.node_id) || null;
