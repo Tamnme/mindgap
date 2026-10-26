@@ -1,4 +1,4 @@
-// Self-check for lib/courses.mjs. Uses a temp coursesDir and dataDir.
+// Self-check for lib/courses.mjs. Uses temp coursesDir and dataDir roots.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
@@ -9,21 +9,34 @@ import { listCourses, loadCourse, ensureState, CourseNotFound } from '../lib/cou
 const ALPHA = { slug: 'alpha', title: 'Alpha', layers: [{ id: 'L1', name: 'One' }], lab: null };
 const SEED = { nodes: [] };
 
-let root;
+const roots = [];
+
+async function fixture(files) {
+  const root = await mkdtemp(path.join(tmpdir(), 'mindgap-courses-'));
+  roots.push(root);
+  for (const [rel, body] of Object.entries(files)) {
+    const file = path.join(root, rel);
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(file, body);
+  }
+  return { coursesDir: path.join(root, 'courses'), dataDir: path.join(root, 'data') };
+}
+
+function course(slug, title) {
+  return JSON.stringify({ slug, title, layers: [], lab: null });
+}
+
 let opts;
 
 before(async () => {
-  root = await mkdtemp(path.join(tmpdir(), 'mindgap-courses-'));
-  const coursesDir = path.join(root, 'courses');
-  const dataDir = path.join(root, 'data');
-  await mkdir(path.join(coursesDir, 'alpha'), { recursive: true });
-  await writeFile(path.join(coursesDir, 'alpha', 'course.json'), JSON.stringify(ALPHA));
-  await writeFile(path.join(coursesDir, 'alpha', 'map.seed.json'), JSON.stringify(SEED));
-  opts = { coursesDir, dataDir };
+  opts = await fixture({
+    'courses/alpha/course.json': JSON.stringify(ALPHA),
+    'courses/alpha/map.seed.json': JSON.stringify(SEED),
+  });
 });
 
 after(async () => {
-  await rm(root, { recursive: true, force: true });
+  await Promise.all(roots.map((root) => rm(root, { recursive: true, force: true })));
 });
 
 test('listCourses returns shipped courses with slug and title', async () => {
@@ -54,4 +67,41 @@ test('ensureState seeds map.json once and never overwrites it', async () => {
   await writeFile(mapPath, JSON.stringify({ nodes: [1] }));
   await ensureState(course);
   assert.deepEqual(JSON.parse(await readFile(mapPath, 'utf8')), { nodes: [1] });
+});
+
+test('a shipped course wins over a same-slug course in dataDir', async () => {
+  const local = await fixture({
+    'courses/alpha/course.json': course('alpha', 'Alpha'),
+    'data/courses/alpha/course.json': course('alpha', 'Alpha Local'),
+  });
+  assert.deepEqual(await listCourses(local), [{ slug: 'alpha', title: 'Alpha' }]);
+  assert.equal((await loadCourse(local, 'alpha')).title, 'Alpha');
+});
+
+test('a dataDir-only course is listed after shipped ones and loads from dataDir', async () => {
+  const local = await fixture({
+    'courses/alpha/course.json': course('alpha', 'Alpha'),
+    'data/courses/beta/course.json': course('beta', 'Beta'),
+  });
+  assert.deepEqual(await listCourses(local), [
+    { slug: 'alpha', title: 'Alpha' },
+    { slug: 'beta', title: 'Beta' },
+  ]);
+  const beta = await loadCourse(local, 'beta');
+  assert.equal(beta.title, 'Beta');
+  assert.equal(beta.dir, path.join(local.dataDir, 'courses', 'beta'));
+});
+
+test('a malformed shipped course still owns its slug over a dataDir course', async () => {
+  const local = await fixture({
+    'courses/alpha/course.json': course('alpha', 'Alpha'),
+    'courses/gamma/course.json': '{"slug":',
+    'data/courses/gamma/course.json': course('gamma', 'Gamma Local'),
+  });
+  await assert.rejects(loadCourse(local, 'gamma'), (err) => {
+    assert.ok(!(err instanceof CourseNotFound));
+    assert.ok(err.message.includes('course.json'));
+    return true;
+  });
+  assert.deepEqual(await listCourses(local), [{ slug: 'alpha', title: 'Alpha' }]);
 });
