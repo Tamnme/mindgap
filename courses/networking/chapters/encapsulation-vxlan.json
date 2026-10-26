@@ -1,0 +1,163 @@
+{
+  "node": "encapsulation-vxlan",
+  "number": "5.1",
+  "kicker": "Overlays",
+  "title": "Encapsulation and VXLAN",
+  "lede": "An overlay carries a complete inner frame as the payload of an ordinary outer packet, so the underlay only ever routes the outer headers. VXLAN does this with UDP and a 24-bit network ID.",
+  "sections": [
+    {
+      "id": "wrap",
+      "title": "A frame inside a packet",
+      "blocks": [
+        {
+          "md": "You already know two facts that combine into an overlay. A frame (chapter 2.1) is a destination MAC, a source MAC, a type and a payload. A UDP datagram (chapter 4.2) carries any bytes you hand it, and the network between the two ends only looks at the IP and UDP headers around them.\n\nNow the problem. Two nodes, **A** and **B**, are on different subnets and joined only by routers. A workload on A wants to be on the *same layer-2 segment* as a workload on B: same subnet, ARP between them, no router in the logical path. A router will not carry a frame across itself, because it strips the Ethernet header at every hop (chapter 3.3). So the frame cannot travel as a frame.\n\nYou could reason your way to the fix. If the frame cannot travel as a frame, treat the whole thing, Ethernet header included, as opaque bytes. Put those bytes in the payload of a UDP datagram addressed to node B's IP. The routers see an ordinary UDP datagram between two node addresses and forward it. Node B receives it, takes the payload out, and hands the original frame to its local workload as if it had arrived on a cable. This is **encapsulation**: a full packet or frame becomes the payload of another packet, and the underlay forwards by the *outer* headers only.\n\n**VXLAN** (RFC 7348) is one standard way to do it. Its recipe has four parts: an outer Ethernet header, an outer IP header, an outer UDP header, and a small VXLAN header, followed by the inner frame. The VXLAN header carries one thing you care about, the **VNI**: a 24-bit number naming which virtual network the inner frame belongs to. Without it, two virtual networks that both use 10.0.0.0/24 would collide as soon as they shared a pair of nodes. With it, node B looks at the VNI and delivers the frame to the right one. A 24-bit field allows about 16.7 million of them, against 4094 usable VLAN IDs (chapter 2.6).\n\nThe node that wraps and unwraps is called a **VTEP**, for VXLAN tunnel endpoint. On Linux, a VTEP is a network interface of type `vxlan`.\n\nHere is a question about the tunnel's *size*, before you see any numbers. The underlay interfaces on A and B have MTU 1500. You create a VXLAN interface on each node, `vx51`, with no `mtu` option at all."
+        },
+        {
+          "checkpoint": {
+            "id": "c1",
+            "prompt": "The underlay interfaces have MTU 1500. What MTU does Linux give vx51, which was created with no mtu option?",
+            "options": [
+              "Same as the underlay: a tunnel is just another link, so it inherits 1500",
+              "UDP maximum: a datagram can carry about 64 KB, so the tunnel interface allows that much",
+              "Reduced by the outer headers: the kernel subtracts what it is about to add",
+              "Reduced by UDP only: the outer IP and Ethernet belong to the underlay, so just 8 bytes come off"
+            ],
+            "key": 2,
+            "why": "Everything the tunnel adds must still fit inside one underlay IP packet of 1500 bytes. The kernel therefore subtracts the outer IP (20), UDP (8), VXLAN (8) and the inner Ethernet header (14) that now rides inside it: 1500 - 50 = 1450."
+          }
+        },
+        {
+          "md": "Here is the arithmetic. The underlay will carry one IP packet of at most 1500 bytes. Inside that packet go, in order:\n\n```\nouter IP 20 | UDP 8 | VXLAN 8 | inner Ethernet 14 | inner IP packet\n```\n\nThe first four add up to 20 + 8 + 8 + 14 = **50 bytes**. Whatever remains, 1500 - 50 = **1450**, is the largest inner IP packet that fits. That is the MTU of the VXLAN interface. Note that the *inner* Ethernet header counts against the budget, because the whole frame is payload. The *outer* Ethernet header does not count against the underlay's MTU, because the MTU is measured at the IP layer and the underlay adds its own framing around it.\n\n> [!IMPORTANT]\n> VXLAN costs 50 bytes: outer IP 20, UDP 8, VXLAN 8, plus the inner Ethernet header 14. On a 1500-byte underlay, the inner MTU is 1450.\n\nBuild the tunnel. Two network namespaces play nodes A and B, joined by a veth pair that plays the underlay (192.168.51.0/24). Each node gets a `vx51` interface with VNI 100, and the inner addresses 10.51.0.1 and 10.51.0.2 live on those interfaces. The `dstport 4789` option is typed out in the build."
+        },
+        {
+          "lab": {
+            "explain": "Build two VTEPs (VNI 100) over a veth underlay; print the underlay MTU, vx51 MTU and port",
+            "cmd": "for n in n51a n51b; do ip netns del $n 2>/dev/null; done; ip link del v51a 2>/dev/null; ip link del v51b 2>/dev/null; sleep 0.5\nfor n in n51a n51b; do ip netns add $n; ip netns exec $n sysctl -qw net.ipv6.conf.all.disable_ipv6=1 net.ipv6.conf.default.disable_ipv6=1; done\nip link add v51a netns n51a type veth peer name v51b netns n51b\nip -n n51a addr add 192.168.51.1/24 dev v51a; ip -n n51b addr add 192.168.51.2/24 dev v51b\nip -n n51a link set v51a up; ip -n n51b link set v51b up\nip -n n51a link add vx51 type vxlan id 100 dstport 4789 local 192.168.51.1 remote 192.168.51.2 dev v51a 2>/dev/null\nip -n n51b link add vx51 type vxlan id 100 dstport 4789 local 192.168.51.2 remote 192.168.51.1 dev v51b 2>/dev/null\nip -n n51a addr add 10.51.0.1/24 dev vx51; ip -n n51b addr add 10.51.0.2/24 dev vx51\nip -n n51a link set vx51 up; ip -n n51b link set vx51 up\necho \"underlay v51a: $(ip -n n51a -o link show v51a | grep -o 'mtu [0-9]*')\"\necho \"tunnel   vx51: $(ip -n n51a -o link show vx51 | grep -o 'mtu [0-9]*')\"\necho \"tunnel   vx51: $(ip -n n51a -d link show vx51 2>/dev/null | grep -o 'vxlan id [0-9]*') $(ip -n n51a -d link show vx51 2>/dev/null | grep -o 'dstport [0-9]*')\"\nip netns exec n51a ping -c1 -W1 -q 10.51.0.2 | grep -E 'transmitted'"
+          }
+        },
+        {
+          "md": "The underlay interface prints `mtu 1500` and `vx51` prints `mtu 1450`. Nobody configured that: on this kernel, creating a VXLAN link on top of a 1500-byte device sets the link's MTU 50 bytes lower by itself. The last line shows the first ping crossing the tunnel, so the two inner addresses reach each other."
+        }
+      ]
+    },
+    {
+      "id": "wire",
+      "title": "See it on the wire",
+      "blocks": [
+        {
+          "md": "Now capture on the underlay, the veth that plays node A's uplink, while A pings B across the tunnel.\n\nA default ping sends 56 bytes of data. With the 8-byte ICMP header and the 20-byte IP header, that is an 84-byte IP packet. Add the 14-byte inner Ethernet header and the *inner frame* is 98 bytes. The capture below asks tcpdump for link-level headers (`-e`) so that it prints a `length` for each frame it sees on the underlay."
+        },
+        {
+          "checkpoint": {
+            "id": "c2",
+            "prompt": "The inner frame is 98 bytes. On the underlay veth, what length does tcpdump print for the frame that carries it?",
+            "options": [
+              "Unchanged: tcpdump unwraps VXLAN and reports the 98-byte inner frame",
+              "Inner plus every outer header: 98 + 14 + 20 + 8 + 8",
+              "Inner plus IP and UDP only: 98 + 20 + 8, since VXLAN and Ethernet are free",
+              "Padded to the MTU: tunnel frames are filled up to the underlay maximum"
+            ],
+            "key": 1,
+            "why": "On the underlay, the frame is the outer Ethernet header (14) plus outer IP (20), UDP (8), VXLAN (8) and then the whole 98-byte inner frame. The sum is 148. Nothing pads it, and nothing unwraps it before the veth."
+          }
+        },
+        {
+          "lab": {
+            "explain": "Capture 2 frames on the underlay while A pings B once; print them with link headers",
+            "cmd": "ip netns exec n51a ip link show vx51 >/dev/null 2>&1 || { echo \"Run the first lab first.\"; exit 1; }\nip netns exec n51a ping -c1 -W1 -q 10.51.0.2 >/dev/null\nip netns exec n51a timeout 6 tcpdump -nle -i v51a -c 2 udp port 4789 >/tmp/n51.txt 2>/dev/null &\nTP=$!\nsleep 1\nip netns exec n51a ping -c1 -W1 -q 10.51.0.2 >/dev/null\nwait $TP\necho \"positive control, VXLAN lines captured: $(grep -c 'VXLAN' /tmp/n51.txt)\"\ngrep -v '^$' /tmp/n51.txt | cut -c1-210"
+          }
+        },
+        {
+          "md": "Each capture entry is two lines. The first is the outer frame: the underlay's MACs, `length 148`, outer addresses `192.168.51.1.<port> > 192.168.51.2.4789`, and then `VXLAN, flags [I] (0x08), vni 100`. The second line is tcpdump's decode of what is *inside*: another Ethernet header with different MACs, and `10.51.0.1 > 10.51.0.2: ICMP echo request` at `length 98`. The 148 is the 98-byte inner frame plus 50 bytes. This time those 50 bytes are the outer Ethernet header (14), outer IP (20), UDP (8) and VXLAN (8). The inner Ethernet header is already inside the 98.\n\nTwo details are worth noticing. The two sets of MAC addresses differ, which is the point: the inner frame keeps its own addresses, and the underlay never sees them as anything but payload. And the outer UDP *source* port is not 4789 but a high number (39233 in this capture, the same in both directions). RFC 7348 recommends that the sending VTEP calculate it from a hash of the inner headers, so that routers that hash on ports can spread different flows across paths. This lab sent one flow, so it cannot show that spreading.\n\nNow the size limit. If the inner MTU is 1450, then a ping with a 1422-byte payload (1422 + 8 + 20 = 1450 bytes of IP) should just fit, and one byte more should not. The lab sets DF with `-M do`, the way chapter 3.9 did, so oversize traffic is refused instead of fragmented. It also captures one big frame on the underlay and prints its length."
+        },
+        {
+          "lab": {
+            "explain": "Ping across the tunnel with DF at the largest size that fits (1422) and one byte over; capture the big frame",
+            "cmd": "ip netns exec n51a ip link show vx51 >/dev/null 2>&1 || { echo \"Run the first lab first.\"; exit 1; }\nip netns exec n51a timeout 6 tcpdump -nle -i v51a -c 1 'udp port 4789 and greater 1400' >/tmp/n51m.txt 2>/dev/null &\nTP=$!\nsleep 1\nfor s in 1422 1423; do\n  echo \"== ping -M do -s $s (IP packet $((s+28)) bytes)\"\n  ip netns exec n51a ping -M do -c1 -W1 -s $s 10.51.0.2 2>&1 | grep -E 'bytes from|too long|Frag'\ndone\nwait $TP\necho \"positive control, big VXLAN frames captured: $(grep -c 'VXLAN' /tmp/n51m.txt)\"\ngrep -o 'length [0-9]*' /tmp/n51m.txt | head -1"
+          }
+        },
+        {
+          "md": "The 1422-byte ping gets a reply. The 1423-byte one never leaves: ping prints `Message too long`, because the kernel knows the egress interface has MTU 1450 and DF forbids fragmenting. The captured frame for the first one is `length 1514`. Count it from the inside: 1450 bytes of inner IP, plus the 14-byte inner Ethernet header, VXLAN 8, UDP 8 and outer IP 20 is 1500 bytes of IP on the underlay, and the outer Ethernet header adds 14 more. So the underlay's IP packet is exactly full.\n\nChapter 3.9 explained what happens when a packet meets a smaller link: with DF on, it is dropped and the sender is told; with ICMP blocked on the way, it becomes a black hole. A VXLAN hop is that same situation, built into the path. The widget below has the tunnel as the narrow hop. Slide the size across 1450."
+        },
+        {
+          "widget": {
+            "id": "w-vxlan-mtu",
+            "kind": "mtu",
+            "title": "The tunnel is the narrow hop",
+            "hint": "Start at 1500 with DF on. Find the largest size that is delivered, then compare it with the lab, where 1422 + 28 = 1450 bytes of IP was the largest ping that fit.",
+            "takeaway": "The 1450 limit matches the lab: 1450 bytes of IP fit, 1451 do not. Whether the sender learns it (ICMP) or hangs is the path-MTU story from chapter 3.9.",
+            "hops": [
+              {
+                "name": "node A app (1500)",
+                "mtu": 1500
+              },
+              {
+                "name": "vx51 (1450)",
+                "mtu": 1450
+              },
+              {
+                "name": "node B app (1500)",
+                "mtu": 1500
+              }
+            ],
+            "size": 1500,
+            "minSize": 576,
+            "maxSize": 9000,
+            "df": true,
+            "icmpBlocked": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "port",
+      "title": "Which UDP port?",
+      "blocks": [
+        {
+          "md": "The outer UDP destination port is how node B's kernel knows a datagram is VXLAN and not something else (general knowledge: the VXLAN receiver is a UDP listener bound to one port). Both ends must therefore use the same port. The lab so far typed `dstport 4789` explicitly. What happens if you leave it out?\n\nCreate one more VXLAN link on this kernel, with no `dstport`:\n\n`ip link add vx51d type vxlan id 7 remote 192.0.2.9`"
+        },
+        {
+          "checkpoint": {
+            "id": "c3",
+            "prompt": "You create a VXLAN link with no dstport on this machine (iproute2 6.19). What happens?",
+            "options": [
+              "Refused: dstport is mandatory, so ip errors out and creates nothing",
+              "Random port: each link gets an ephemeral destination port from the kernel",
+              "Standard port: the kernel follows the IANA assignment of 4789 quietly",
+              "Own default plus a warning: the link is created on a different port, and ip prints a notice"
+            ],
+            "key": 3,
+            "why": "ip creates the link and warns that it will use the kernel default, which is not the standard value. The next lab prints the port it picked."
+          }
+        },
+        {
+          "lab": {
+            "explain": "Create a VXLAN link without dstport inside n51a, show the warning and the port, then delete it",
+            "cmd": "ip netns exec n51a ip link show vx51 >/dev/null 2>&1 || { echo \"Run the first lab first.\"; exit 1; }\nip -n n51a link add vx51d type vxlan id 7 remote 192.0.2.9 2>&1 | grep -v 'fan map'\necho \"--- port chosen: $(ip -n n51a -d link show vx51d 2>/dev/null | grep -o 'dstport [0-9]*')\"\nip -n n51a link del vx51d"
+          }
+        },
+        {
+          "md": "The link is created, and `ip` prints a warning in four lines: `destination port not specified`, `Will use Linux kernel default (non-standard value)`, then a hint to use `dstport 4789` for the IANA value, or `dstport 0` to keep the default quietly. The link reports `dstport 8472`.\n\nTwo numbers, then, and they come from two different places:\n\n| Port | Where it comes from |\n|---|---|\n| 4789 | IANA assigned it to VXLAN. RFC 7348 section 5 says this value SHOULD be used by default, and section 8 records the assignment. |\n| 8472 | The Linux kernel's own default, which the lab just printed. The RFC notes that some early implementations used other values and says the port SHOULD be configurable. |\n\nCilium follows Linux here. Its documentation lists `tunnel-port` with a default of 8472 for VXLAN and 6081 for Geneve (Geneve is a sibling encapsulation protocol, general knowledge, and 6081 is its default port on the same page), and its system-requirements page says it uses \"Linux's default VXLAN port 8472\". If you stand up Cilium in a cloud and open UDP 4789 between nodes, the tunnel is still blocked.\n\nIf one VTEP is on 4789 and the other on 8472, the receiver has no VXLAN listener on the port the sender picked. This lab did not test a mismatch, so treat that as reasoning, not observation. The practical rule is to read the port off the real interface (`ip -d link show`) and never assume it.\n\n> [!IMPORTANT]\n> The port is a pair of agreed numbers, not a law: IANA says 4789, Linux defaults to 8472, and Cilium follows Linux. Read it from the interface."
+        }
+      ]
+    },
+    {
+      "id": "twins",
+      "title": "Where you've met this",
+      "blocks": [
+        {
+          "md": "**Kubernetes / Cilium.** The Cilium routing documentation names VXLAN as the encapsulation protocol by default (`tunnel-protocol` defaults to `vxlan`), says that the underlay \"must allow encapsulated packets\" (8472/UDP for VXLAN, 6081/UDP for Geneve), and says VXLAN costs 50 bytes per packet. That is the same 50 you derived and then measured. Its documentation notes that jumbo frames mitigate the cost: 50 bytes of overhead per 1500 bytes versus per 9000. Inference, not a documented figure: the pod's MTU should then be lower than the node's, so check `ip link` on a pod's `eth0` instead of guessing.\n\n**AWS.** The Cilium system-requirements page includes an AWS security-group example for VXLAN mode, and the page says UDP 8472 must be open among all nodes in that mode, so the nodes' security groups have to allow it. How AWS builds the VPC itself is not published; do not assume it uses VXLAN. Treat the VPC as a given and run any overlay you build on top of it as a separate layer, with its own 50 bytes.\n\n**Proxmox.** Proxmox SDN has a VXLAN zone type. Its documentation says \"VXLAN encapsulation uses 50 bytes\", so the MTU must be 50 bytes lower than the outgoing physical interface, which matches the number from this chapter. Its documentation also says the VXLAN plugin uses \"the default destination port 4789\", and its IPsec example filters on UDP port 4789. So Proxmox follows the IANA value, while the Linux kernel's own default and Cilium's default are 8472."
+        }
+      ]
+    },
+    {
+      "id": "keep",
+      "title": "What to keep",
+      "blocks": [
+        {
+          "md": "- **Encapsulation** puts a whole inner frame or packet into the payload of an outer packet. The underlay forwards by the outer headers and never reads the inner ones.\n- **VXLAN** is inner Ethernet frame, 8-byte VXLAN header with a 24-bit **VNI**, outer UDP, outer IP. A VTEP wraps and unwraps.\n- The cost is 50 bytes. On a 1500-byte underlay, vx51 got MTU 1450 and a 1450-byte IP packet filled the underlay exactly (frame length 1514). Chapter 3.9's DF, frag-needed and black-hole rules apply at that hop.\n- The destination port must match at both ends: IANA says 4789, but the Linux kernel defaulted to 8472 on this machine and Cilium's default is 8472. Read it from the interface."
+        }
+      ]
+    }
+  ]
+}

@@ -1,7 +1,5 @@
 # Learner state written at runtime by the server
-learner/sessions/
-learner/propositions.jsonl
-learner/map.json
+learner/
 *.tmp
 .superpowers/
 .DS_Store

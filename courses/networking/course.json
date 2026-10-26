@@ -1,0 +1,31 @@
+{
+  "slug": "networking",
+  "title": "Networking under the cloud",
+  "layers": [
+    {
+      "id": "L1",
+      "name": "Physical: links and NICs"
+    },
+    {
+      "id": "L2",
+      "name": "Layer 2: switching"
+    },
+    {
+      "id": "L3",
+      "name": "Layer 3: routing"
+    },
+    {
+      "id": "L4",
+      "name": "Layer 4: transport"
+    },
+    {
+      "id": "overlay",
+      "name": "Overlays and Kubernetes"
+    },
+    {
+      "id": "services",
+      "name": "Services and debugging"
+    }
+  ],
+  "lab": null
+}

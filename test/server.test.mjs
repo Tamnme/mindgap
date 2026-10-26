@@ -313,7 +313,7 @@ test('first run copies the clean seed map into an empty data dir', async () => {
       srv.on('exit', (code) => reject(new Error(`server exited ${code}`)));
     });
     const map = await (await fetch(`http://127.0.0.1:${freshPort}/api/map`)).json();
-    const seed = JSON.parse(await readFile(path.join(HERE, '..', 'learner', 'map.seed.json'), 'utf8'));
+    const seed = JSON.parse(await readFile(path.join(HERE, '..', 'courses', 'networking', 'map.seed.json'), 'utf8'));
     assert.equal(map.nodes.length, seed.nodes.length);
     assert.ok(map.nodes.every((n) => n.status === 'untested' && n.evidence === ''));
   } finally {
