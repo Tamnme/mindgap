@@ -5,7 +5,9 @@ import { renderMarkdown } from './md.js';
 import { createLabCard, fillLabCard } from './labcard.js';
 
 const $ = (id) => document.getElementById(id);
+const course = new URLSearchParams(location.search).get('course');
 const lessonId = new URLSearchParams(location.search).get('id');
+const mapUrl = `map.html?course=${encodeURIComponent(course || '')}`;
 
 const S = {
   meta: null,
@@ -213,7 +215,7 @@ function renderBanner() {
   if (S.done) {
     banner.replaceChildren(
       el('span', { text: 'Lesson complete — ' }),
-      el('a', { href: 'index.html', text: 'back to map' }),
+      el('a', { href: mapUrl, text: 'back to map' }),
     );
   }
 }
@@ -256,7 +258,7 @@ async function dispatch() {
     const res = await fetch('/api/turn', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ lesson_id: lessonId, event: S.pending.event }),
+      body: JSON.stringify({ course, lesson_id: lessonId, event: S.pending.event }),
     });
     if (!res.ok) throw new HttpError(res.status, await errorText(res));
     const data = await res.json();
@@ -318,7 +320,7 @@ async function runLab(card) {
     const res = await fetch('/api/lab', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ lesson_id: lessonId, cmd }),
+      body: JSON.stringify({ course, lesson_id: lessonId, cmd }),
     });
     if (!res.ok) throw new HttpError(res.status, await errorText(res));
     fillLabCard(card, { cmd, ...(await res.json()) });
@@ -362,10 +364,11 @@ function replay(events) {
 }
 
 async function init() {
-  if (!lessonId) {
-    showError('No lesson id in the URL. Start a lesson from the map.');
+  if (!course || !lessonId) {
+    showError('No lesson in the URL. Start a lesson from the map.');
     return;
   }
+  $('back-map').href = mapUrl;
   $('btn-submit').addEventListener('click', onSubmit);
   $('btn-lost').addEventListener('click', onLost);
   $('btn-ask').addEventListener('click', onAsk);
@@ -373,9 +376,10 @@ async function init() {
   $('q-text').addEventListener('input', refreshControls);
 
   try {
+    const c = encodeURIComponent(course);
     const [lessonRes, mapRes] = await Promise.all([
-      fetch(`/api/lesson/${encodeURIComponent(lessonId)}`),
-      fetch('/api/map'),
+      fetch(`/api/lesson/${encodeURIComponent(lessonId)}?course=${c}`),
+      fetch(`/api/courses/${c}/map`),
     ]);
     if (!lessonRes.ok) throw new Error(await errorText(lessonRes));
     const { meta = {}, events = [] } = await lessonRes.json();

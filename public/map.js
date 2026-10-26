@@ -1,7 +1,6 @@
 // Map home: renders learner/map.json as an SVG graph and drives lesson starts.
 // All map text comes from model-written files, so it is only ever set via textContent.
 
-const LAYERS = ['L1', 'L2', 'L3', 'L4', 'overlay', 'services'];
 const STATUSES = ['untested', 'gap', 'shaky', 'solid'];
 // Roadmap layout: one yellow topic per layer on a curved spine, its nodes in a column on each side.
 const W = 1000;
@@ -14,19 +13,21 @@ const BLOCK_GAP = 56;
 const EDGE = 14; // room for the status badges on the outer edges
 const SWAY = 50; // topics alternate left/right of centre so the spine curves
 const TITLE_CHARS = 32;
-const LAYER_NAMES = {
-  L1: 'Physical: links and NICs',
-  L2: 'Layer 2: switching',
-  L3: 'Layer 3: routing',
-  L4: 'Layer 4: transport',
-  overlay: 'Overlays and Kubernetes',
-  services: 'Services and debugging',
-};
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
-const state = { nodes: [], byId: new Map(), topo: [], selected: null, chapters: [] };
+const state = {
+  course: null,       // slug from ?course=
+  layers: [],         // layer ids in course.layers order
+  layerNames: {},     // layer id -> name
+  nodes: [],
+  byId: new Map(),
+  topo: [],
+  selected: null,
+  chapters: [],
+};
 
 const $ = (id) => document.getElementById(id);
+const courseApi = (path) => `/api/courses/${encodeURIComponent(state.course)}${path}`;
 
 function el(tag, props = {}, children = []) {
   const node = document.createElement(tag);
@@ -58,8 +59,8 @@ function isGood(status) {
 // Kahn's algorithm; ties broken by layer order then file order. Cycles fall back to sort order.
 function topoSort(nodes) {
   const layerIdx = (n) => {
-    const i = LAYERS.indexOf(n.layer);
-    return i === -1 ? LAYERS.length : i;
+    const i = state.layers.indexOf(n.layer);
+    return i === -1 ? state.layers.length : i;
   };
   const sortKey = nodes.map((n, i) => ({ n, i, l: layerIdx(n) }))
     .sort((a, b) => a.l - b.l || a.i - b.i);
@@ -96,7 +97,7 @@ function wrapTitle(text, max = TITLE_CHARS) {
 }
 
 function layoutFor(nodes) {
-  const layers = [...LAYERS];
+  const layers = [...state.layers];
   for (const n of nodes) if (!layers.includes(n.layer)) layers.push(n.layer);
   const groups = layers.map((l) => state.topo.filter((n) => n.layer === l)).map((g, i) => ({ layer: layers[i], nodes: g }))
     .filter((g) => g.nodes.length);
@@ -181,7 +182,7 @@ function renderMap() {
     const g = svgEl('g', { class: 'topic' });
     g.append(svgEl('rect', { x: t.x, y: t.y, width: TOPIC_W, height: TOPIC_H, rx: 6 }));
     const label = svgEl('text', { x: t.cx, y: t.y + TOPIC_H / 2 + 5, 'text-anchor': 'middle' });
-    label.textContent = LAYER_NAMES[t.layer] || t.layer;
+    label.textContent = state.layerNames[t.layer] || t.layer;
     const solid = t.nodes.filter((n) => statusOf(n) === 'solid').length;
     const count = svgEl('text', { class: 'count', x: t.x + TOPIC_W - 8, y: t.y + 14, 'text-anchor': 'end' });
     count.textContent = `${solid}/${t.nodes.length}`;
@@ -253,7 +254,6 @@ function renderSide() {
     return;
   }
   const status = statusOf(n);
-  const twins = n.twins || {};
   const sources = (n.sources || []).filter(u => /^https?:\/\//.test(u));
 
   const dl = el('dl');
@@ -263,9 +263,7 @@ function renderSide() {
   };
   field('Evidence', n.evidence);
   field('The truth to lock in', n.truth);
-  field('Cloud twin (AWS)', twins.aws);
-  field('Kubernetes twin', twins.k8s);
-  field('Proxmox twin', twins.proxmox);
+  for (const l of n.links || []) field(l.label, l.text);
   field('Lab', n.lab);
   if (sources.length) {
     const ul = el('ul', {}, sources.map(u => el('li', {}, [
@@ -357,7 +355,7 @@ async function errorText(res) {
 async function startLesson(nodeId, mode) {
   // Nodes with a written chapter teach through it; the tutor lives in its drawer.
   if (mode === 'teach' && state.chapters.includes(nodeId)) {
-    location.href = `chapter.html?node=${encodeURIComponent(nodeId)}`;
+    location.href = `chapter.html?course=${encodeURIComponent(state.course)}&node=${encodeURIComponent(nodeId)}`;
     return;
   }
   showError('');
@@ -366,11 +364,11 @@ async function startLesson(nodeId, mode) {
     const res = await fetch('/api/lesson', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ node_id: nodeId, mode }),
+      body: JSON.stringify({ course: state.course, node_id: nodeId, mode }),
     });
     if (!res.ok) throw new Error(await errorText(res));
     const data = await res.json();
-    location.href = `lesson.html?id=${encodeURIComponent(data.lesson_id)}`;
+    location.href = `lesson.html?course=${encodeURIComponent(state.course)}&id=${encodeURIComponent(data.lesson_id)}`;
   } catch (err) {
     showError(`Could not start lesson: ${err.message}. Try again.`);
     setBusy(false);
@@ -378,14 +376,22 @@ async function startLesson(nodeId, mode) {
 }
 
 async function load() {
+  state.course = new URLSearchParams(location.search).get('course');
+  if (!state.course) {
+    showError('No course in the URL. Open one from the course list.');
+    return;
+  }
   try {
-    const res = await fetch('/api/map');
-    if (!res.ok) throw new Error(await errorText(res));
-    const data = await res.json();
-    try {
-      const idx = await fetch('/chapters/index.json');
-      if (idx.ok) state.chapters = await idx.json();
-    } catch { /* no chapters: every node uses the tutor lesson */ }
+    const [courseRes, mapRes] = await Promise.all([fetch(courseApi('')), fetch(courseApi('/map'))]);
+    if (!courseRes.ok) throw new Error(await errorText(courseRes));
+    if (!mapRes.ok) throw new Error(await errorText(mapRes));
+    const course = await courseRes.json();
+    const data = await mapRes.json();
+    state.layers = (course.layers || []).map((l) => l.id);
+    state.layerNames = Object.fromEntries((course.layers || []).map((l) => [l.id, l.name]));
+    state.chapters = Array.isArray(course.chapters) ? course.chapters : [];
+    $('course-title').textContent = `mindgap · ${course.title || course.slug}`;
+    document.title = `mindgap · ${course.title || course.slug}`;
     state.nodes = Array.isArray(data.nodes) ? data.nodes : [];
     state.byId = new Map(state.nodes.map(n => [n.id, n]));
     state.topo = topoSort(state.nodes);
