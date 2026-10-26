@@ -1,4 +1,4 @@
-// Self-check for server.mjs. Runs the real server against fake claude/orb binaries.
+// Self-check for server.mjs. Runs the real server against fake claude/agy/docker binaries.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -49,8 +49,35 @@ const reply = control === 'error'
 setTimeout(() => process.stdout.write(JSON.stringify(reply)), control === 'slow' ? 800 : 0);
 `;
 
-const FAKE_ORB = `
-process.stdout.write('ORB:' + process.argv.slice(2).join(' '));
+// Fake docker: logs argv to docker-calls.jsonl, keeps image and container state in docker-state.json.
+// exec with sh is the /proc/sys/net remount; any other exec echoes its argv.
+const FAKE_DOCKER = `
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+const dir = process.env.FAKE_DIR;
+const args = process.argv.slice(2);
+appendFileSync(path.join(dir, 'docker-calls.jsonl'), JSON.stringify(args) + '\\n');
+const sf = path.join(dir, 'docker-state.json');
+const st = existsSync(sf) ? JSON.parse(readFileSync(sf, 'utf8')) : { images: {}, containers: {} };
+const save = () => writeFileSync(sf, JSON.stringify(st));
+const cmd = args[0];
+if (cmd === 'info') process.exit(0);
+if (cmd === 'image') process.exit(st.images[args[2]] ? 0 : 1);
+if (cmd === 'build') { st.images[args[2]] = true; save(); process.exit(0); }
+if (cmd === 'inspect') {
+  const state = st.containers[args.at(-1)];
+  if (!state) process.exit(1);
+  process.stdout.write((state === 'running' ? 'true' : 'false') + '\\n');
+  process.exit(0);
+}
+if (cmd === 'run') { st.containers[args[args.indexOf('--name') + 1]] = 'running'; save(); process.exit(0); }
+if (cmd === 'start') { st.containers[args[1]] = 'running'; save(); process.exit(0); }
+if (cmd === 'exec') {
+  if (args[2] === 'sh') process.exit(0);
+  process.stdout.write('EXEC:' + args.slice(1).join(' '));
+} else {
+  process.exitCode = 2;
+}
 `;
 
 // Fake agy: logs argv, cwd and whether the turn schema sits in cwd; always returns the same canned turn.
@@ -158,26 +185,27 @@ before(async () => {
   dataDir = path.join(dir, 'data');
   const courseDir = path.join(dir, 'courses', 'net');
   await mkdir(path.join(courseDir, 'chapters'), { recursive: true });
-  await writeFile(path.join(courseDir, 'course.json'), JSON.stringify({ slug: 'net', title: 'Net', layers: [{ id: 'L2', name: 'L2' }], lab: null }));
+  // A lab with no extra privileges, so it runs without approval.
+  await writeFile(path.join(courseDir, 'course.json'), JSON.stringify({ slug: 'net', title: 'Net', layers: [{ id: 'L2', name: 'L2' }], lab: { dockerfile: 'lab/Dockerfile', caps: [], network: false, hostname: 'netlab' } }));
   await writeFile(path.join(courseDir, 'map.seed.json'), JSON.stringify(MAP, null, 2));
   await writeFile(path.join(courseDir, 'prompt.md'), 'COURSE-PROMPT-MARKER');
   await writeFile(path.join(courseDir, 'chapters', 'index.json'), JSON.stringify(['switch-mac-table']));
   await writeFile(path.join(courseDir, 'chapters', 'switch-mac-table.json'), JSON.stringify(CHAPTER));
 
   const claudeJs = path.join(dir, 'fake-claude.mjs');
-  const orbJs = path.join(dir, 'fake-orb.mjs');
+  const dockerJs = path.join(dir, 'fake-docker.mjs');
   const agyJs = path.join(dir, 'fake-agy.mjs');
   await writeFile(claudeJs, FAKE_CLAUDE);
-  await writeFile(orbJs, FAKE_ORB);
+  await writeFile(dockerJs, FAKE_DOCKER);
   await writeFile(agyJs, FAKE_AGY);
   const claudeBin = path.join(dir, 'claude');
-  const orbBin = path.join(dir, 'orb');
+  const dockerBin = path.join(dir, 'docker');
   const agyBin = path.join(dir, 'agy');
   await writeFile(claudeBin, `#!/bin/sh\nexec "${process.execPath}" "${claudeJs}" "$@"\n`);
-  await writeFile(orbBin, `#!/bin/sh\nexec "${process.execPath}" "${orbJs}" "$@"\n`);
+  await writeFile(dockerBin, `#!/bin/sh\nexec "${process.execPath}" "${dockerJs}" "$@"\n`);
   await writeFile(agyBin, `#!/bin/sh\nexec "${process.execPath}" "${agyJs}" "$@"\n`);
   await chmod(claudeBin, 0o755);
-  await chmod(orbBin, 0o755);
+  await chmod(dockerBin, 0o755);
   await chmod(agyBin, 0o755);
 
   const started = startServer({
@@ -186,7 +214,7 @@ before(async () => {
     MINDGAP_TUTOR: 'claude',
     CLAUDE_BIN: claudeBin,
     AGY_BIN: agyBin,
-    ORB_BIN: orbBin,
+    DOCKER_BIN: dockerBin,
     FAKE_DIR: dir,
   });
   child = started.srv;
@@ -304,7 +332,7 @@ test('lab output is recorded and included in the next tutor message only', async
   const lab = await call('POST', '/api/lab', { course: 'net', lesson_id: lessonId, cmd: 'ip -br link' });
   assert.equal(lab.status, 200, lab.text);
   assert.equal(lab.json.code, 0);
-  assert.match(lab.json.stdout, /ORB:-m netlab -u root bash -lc ip -br link/);
+  assert.match(lab.json.stdout, /EXEC:mindgap-net bash -lc ip -br link/);
 
   const t = await call('POST', '/api/turn', { course: 'net', lesson_id: lessonId, event: { type: 'lost', text: '?' } });
   assert.equal(t.status, 200, t.text);
@@ -312,7 +340,7 @@ test('lab output is recorded and included in the next tutor message only', async
   assert.ok(withLab.startsWith(EVENT_PREFIX));
   assert.match(withLab, /LAB_OUTPUT/);
   assert.ok(withLab.includes('ip -br link'));
-  assert.ok(withLab.includes('ORB:'));
+  assert.ok(withLab.includes('EXEC:'));
 
   await call('POST', '/api/turn', { course: 'net', lesson_id: lessonId, event: { type: 'ask', text: 'why' } });
   const withoutLab = (await readCalls()).at(-1).at(-1);
@@ -320,6 +348,64 @@ test('lab output is recorded and included in the next tutor message only', async
 
   const lesson = await call('GET', `/api/lesson/${lessonId}?course=net`);
   assert.ok(lesson.json.events.some((e) => e.role === 'lab' && e.data.type === 'lab_output' && e.data.cmd === 'ip -br link'));
+});
+
+test('lab with extra privileges: 428 until approved, 400 for a mismatched approval, then runs with the approved request', async () => {
+  // Created here, not in before(): the course list test pins the set of courses.
+  const capDir = path.join(dir, 'courses', 'capnet');
+  await mkdir(capDir, { recursive: true });
+  await writeFile(path.join(capDir, 'course.json'), JSON.stringify({ slug: 'capnet', title: 'Capnet', layers: [{ id: 'L2', name: 'L2' }], lab: { dockerfile: 'lab/Dockerfile', caps: ['NET_ADMIN'], network: true, hostname: 'netlab' } }));
+  await writeFile(path.join(capDir, 'map.seed.json'), JSON.stringify(MAP, null, 2));
+  const started = await call('POST', '/api/lesson', { course: 'capnet', node_id: 'frames-mac', mode: 'teach' });
+  assert.equal(started.status, 200, started.text);
+  const id = started.json.lesson_id;
+
+  const info = await call('GET', '/api/courses/capnet');
+  assert.equal(info.json.lab.available, true);
+  assert.equal(info.json.lab.approved, false);
+  assert.deepEqual(info.json.lab.request, { caps: ['NET_ADMIN'], network: true });
+
+  const needs = await call('POST', '/api/lab', { course: 'capnet', lesson_id: id, cmd: 'true' });
+  assert.equal(needs.status, 428, needs.text);
+  assert.deepEqual(needs.json, { error: 'lab needs approval', request: { caps: ['NET_ADMIN'], network: true } });
+  const beforeApproval = await call('GET', `/api/lesson/${id}?course=capnet`);
+  assert.ok(!beforeApproval.json.events.some((e) => e.role === 'lab'), 'a refused lab is not recorded');
+
+  const wrong = await call('POST', '/api/courses/capnet/lab-approval', { caps: ['SYS_ADMIN'], network: true });
+  assert.equal(wrong.status, 400, wrong.text);
+  assert.equal((await call('GET', '/api/courses/capnet')).json.lab.approved, false);
+
+  const ok = await call('POST', '/api/courses/capnet/lab-approval', { caps: ['NET_ADMIN'], network: true });
+  assert.equal(ok.status, 204, ok.text);
+  assert.equal((await call('GET', '/api/courses/capnet')).json.lab.approved, true);
+
+  const ran = await call('POST', '/api/lab', { course: 'capnet', lesson_id: id, cmd: 'ip -br link' });
+  assert.equal(ran.status, 200, ran.text);
+  assert.match(ran.json.stdout, /EXEC:mindgap-capnet bash -lc ip -br link/);
+  const runCalls = (await readJsonl(path.join(dir, 'docker-calls.jsonl'))).filter((a) => a[0] === 'run' && a.includes('mindgap-capnet'));
+  assert.ok(runCalls.length >= 1);
+  assert.deepEqual(runCalls.at(-1).slice(0, 9), ['run', '-d', '--name', 'mindgap-capnet', '--hostname', 'netlab', '--network', 'bridge', '--cap-add']);
+  assert.ok(!runCalls.at(-1).includes('--privileged'));
+});
+
+test('docker missing: lab is 503 with a reason, not 500, and nothing is recorded', async () => {
+  const noDocker = startServer({
+    MINDGAP_DATA_DIR: dataDir,
+    MINDGAP_TUTOR: 'claude',
+    CLAUDE_BIN: path.join(dir, 'claude'),
+    DOCKER_BIN: '/nonexistent/docker',
+    FAKE_DIR: dir,
+  });
+  const noDockerPort = await noDocker.port;
+  try {
+    const r = await call('POST', '/api/lab', { course: 'net', lesson_id: lessonId, cmd: 'true' }, noDockerPort);
+    assert.equal(r.status, 503, r.text);
+    assert.match(r.json.error, /docker/);
+    const info = await call('GET', '/api/courses/net', undefined, noDockerPort);
+    assert.equal(info.json.lab.available, false);
+  } finally {
+    noDocker.srv.kill();
+  }
 });
 
 test('claude is_error becomes HTTP 502 with the message', async () => {

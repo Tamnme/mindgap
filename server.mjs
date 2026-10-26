@@ -2,13 +2,14 @@
 import { createServer } from 'node:http';
 import { existsSync } from 'node:fs';
 import { readFile, writeFile, rename, appendFile, readdir, mkdtemp, rm } from 'node:fs/promises';
-import { spawn, execFile } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { listCourses, loadCourse, ensureState, CourseNotFound } from './lib/courses.mjs';
 import { getTutor, TUTORS } from './lib/tutors/index.mjs';
+import { labStatus, labRequest, isApproved, approve, runLab, ApprovalMismatch } from './lib/labs.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(HERE, 'public');
@@ -27,12 +28,9 @@ if (!TUTORS.includes(TUTOR)) {
 }
 const tutor = getTutor(TUTOR);
 const MODEL = process.env.MINDGAP_MODEL || (TUTOR === 'claude' ? 'opus' : undefined);
-const ORB_BIN = process.env.ORB_BIN || 'orb';
 const MODES = { teach: 'teacher.md', practice: 'practice.md', probe: 'prober.md', chapter: 'chapter.md' };
 const BODY_LIMIT = 256 * 1024;
 const TUTOR_TIMEOUT_MS = 180_000;
-const LAB_TIMEOUT_MS = 30_000;
-const LAB_CAP = 64 * 1024;
 const LAB_CMD_MAX = 4000;
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -51,9 +49,11 @@ const busy = new Set();
 const mapChains = new Map();
 
 class HttpError extends Error {
-  constructor(status, message) {
+  // body, when given, replaces the default {error: message} response.
+  constructor(status, message, body) {
     super(message);
     this.status = status;
+    this.body = body;
   }
 }
 
@@ -319,65 +319,30 @@ async function turn(body) {
   }
 }
 
-function capture(stream) {
-  const chunks = [];
-  let size = 0;
-  let truncated = false;
-  stream.on('data', (c) => {
-    const room = LAB_CAP - size;
-    if (c.length > room) truncated = true;
-    if (room > 0) {
-      const part = c.subarray(0, Math.min(room, c.length));
-      chunks.push(part);
-      size += part.length;
-    }
-  });
-  return {
-    text: () => Buffer.concat(chunks).toString('utf8') + (truncated ? '\n[output truncated at 64 KB]' : ''),
-  };
-}
-
-function runOrb(cmd) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(ORB_BIN, ['-m', 'netlab', '-u', 'root', 'bash', '-lc', cmd], { stdio: ['ignore', 'pipe', 'pipe'] });
-    const out = capture(child.stdout);
-    const err = capture(child.stderr);
-    let timedOut = false;
-    let done = false;
-    const finish = (code) => {
-      if (done) return;
-      done = true;
-      clearTimeout(timer);
-      resolve({
-        stdout: out.text(),
-        stderr: err.text() + (timedOut ? `\n[killed after ${LAB_TIMEOUT_MS / 1000} s]` : ''),
-        code: timedOut ? null : code,
-      });
-    };
-    const timer = setTimeout(() => {
-      timedOut = true;
-      child.kill('SIGKILL');
-      finish(null);
-    }, LAB_TIMEOUT_MS);
-    child.on('error', (e) => {
-      if (done) return;
-      done = true;
-      clearTimeout(timer);
-      reject(e);
-    });
-    child.on('close', finish);
-  });
-}
-
 async function lab(body) {
   const c = await openCourse(body.course);
   const { lesson_id, cmd } = body;
   await loadMeta(c, lesson_id);
   if (typeof cmd !== 'string' || cmd.trim() === '') throw new HttpError(400, 'cmd must be a non-empty string');
   if (cmd.length > LAB_CMD_MAX) throw new HttpError(400, `cmd exceeds ${LAB_CMD_MAX} characters`);
-  const r = await runOrb(cmd);
+  const status = await labStatus(c);
+  if (!status.available) throw new HttpError(503, status.reason);
+  if (!(await isApproved(c))) {
+    throw new HttpError(428, 'lab needs approval', { error: 'lab needs approval', request: labRequest(c) });
+  }
+  const r = await runLab(c, cmd);
   await appendRecords(c, lesson_id, [{ role: 'lab', data: { type: 'lab_output', cmd, ...r } }]);
   return r;
+}
+
+async function labApproval(slug, body) {
+  const c = await openCourse(slug);
+  try {
+    await approve(c, body);
+  } catch (err) {
+    if (err instanceof ApprovalMismatch) throw new HttpError(400, err.message);
+    throw err;
+  }
 }
 
 // One chapter lesson per node: reuse the latest, else create it without calling the tutor.
@@ -413,7 +378,8 @@ async function courseInfo(slug) {
   const c = await openCourse(slug);
   const course = JSON.parse(await readFile(path.join(c.dir, 'course.json'), 'utf8'));
   const index = await readOptional(path.join(c.dir, 'chapters', 'index.json'));
-  return { ...course, chapters: index === null ? [] : JSON.parse(index) };
+  const lab = { ...(await labStatus(c)), request: labRequest(c), approved: await isApproved(c) };
+  return { ...course, chapters: index === null ? [] : JSON.parse(index), lab };
 }
 
 async function getChapter(slug, id) {
@@ -437,6 +403,7 @@ async function api(req, res, pathname) {
   const lessonM = pathname.match(/^\/api\/lesson\/([^/]+)$/);
   const mapM = pathname.match(/^\/api\/courses\/([^/]+)\/map$/);
   const chapterM = pathname.match(/^\/api\/courses\/([^/]+)\/chapters\/([^/]+)$/);
+  const approvalM = pathname.match(/^\/api\/courses\/([^/]+)\/lab-approval$/);
   const courseM = pathname.match(/^\/api\/courses\/([^/]+)$/);
   if (method === 'GET' && pathname === '/api/courses') return send(res, 200, await listCourses(COURSE_OPTS));
   if (method === 'GET' && courseM) return send(res, 200, await courseInfo(safeDecode(courseM[1])));
@@ -449,6 +416,11 @@ async function api(req, res, pathname) {
   if (method === 'POST' && pathname === '/api/chapter') return send(res, 200, await chapterLesson(await readJson(req)));
   if (method === 'POST' && pathname === '/api/turn') return send(res, 200, await turn(await readJson(req)));
   if (method === 'POST' && pathname === '/api/lab') return send(res, 200, await lab(await readJson(req)));
+  if (method === 'POST' && approvalM) {
+    await labApproval(safeDecode(approvalM[1]), await readJson(req));
+    res.writeHead(204);
+    return res.end();
+  }
   throw new HttpError(404, 'not found');
 }
 
@@ -486,7 +458,7 @@ const server = createServer(async (req, res) => {
   } catch (err) {
     const status = err instanceof HttpError ? err.status : 500;
     if (status === 500) console.error(err);
-    if (!res.headersSent) send(res, status, { error: err.message || 'internal error' });
+    if (!res.headersSent) send(res, status, err.body ?? { error: err.message || 'internal error' });
     else res.end();
   }
 });
