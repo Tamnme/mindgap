@@ -200,7 +200,14 @@ async function contextFor(c, map, nodeId, mode) {
 async function readLearner(c) {
   const text = await readOptional(goalPath(c));
   if (text === null) return null;
-  const g = JSON.parse(text);
+  let g;
+  try {
+    g = JSON.parse(text);
+  } catch (e) {
+    console.warn(`goal.json is not valid JSON, ignoring it: ${e.message}`);
+    return null;
+  }
+  if (!g || typeof g !== 'object') return null;
   return { goal: g.goal ?? null, background: g.background ?? null };
 }
 
@@ -275,7 +282,8 @@ async function callTutor(c, meta, message) {
 }
 
 // Calls the tutor, then persists everything. labsTotal = lab events the message has seen.
-async function advance(c, id, meta, message, record, labsTotal) {
+// event: the learner event this turn answers, null for the first turn.
+async function advance(c, id, meta, message, record, labsTotal, event = null) {
   const called = await callTutor(c, meta, message);
   const { sessionId } = called;
   let turn = called.turn;
@@ -283,7 +291,7 @@ async function advance(c, id, meta, message, record, labsTotal) {
   let accepted = false;
   if (meta.mode === 'course') {
     // The server keeps only what the acceptance rules allow; the reviewed turn is what gets stored and returned.
-    const r = reviewTurn({ meta, turn, map: await loadMap(c) });
+    const r = reviewTurn({ meta, turn, map: await loadMap(c), event });
     turn = r.turn;
     accepted = turn.approved;
     Object.assign(meta, r.meta);
@@ -293,14 +301,16 @@ async function advance(c, id, meta, message, record, labsTotal) {
 
   meta.tutor_session_id = sessionId || meta.tutor_session_id || null;
   meta.labs_sent = labsTotal;
+  // Build goal.json before touching the map, so nothing can throw after the trim is written.
+  const goal = accepted && meta.goal
+    ? { goal: meta.goal.text, background: meta.goal.background, approved_at: ts }
+    : null;
+  if (accepted && !goal) throw new Error('approval accepted without a goal on record');
   await updateMap(c, (map) => {
     applyNodeUpdates(map, turn.node_updates ?? []);
     if (accepted) Object.assign(map, applyPlan(map, meta.pending_plan.in_scope));
   });
-  if (accepted) {
-    const goal = { goal: meta.goal.text, background: meta.goal.background, approved_at: ts };
-    await writeAtomic(goalPath(c), JSON.stringify(goal, null, 2) + '\n');
-  }
+  if (goal) await writeAtomic(goalPath(c), JSON.stringify(goal, null, 2) + '\n');
 
   const props = turn.propositions ?? [];
   if (props.length) {
@@ -370,7 +380,7 @@ async function turn(body) {
     const record = { role: 'learner', data: event };
     // A checkpoint answer is the learner's evidence: keep it even if the tutor call fails.
     if (meta.mode === 'chapter') await appendRecords(c, lesson_id, [record]);
-    const t = await advance(c, lesson_id, meta, message, meta.mode === 'chapter' ? null : record, labs.length);
+    const t = await advance(c, lesson_id, meta, message, meta.mode === 'chapter' ? null : record, labs.length, event);
     return { turn: t };
   } finally {
     busy.delete(lesson_id);

@@ -35,6 +35,7 @@ function meta(overrides = {}) {
 
 const GOAL = { text: 'explain learning switches', background: null };
 const ASSESSMENT = { strands: [{ strand: 'switching', assessment: 'floor: frames; ceiling: none' }], summary: 'start at b' };
+const ANSWER = { type: 'answer' };
 const PLAN = (inScope) => ({ approach: 'a few sentences', in_scope: inScope });
 
 function assessedMeta() {
@@ -120,7 +121,7 @@ test('plan and approved in one turn: plan accepted, approval refused, lesson_don
 
 test('after an accepted plan, the next turn approved: true is accepted and lesson_done true', () => {
   const planned = reviewTurn({ meta: assessedMeta(), turn: turn({ plan: PLAN(['a', 'b']) }), map });
-  const r = reviewTurn({ meta: planned.meta, turn: turn({ approved: true, lesson_done: true }), map });
+  const r = reviewTurn({ meta: planned.meta, turn: turn({ approved: true, lesson_done: true }), map, event: ANSWER });
   assert.equal(r.turn.approved, true);
   assert.equal(r.turn.lesson_done, true);
   assert.equal(r.meta.plan_presented, false);
@@ -181,4 +182,67 @@ test('malformed in_scope is refused, not thrown', () => {
 
 test('checkPlan returns null for a valid plan', () => {
   assert.equal(checkPlan(map, PLAN(['a', 'b'])), null);
+});
+
+test('a turn with no course fields is normalised: goal kept, no spurious notes', () => {
+  const t = { say: 'hi', node_updates: 'x' };
+  const r = reviewTurn({ meta: assessedMeta(), turn: t, map });
+  assert.deepEqual(r.meta.goal, GOAL);
+  assert.deepEqual(r.notes, []);
+  assert.equal(r.turn.goal, null);
+  assert.equal(r.turn.approved, false);
+  assert.deepEqual(r.turn.node_updates, []);
+});
+
+test('a non-object or empty goal is refused', () => {
+  for (const bad of ['learn it', { text: '' }, { text: 'x', background: 5 }, ['x']]) {
+    const r = reviewTurn({ meta: meta(), turn: turn({ goal: bad }), map });
+    assert.equal(r.turn.goal, null);
+    assert.equal(r.meta.goal, null);
+    assert.ok(r.notes.some((n) => n.startsWith('goal refused')));
+  }
+  const ok = reviewTurn({ meta: meta(), turn: turn({ goal: { text: 'x' } }), map });
+  assert.deepEqual(ok.meta.goal, { text: 'x', background: null });
+});
+
+function presented(over = {}) {
+  return reviewTurn({ meta: assessedMeta(), turn: turn({ plan: PLAN(['a', 'b']) }), map, ...over }).meta;
+}
+
+test('approval with no goal on record is refused', () => {
+  const m = { ...presented(), goal: null };
+  const r = reviewTurn({ meta: m, turn: turn({ approved: true, lesson_done: true }), map, event: ANSWER });
+  assert.equal(r.turn.approved, false);
+  assert.equal(r.turn.lesson_done, false);
+});
+
+test('a refused revised plan with approved: true does not approve the previous plan', () => {
+  const r = reviewTurn({ meta: presented(), turn: turn({ plan: PLAN(['zz']), approved: true }), map, event: ANSWER });
+  assert.equal(r.turn.approved, false);
+  assert.deepEqual(r.meta.pending_plan, PLAN(['a', 'b']));
+});
+
+test('a goal change on an approving turn is refused, approval still accepted', () => {
+  const r = reviewTurn({
+    meta: presented(), turn: turn({ goal: { text: 'other', background: null }, approved: true, lesson_done: true }), map, event: ANSWER,
+  });
+  assert.ok(r.notes.includes('goal refused: cannot change the goal while approving'));
+  assert.deepEqual(r.meta.goal, GOAL);
+  assert.equal(r.turn.approved, true);
+});
+
+test('sim and lab are always nulled in course mode', () => {
+  const r = reviewTurn({ meta: meta(), turn: turn({ sim: { a: 1 }, lab: { b: 1 } }), map });
+  assert.equal(r.turn.sim, null);
+  assert.equal(r.turn.lab, null);
+});
+
+test('approval only answers a learner reply (ask/answer)', () => {
+  for (const event of [{ type: 'lost' }, null]) {
+    const r = reviewTurn({ meta: presented(), turn: turn({ approved: true, lesson_done: true }), map, event });
+    assert.equal(r.turn.approved, false);
+    assert.equal(r.turn.lesson_done, false);
+  }
+  const ask = reviewTurn({ meta: presented(), turn: turn({ approved: true }), map, event: { type: 'ask' } });
+  assert.equal(ask.turn.approved, true);
 });

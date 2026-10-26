@@ -810,3 +810,40 @@ test('networking course prompt no longer carries the learner background', async 
   assert.ok(!p.includes('is a cloud engineer'));
   assert.ok(p.includes('learner.background'));
 });
+
+// A tutor turn with the course fields missing entirely (not null) must not break the session.
+const setRaw = (t) => writeFile(path.join(dir, 'turn.json'), JSON.stringify(t));
+
+test('a middle turn that omits goal entirely still approves cleanly: map and goal.json agree', () => withCourseState(async () => {
+  await setTurn({ goal: GOAL, assessment: ASSESSMENT });
+  const id = (await startCourse()).json.lesson_id;
+  await setTurn({ plan: { approach: 'x', in_scope: ['frames-mac', 'switch-mac-table'] } });
+  await say(id);
+  await setRaw({ say: 'agreed', approved: true, lesson_done: true });
+  const last = await say(id);
+  assert.equal(last.status, 200, last.text);
+  assert.equal(last.json.turn.approved, true);
+  assert.equal(JSON.parse(await readFile(goalPath(), 'utf8')).goal, GOAL.text);
+  const map = (await call('GET', '/api/courses/net/map')).json;
+  assert.equal(map.nodes.find((n) => n.id === 'vlan-basics').in_scope, false);
+}));
+
+test('approval with no goal on record is refused and leaves the map and goal.json alone', () => withCourseState(async (mapBefore) => {
+  await setTurn({ say: 'hello' });
+  const id = (await startCourse()).json.lesson_id;
+  await setRaw({ say: 'done', approved: true, lesson_done: true });
+  const r = await say(id);
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.json.turn.approved, false);
+  assert.equal(r.json.turn.lesson_done, false);
+  assert.deepEqual((await call('GET', '/api/courses/net/map')).json, mapBefore);
+  assert.ok(!existsSync(goalPath()));
+}));
+
+test('a corrupt goal.json does not stop a teach lesson: learner is null', () => withCourseState(async () => {
+  await writeFile(goalPath(), '{not json');
+  const t = await call('POST', '/api/lesson', { course: 'net', node_id: 'switch-mac-table', mode: 'teach' });
+  assert.equal(t.status, 200, t.text);
+  const ctx = JSON.parse((await lastMessage()).slice(CONTEXT_PREFIX.length));
+  assert.equal(ctx.learner, null);
+}));
