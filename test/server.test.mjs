@@ -797,3 +797,16 @@ test('teach mode still needs a node_id, and the mode error lists only /api/lesso
   assert.equal(bad.status, 400);
   assert.match(bad.json.error, /teach, practice, probe, course$/);
 });
+
+test('course prompt: credit line, every course field, subject-neutral', async () => {
+  const p = await readFile(path.join(PROMPTS, 'course.md'), 'utf8');
+  assert.ok(p.startsWith('<!-- Adapted from amosblomqvist/learnharness (AGPL-3.0). -->'));
+  for (const f of ['goal', 'assessment', 'plan', 'in_scope', 'approved', 'SERVER:']) assert.ok(p.includes(f), f);
+  assert.doesNotMatch(p, /\b(switch|VLAN|MAC|AWS)\b/);
+});
+
+test('networking course prompt no longer carries the learner background', async () => {
+  const p = await readFile(path.join(HERE, '..', 'courses', 'networking', 'prompt.md'), 'utf8');
+  assert.ok(!p.includes('is a cloud engineer'));
+  assert.ok(p.includes('learner.background'));
+});
