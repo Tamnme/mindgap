@@ -297,7 +297,7 @@ function renderSide() {
     ]),
     dl,
     actions,
-    hint,
+    ...(hint ? [hint] : []),
   );
 }
 
