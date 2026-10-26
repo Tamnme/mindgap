@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { visibleNodes, offGoalCount, planNodes } from '../public/map-logic.js';
+import { visibleNodes, offGoalCount, planNodes, pickNext } from '../public/map-logic.js';
 
 const nodes = [
   { id: 'a' },
@@ -24,4 +24,13 @@ test('planNodes orders by prereqs, drops unknown ids, counts the rest', () => {
 test('planNodes survives a cycle', () => {
   const cyc = [{ id: 'x', prereqs: ['y'] }, { id: 'y', prereqs: ['x'] }];
   assert.equal(planNodes({ in_scope: ['x', 'y'] }, cyc).nodes.length, 2);
+});
+
+test('pickNext treats off-goal prereqs as met and skips off-goal nodes', () => {
+  const ns = [
+    { id: 'o', in_scope: false, status: 'gap' },
+    { id: 'n', prereqs: ['o'], status: 'untested' },
+  ];
+  const byId = new Map(ns.map((n) => [n.id, n]));
+  assert.equal(pickNext(ns, byId, (n) => n.status).id, 'n');
 });

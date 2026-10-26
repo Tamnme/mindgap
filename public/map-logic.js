@@ -25,3 +25,12 @@ export function planNodes(plan, nodes) {
   }
   return { nodes: order, rest: nodes.length - order.length };
 }
+
+// Next node to teach: in-scope, gap/untested, every prereq solid/shaky (unknown or off-goal prereqs count as met).
+// Falls back to the first in-scope gap. `topo` is in learning order; `status` maps a node to its status.
+export function pickNext(topo, byId, status) {
+  const good = (s) => s === 'shaky' || s === 'solid';
+  const ok = (n) => !isOffGoal(n) && ['gap', 'untested'].includes(status(n)) &&
+    (n.prereqs || []).every((p) => !byId.has(p) || isOffGoal(byId.get(p)) || good(status(byId.get(p))));
+  return topo.find(ok) || topo.find((n) => !isOffGoal(n) && status(n) === 'gap') || null;
+}

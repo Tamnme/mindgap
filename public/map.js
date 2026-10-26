@@ -1,7 +1,7 @@
 // Map home: renders learner/map.json as an SVG graph and drives lesson starts.
 // All map text comes from model-written files, so it is only ever set via textContent.
 
-import { visibleNodes, offGoalCount, isOffGoal } from './map-logic.js';
+import { visibleNodes, offGoalCount, isOffGoal, pickNext } from './map-logic.js';
 
 const STATUSES = ['untested', 'gap', 'shaky', 'solid'];
 // Roadmap layout: one yellow topic per layer on a curved spine, its nodes in a column on each side.
@@ -305,9 +305,7 @@ function renderSide() {
 }
 
 function nextLesson() {
-  const ok = (n) => !isOffGoal(n) && (n.status === 'gap' || n.status === 'untested') &&
-    (n.prereqs || []).every(p => state.byId.has(p) && isGood(statusOf(state.byId.get(p))));
-  return state.topo.find(ok) || state.topo.find(n => !isOffGoal(n) && statusOf(n) === 'gap') || null;
+  return pickNext(state.topo, state.byId, statusOf);
 }
 
 function refreshToolbar() {

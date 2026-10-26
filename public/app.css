@@ -462,4 +462,5 @@ body.has-focus::after { content: ""; position: fixed; inset: 0; background: rgba
 .widget.focused .nbmtu { max-width: min(860px, 100%); margin: 0 auto; font-size: 16px; }
 .map-svg .node.off-goal { opacity: 0.4; }
 .plan-card { margin: 8px 0; }
-.plan-card .plan-nodes { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.plan-card .plan-nodes { margin: 6px 0; padding-left: 22px; }
+.plan-card .plan-nodes li { margin: 2px 0; }
