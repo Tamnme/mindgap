@@ -98,7 +98,7 @@ function report(status, check, detail) {
 
 const outside = mkdtempSync(join(tmpdir(), 'mindgap-gate-out-'));
 try {
-  // 1 + 2 share one cwd: Claude keys sessions by project directory, so --resume needs the same cwd.
+  // 1 + 2 share one cwd, as one learner conversation would. Claude resumes a session from another directory too.
   const convoCwd = mkdtempSync(join(tmpdir(), 'mindgap-gate-convo-'));
   let session = null;
   try {
