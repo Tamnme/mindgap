@@ -288,3 +288,19 @@ test('runLab: docker inspect is always told to look at containers, so a same-nam
   assert.ok(inspects.length > 0);
   for (const a of inspects) assert.deepEqual(a.slice(1, 3), ['--type', 'container'], JSON.stringify(a));
 });
+
+test('labStatus: a lab without hostname stays available (docker picks its default)', async () => {
+  await resetDocker();
+  const { hostname, ...noHost } = NET_LAB;
+  assert.deepEqual(await labStatus(course(noHost, 'no-host')), { available: true });
+});
+
+test('labStatus: a non-string dockerfile is unavailable with the validation reason', async () => {
+  await resetDocker();
+  const c = course(NET_LAB, 'bad-dockerfile');
+  c.lab.dockerfile = 7; // set after the fixture writes the real file
+  const s = await labStatus(c);
+  assert.equal(s.available, false);
+  assert.match(s.reason, /lab\.dockerfile/);
+  assert.equal((await dockerCalls()).length, 0);
+});

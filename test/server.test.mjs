@@ -659,3 +659,15 @@ test('a malformed lab block is reported on the course page and refused with 503,
   assert.equal(r.status, 503, r.text);
   assert.match(r.json.error, /lab\.caps/);
 });
+
+test('a non-string lab.hostname is reported on the course page as unavailable, never a 500', async () => {
+  const badDir = path.join(dir, 'courses', 'badhost');
+  await mkdir(path.join(badDir, 'lab'), { recursive: true });
+  await writeFile(path.join(badDir, 'course.json'), JSON.stringify({ slug: 'badhost', title: 'Bad host', layers: [], lab: { dockerfile: 'lab/Dockerfile', caps: [], network: false, hostname: 42 } }));
+  await writeFile(path.join(badDir, 'lab', 'Dockerfile'), 'FROM scratch\n');
+  await writeFile(path.join(badDir, 'map.seed.json'), JSON.stringify(MAP, null, 2));
+  const info = await call('GET', '/api/courses/badhost');
+  assert.equal(info.status, 200, info.text);
+  assert.equal(info.json.lab.available, false);
+  assert.match(info.json.lab.reason, /lab\.hostname/);
+});
