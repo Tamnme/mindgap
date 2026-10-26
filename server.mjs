@@ -378,7 +378,13 @@ async function courseInfo(slug) {
   const c = await openCourse(slug);
   const course = JSON.parse(await readFile(path.join(c.dir, 'course.json'), 'utf8'));
   const index = await readOptional(path.join(c.dir, 'chapters', 'index.json'));
-  const lab = { ...(await labStatus(c)), request: labRequest(c), approved: await isApproved(c) };
+  let lab;
+  try {
+    lab = { ...(await labStatus(c)), request: labRequest(c), approved: await isApproved(c) };
+  } catch (err) {
+    // A malformed lab block must not take the course page down; the reason says what to fix.
+    lab = { available: false, reason: err.message };
+  }
   return { ...course, chapters: index === null ? [] : JSON.parse(index), lab };
 }
 

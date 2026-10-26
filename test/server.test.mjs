@@ -624,3 +624,38 @@ test('an /api request with a foreign Host is 403', async () => {
   const ok = await rawCall('GET', '/api/courses', { host: `localhost:${port}` });
   assert.equal(ok.status, 200, ok.text);
 });
+
+test('a hung docker info does not hang the course page: the lab is unavailable after ~5 s', async () => {
+  const hung = path.join(dir, 'hung-docker');
+  await writeFile(hung, '#!/bin/sh\nexec sleep 30\n');
+  await chmod(hung, 0o755);
+  const started = startServer({ MINDGAP_DATA_DIR: dataDir, DOCKER_BIN: hung });
+  try {
+    const hungPort = await started.port;
+    const t0 = Date.now();
+    const r = await call('GET', '/api/courses/net', undefined, hungPort);
+    assert.equal(r.status, 200, r.text);
+    assert.equal(r.json.lab.available, false);
+    assert.match(r.json.lab.reason, /timed out/);
+    assert.ok(Date.now() - t0 < 6500, `took ${Date.now() - t0} ms`);
+  } finally {
+    started.srv.kill();
+  }
+});
+
+test('a malformed lab block is reported on the course page and refused with 503, never a 500', async () => {
+  const badDir = path.join(dir, 'courses', 'badlab');
+  await mkdir(path.join(badDir, 'lab'), { recursive: true });
+  await writeFile(path.join(badDir, 'course.json'), JSON.stringify({ slug: 'badlab', title: 'Bad lab', layers: [], lab: { dockerfile: 'lab/Dockerfile', caps: 'NET_ADMIN', network: true, hostname: 'netlab' } }));
+  await writeFile(path.join(badDir, 'lab', 'Dockerfile'), 'FROM scratch\n');
+  await writeFile(path.join(badDir, 'map.seed.json'), JSON.stringify(MAP, null, 2));
+  const info = await call('GET', '/api/courses/badlab');
+  assert.equal(info.status, 200, info.text);
+  assert.equal(info.json.lab.available, false);
+  assert.match(info.json.lab.reason, /lab\.caps/);
+  const started = await call('POST', '/api/lesson', { course: 'badlab', node_id: 'switch-mac-table', mode: 'teach' });
+  assert.equal(started.status, 200, started.text);
+  const r = await call('POST', '/api/lab', { course: 'badlab', lesson_id: started.json.lesson_id, cmd: 'true' });
+  assert.equal(r.status, 503, r.text);
+  assert.match(r.json.error, /lab\.caps/);
+});

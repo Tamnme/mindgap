@@ -240,3 +240,51 @@ test('runLab truncates output at 64 KB with a marker', async () => {
   assert.ok(r.stdout.length <= 64 * 1024 + 60, `stdout is ${r.stdout.length} chars`);
   assert.match(r.stdout, /truncated at 64 KB/);
 });
+
+// Plain shell stand-ins for a docker binary that hangs on `info`, or whose `info` fails.
+async function fakeDockerScript(name, body) {
+  const bin = path.join(dir, name);
+  await writeFile(bin, `#!/bin/sh\n${body}\n`);
+  await chmod(bin, 0o755);
+  return bin;
+}
+
+test('labStatus: a docker info that never answers is unavailable after 5 s, naming the timeout', async () => {
+  process.env.DOCKER_BIN = await fakeDockerScript('hung-docker', 'exec sleep 30');
+  try {
+    const started = Date.now();
+    const s = await labStatus(course(NET_LAB, 'hung'));
+    assert.equal(s.available, false);
+    assert.match(s.reason, /timed out after 5 s/);
+    assert.ok(Date.now() - started < 6500, `took ${Date.now() - started} ms`);
+  } finally {
+    process.env.DOCKER_BIN = fakeBin;
+  }
+});
+
+test('labStatus: a docker info that exits non-zero is unavailable with its stderr in the reason', async () => {
+  process.env.DOCKER_BIN = await fakeDockerScript('down-docker', 'echo "Cannot connect to the Docker daemon" >&2\nexit 1');
+  try {
+    const s = await labStatus(course(NET_LAB, 'down'));
+    assert.equal(s.available, false);
+    assert.match(s.reason, /Cannot connect to the Docker daemon/);
+  } finally {
+    process.env.DOCKER_BIN = fakeBin;
+  }
+});
+
+test('labStatus: a malformed lab block is unavailable with the validation reason and docker is not consulted', async () => {
+  await resetDocker();
+  const s = await labStatus(course({ ...NET_LAB, caps: 'NET_ADMIN' }, 'malformed'));
+  assert.equal(s.available, false);
+  assert.match(s.reason, /lab\.caps/);
+  assert.equal((await dockerCalls()).length, 0);
+});
+
+test('runLab: docker inspect is always told to look at containers, so a same-named image is never matched', async () => {
+  await resetDocker({ images: { 'mindgap-net': true }, containers: {} });
+  await runLab(course(NET_LAB, 'img-named'), 'true');
+  const inspects = (await dockerCalls()).filter((a) => a[0] === 'inspect');
+  assert.ok(inspects.length > 0);
+  for (const a of inspects) assert.deepEqual(a.slice(1, 3), ['--type', 'container'], JSON.stringify(a));
+});
