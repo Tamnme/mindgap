@@ -1,4 +1,4 @@
-# underlay contracts
+# mindgap contracts
 
 Shared formats that every part builds against. Change them here first.
 
@@ -48,14 +48,14 @@ Sim scenarios: `switch-learning | switch-flood | vlan-broadcast | vlan-trunk`.
 
 ## How the server calls the tutor (verified 2026-10-25, claude 2.1.296)
 ```
-claude -p --safe-mode --tools "" --model "$UNDERLAY_MODEL" \
+claude -p --safe-mode --tools "" --model "$MINDGAP_MODEL" \
   --output-format json --json-schema "<contents of turn-schema.json>" \
   --system-prompt-file prompts/<mode>.md \
   [--resume <claude_session_id>] "<message>"
 ```
 - stdout is a JSON object: use `.structured_output` (the turn), `.session_id`, `.is_error`, `.total_cost_usd`.
 - `--safe-mode` keeps the user's CLAUDE.md/plugins/hooks out of the tutor. Auth still uses the subscription. Do NOT use `--bare` (it needs an API key).
-- `UNDERLAY_MODEL` defaults to `opus`.
+- `MINDGAP_MODEL` defaults to `opus`.
 - First message of a lesson = a JSON block containing: the mode, the target node, its prereqs with their statuses, every other node's id/title/status, and all propositions for those nodes. Later messages = the learner event as JSON.
 
 ## HTTP API

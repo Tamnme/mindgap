@@ -1,4 +1,4 @@
-// underlay HTTP server. Contracts: CONTRACTS.md. No npm deps.
+// mindgap HTTP server. Contracts: CONTRACTS.md. No npm deps.
 import { createServer } from 'node:http';
 import { readFile, writeFile, rename, appendFile, mkdir, readdir, copyFile, constants } from 'node:fs/promises';
 import { spawn, execFile } from 'node:child_process';
@@ -10,13 +10,13 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(HERE, 'public');
 const PROMPTS_DIR = path.join(HERE, 'prompts');
 const SCHEMA_PATH = path.join(PROMPTS_DIR, 'turn-schema.json');
-const DATA_DIR = path.resolve(process.env.UNDERLAY_DATA_DIR || path.join(HERE, 'learner'));
+const DATA_DIR = path.resolve(process.env.MINDGAP_DATA_DIR || path.join(HERE, 'learner'));
 const SEED_PATH = path.join(HERE, 'learner', 'map.seed.json');
 const MAP_PATH = path.join(DATA_DIR, 'map.json');
 const PROPS_PATH = path.join(DATA_DIR, 'propositions.jsonl');
 const SESS_DIR = path.join(DATA_DIR, 'sessions');
 const PORT = Number(process.env.PORT ?? 4810);
-const MODEL = process.env.UNDERLAY_MODEL || 'opus';
+const MODEL = process.env.MINDGAP_MODEL || 'opus';
 const CLAUDE_BIN = process.env.CLAUDE_BIN || 'claude';
 const ORB_BIN = process.env.ORB_BIN || 'orb';
 const MODES = { teach: 'teacher.md', practice: 'practice.md', probe: 'prober.md', chapter: 'chapter.md' };
@@ -427,5 +427,5 @@ await copyFile(SEED_PATH, MAP_PATH, constants.COPYFILE_EXCL).catch((e) => {
 });
 
 server.listen(PORT, '127.0.0.1', () => {
-  console.log(`underlay listening on http://127.0.0.1:${server.address().port}`);
+  console.log(`mindgap listening on http://127.0.0.1:${server.address().port}`);
 });

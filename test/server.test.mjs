@@ -88,7 +88,7 @@ async function readJsonl(file) {
 }
 
 before(async () => {
-  dir = await mkdtemp(path.join(tmpdir(), 'underlay-test-'));
+  dir = await mkdtemp(path.join(tmpdir(), 'mindgap-test-'));
   dataDir = path.join(dir, 'learner');
   await mkdir(dataDir);
   await writeFile(path.join(dataDir, 'map.json'), JSON.stringify(MAP, null, 2));
@@ -108,8 +108,8 @@ before(async () => {
     env: {
       ...process.env,
       PORT: '0',
-      UNDERLAY_DATA_DIR: dataDir,
-      UNDERLAY_MODEL: 'opus',
+      MINDGAP_DATA_DIR: dataDir,
+      MINDGAP_MODEL: 'opus',
       CLAUDE_BIN: claudeBin,
       ORB_BIN: orbBin,
       FAKE_DIR: dir,
@@ -232,7 +232,7 @@ test('static path traversal is blocked', async () => {
   for (const p of ['/..%2fCONTRACTS.md', '/%2e%2e/CONTRACTS.md', '/../CONTRACTS.md', '/..%2f..%2fserver.mjs']) {
     const r = await call('GET', p);
     assert.equal(r.status, 404, p);
-    assert.ok(!r.text.includes('underlay contracts'), p);
+    assert.ok(!r.text.includes('mindgap contracts'), p);
   }
   const contracts = await readFile(CONTRACTS, 'utf8');
   assert.ok(contracts.length > 0);
@@ -299,7 +299,7 @@ test('chapter lesson: no tutor call to create, reused, context on first event, a
 test('first run copies the clean seed map into an empty data dir', async () => {
   const fresh = path.join(dir, 'fresh');
   const srv = spawn(process.execPath, [SERVER], {
-    env: { ...process.env, PORT: '0', UNDERLAY_DATA_DIR: fresh },
+    env: { ...process.env, PORT: '0', MINDGAP_DATA_DIR: fresh },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   try {

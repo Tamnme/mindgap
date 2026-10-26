@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Idempotent setup for the OrbStack "netlab" lab VM used by underlay.
+# Idempotent setup for the OrbStack "netlab" lab VM used by mindgap.
 # Creates the machine if missing, installs networking tools as root, prints versions.
 set -euo pipefail
 

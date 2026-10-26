@@ -1,12 +1,12 @@
-# underlay
+# mindgap
 
-Learn the networking underneath your cloud.
+mindgap is a local learning tool for any subject. Courses are made of chapters, labs run real commands in a sandbox, and the tutor runs on the AI CLI subscription you already have.
 
-underlay is a local tutor for engineers who already run VPCs, clusters and hypervisors but never learned the wire underneath. It tests what you actually believe about frames, routes, NAT and overlays. It keeps a map of your gaps and teaches each one from the bytes up, then ties it back to AWS, Kubernetes and Proxmox.
+It ships with a networking course: learn the networking underneath your cloud. It is for engineers who already run VPCs, clusters and hypervisors but never learned the wire underneath. It tests what you actually believe about frames, routes, NAT and overlays. It keeps a map of your gaps and teaches each one from the bytes up, then ties it back to AWS, Kubernetes and Proxmox.
 
 The tutor's teaching method comes from [learnharness](https://github.com/amosblomqvist/learnharness), an agent harness for learning difficult things. See [Credits](#credits-and-license).
 
-![The underlay map on first run: every topic untested, grouped by layer](docs/img/map.png)
+![The map on first run: every topic untested, grouped by layer](docs/img/map.png)
 
 ## How it works
 
@@ -27,8 +27,8 @@ Each idea is meant to land as something you could have derived, not a fact to me
 ## Quickstart
 
 ```sh
-git clone https://github.com/Tamnme/underlay.git
-cd underlay
+git clone https://github.com/Tamnme/mindgap.git
+cd mindgap
 labs/setup-netlab.sh   # optional: creates the "netlab" Ubuntu VM and installs the tools
 node server.mjs
 ```
@@ -39,8 +39,8 @@ On first run the server copies `learner/map.seed.json` to `learner/map.json`. Yo
 
 | Variable | Default | |
 |---|---|---|
-| `UNDERLAY_MODEL` | `opus` | Model for the tutor (`sonnet` is cheaper and faster) |
-| `UNDERLAY_DATA_DIR` | `learner/` | Where your map, propositions and transcripts live |
+| `MINDGAP_MODEL` | `opus` | Model for the tutor (`sonnet` is cheaper and faster) |
+| `MINDGAP_DATA_DIR` | `learner/` | Where your map, propositions and transcripts live |
 | `PORT` | `4810` | |
 
 ## Topics
@@ -66,6 +66,6 @@ node --test test/
 
 ## Credits and license
 
-underlay is built on [learnharness](https://github.com/amosblomqvist/learnharness) by [@amosblomqvist](https://github.com/amosblomqvist). The tutor prompts `prompts/teacher.md`, `prompts/practice.md` and `prompts/prober.md` are adapted from it. That includes their teaching method: measure what the learner holds first, establish foundations they can accept as-is, then derive everything else one motivated step at a time. underlay adds the networking curriculum, chapters, labs, simulator and web workbench around them.
+mindgap is built on [learnharness](https://github.com/amosblomqvist/learnharness) by [@amosblomqvist](https://github.com/amosblomqvist). The tutor prompts `prompts/teacher.md`, `prompts/practice.md` and `prompts/prober.md` are adapted from it. That includes their teaching method: measure what the learner holds first, establish foundations they can accept as-is, then derive everything else one motivated step at a time. mindgap adds the networking course, chapters, labs, simulator and web workbench around them.
 
-learnharness is licensed AGPL-3.0, and underlay is released under the same license: see [LICENSE](LICENSE).
+learnharness is licensed AGPL-3.0, and mindgap is released under the same license: see [LICENSE](LICENSE).
