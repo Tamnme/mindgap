@@ -63,6 +63,25 @@ test('migrate renames claude_session_id to tutor_session_id, sets tutor, and lea
   }
 });
 
+test('migrate converts node twins to links and leaves links-only nodes alone', async () => {
+  const dataDir = await mkdtemp(path.join(tmpdir(), 'mindgap-migrate-'));
+  try {
+    await oldLayout(dataDir);
+    const old = { nodes: [{ id: 'a', twins: { aws: 'x', k8s: '', proxmox: 'z' } }, { id: 'b', links: [{ label: 'AWS', text: 'q' }] }] };
+    await writeFile(path.join(dataDir, 'map.json'), JSON.stringify(old, null, 2) + '\n');
+    await migrate(dataDir);
+    const state = path.join(dataDir, 'courses', 'networking', 'state');
+    const map = JSON.parse(await readFile(path.join(state, 'map.json'), 'utf8'));
+    assert.deepEqual(map.nodes, [
+      { id: 'a', links: [{ label: 'AWS', text: 'x' }, { label: 'Proxmox', text: 'z' }] },
+      { id: 'b', links: [{ label: 'AWS', text: 'q' }] },
+    ]);
+    assert.equal(existsSync(path.join(state, 'map.json.tmp')), false);
+  } finally {
+    await rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test('migrate refuses when target state/map.json already exists, moving nothing', async () => {
   const dataDir = await mkdtemp(path.join(tmpdir(), 'mindgap-migrate-'));
   try {
