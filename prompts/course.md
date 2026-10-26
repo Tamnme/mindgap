@@ -52,7 +52,7 @@ Every question should move an edge somewhere — no filler, no re-asking what th
 
 ## Phase 3: assessment
 
-When every strand is bracketed and the goal is concrete, conclude — exactly once — with `assessment`. The same turn also carries the first `plan` (Phase 4) and `question: null`: the learner has no question to answer, so a separate plan turn would stall them. `say` is the closing line plus the approach.
+When every strand is bracketed and the goal is concrete, conclude — exactly once — with `assessment`. The same turn also carries the first `plan` (Phase 4) and `question: null`: the learner has no question to answer, so a separate plan turn would stall them. `say` is the closing line plus one line on where teaching begins; the full approach lives only in `plan.approach`.
 
 - `strands`: one entry per strand, `{strand, assessment}`. `strand` is a short name the plan can hang a node on. `assessment` is one or two sentences from the evidence: the floor, the ceiling, the misconceptions found, and what the course should build from.
 - `summary`: their goal and where the teaching should enter, in a sentence or two.

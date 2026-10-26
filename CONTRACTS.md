@@ -59,8 +59,8 @@ Sim scenarios: `switch-learning | switch-flood | vlan-broadcast | vlan-trunk`.
 
 ## Course session
 
-The schema is per mode: `schemaFor(mode)` in `server.mjs` picks `prompts/course-schema.json` for `course`, else `turn-schema.json`. 
-`POST /api/lesson {course, mode:"course"}` starts a course-level probe → plan session. `node_id` is ignored. The lesson id is `course-<timestamp>` and its meta has `node_id: null`. Every course-mode tutor turn (including the first) is reviewed by `reviewTurn` (`lib/course-session.mjs`) before node updates are applied and before anything is stored, so the transcript and the response hold the reviewed turn.
+The schema is per mode: `schemaFor(mode)` in `server.mjs` picks `prompts/course-schema.json` for `course`, else `turn-schema.json`.
+`POST /api/lesson {course, mode:"course"}` starts a course-level probe → plan session. `node_id` is ignored. The lesson id is `course-<timestamp>` and its meta has `node_id: null` and, for course lessons, `goal, assessment, pending_plan, plan_presented, server_notes`. Every course-mode tutor turn (including the first) is reviewed by `reviewTurn` (`lib/course-session.mjs`) before node updates are applied and before anything is stored, so the transcript and the response hold the reviewed turn.
 
 First message: `CONTEXT:` + JSON `{mode:"course", course:{slug,title,layers}, learner:{goal,background}|null, nodes:[{id,title,layer,prereqs,truth,status,evidence,in_scope?}], propositions}` (the last 200 lines of propositions.jsonl; `in_scope` appears only as `false`).
 
@@ -69,10 +69,11 @@ When the review refuses a field, it becomes a note in `meta.server_notes`. The n
 | Field | Kept only when |
 |---|---|
 | `propositions` | never (always `[]`) |
-| `goal` | non-null: replaces the stored goal |
+| `sim`, `lab` | never (always `null` in course mode) |
+| `goal` | a plain object with non-empty string `text` and `background` string or null; a goal change in the turn that approves is refused |
 | `assessment` | no question open, none accepted before, goal set |
 | `plan` | assessment accepted, no question open, `checkPlan` passes (known ids, no duplicates, prereqs in scope, non-empty) |
-| `approved` | previous turn presented an accepted plan and this turn presents none |
+| `approved` | previous turn presented an accepted plan, this turn carries no plan field (even a refused one), the event it answers is `ask` or `answer` (never the first turn), and a goal is on record |
 | `lesson_done` | only with accepted approval |
 
 On accepted approval the server sets `in_scope: false` on every node outside the plan (in-scope nodes carry no `in_scope` key; nothing else in the map changes) and writes `<stateDir>/goal.json` = `{goal, background, approved_at}`. An abandoned session changes neither. `goal.json` may hold `goal: null` (background only); readers tolerate null. Node-level modes get `learner:{goal,background}|null` from it and list off-goal nodes in `other_nodes` with `in_scope: false`.
@@ -102,7 +103,7 @@ Binds 127.0.0.1 only. Unknown or invalid course slugs → 404. A malformed `cour
 | POST | `/api/chapter` | `{course, node_id}` → `{lesson_id, meta, events[]}`. Reuses the node's latest `chapter`-mode lesson or creates one **without** a tutor call; 404 when `courses/<course>/chapters/<node_id>.json` doesn't exist. `/api/lesson` refuses mode `chapter`. |
 | GET | `/api/lesson/:id?course=<slug>` | → `{meta, events[]}` (for reload). Missing or unknown course → 404. |
 
-Lesson meta gains `course`, `tutor` and `tutor_session_id`. Lesson ids are `<node_id>-<timestamp>`.
+Lesson meta gains `course`, `tutor` and `tutor_session_id`. Lesson ids are `<node_id>-<timestamp>` (`course-<timestamp>` for course sessions).
 
 Learner `event` shapes:
 - `{type:"answer", choice?:string, text?:string, confidence?:1..5, reasoning?:string}`

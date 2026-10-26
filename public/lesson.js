@@ -250,9 +250,18 @@ function renderBanner() {
   }
 }
 
+// Keep the plan cards' node statuses current. Idempotent, so replay (fresh map) and live turns can both call it.
+function applyNodeUpdates(turn) {
+  for (const u of turn.node_updates || []) {
+    const n = S.mapNodes.find((x) => x.id === u.id);
+    if (n) n.status = u.status;
+  }
+}
+
 // Apply a tutor turn's controls. Used for live turns and for the last turn on replay.
 function applyTurn(turn) {
   S.turn = turn;
+  applyNodeUpdates(turn);
   renderQuestion(turn.question || null);
   if (S.meta) {
     for (const u of turn.node_updates || []) {
@@ -296,6 +305,7 @@ async function dispatch() {
     S.pending = null;
     showTurnError('');
     S.waiting = false;
+    applyNodeUpdates(data.turn); // before the plan card renders
     const bubble = appendTurn(data.turn);
     applyTurn(data.turn);
     // Long explanations: show the start of the reply, not its end.
