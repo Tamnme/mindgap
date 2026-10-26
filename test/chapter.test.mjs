@@ -8,7 +8,7 @@ import { firstOpenCheckpoint, flatBlocks, answerEvent, answersFrom, sectionState
 
 const PUB = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 const ids = JSON.parse(await readFile(path.join(PUB, 'chapters', 'index.json'), 'utf8'));
-const map = JSON.parse(await readFile(path.join(PUB, '..', 'learner', 'map.json'), 'utf8'));
+const map = JSON.parse(await readFile(path.join(PUB, '..', 'learner', 'map.seed.json'), 'utf8'));
 
 for (const id of ids) {
   test(`chapter ${id} is well formed`, async () => {

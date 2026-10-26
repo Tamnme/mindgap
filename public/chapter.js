@@ -380,7 +380,7 @@ async function init() {
     S.node = S.map.nodes.find((n) => n.id === nodeId) || { layer: '', title: S.chapter.title };
     S.lessonId = lesson.lesson_id;
 
-    document.title = `netbench · ${S.chapter.title}`;
+    document.title = `underlay · ${S.chapter.title}`;
     $('ch-number').textContent = `Chapter ${S.chapter.number} · ${S.chapter.kicker}`;
     $('side-layer').textContent = S.chapter.kicker;
     $('ch-title').textContent = S.chapter.title;

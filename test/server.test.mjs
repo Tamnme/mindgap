@@ -88,7 +88,7 @@ async function readJsonl(file) {
 }
 
 before(async () => {
-  dir = await mkdtemp(path.join(tmpdir(), 'netbench-test-'));
+  dir = await mkdtemp(path.join(tmpdir(), 'underlay-test-'));
   dataDir = path.join(dir, 'learner');
   await mkdir(dataDir);
   await writeFile(path.join(dataDir, 'map.json'), JSON.stringify(MAP, null, 2));
@@ -108,8 +108,8 @@ before(async () => {
     env: {
       ...process.env,
       PORT: '0',
-      NETBENCH_DATA_DIR: dataDir,
-      NETBENCH_MODEL: 'opus',
+      UNDERLAY_DATA_DIR: dataDir,
+      UNDERLAY_MODEL: 'opus',
       CLAUDE_BIN: claudeBin,
       ORB_BIN: orbBin,
       FAKE_DIR: dir,
@@ -228,11 +228,11 @@ test('claude is_error becomes HTTP 502 with the message', async () => {
 });
 
 test('static path traversal is blocked', async () => {
-  // Raw request paths: encoded and literal dot-segments that try to reach netbench/CONTRACTS.md.
+  // Raw request paths: encoded and literal dot-segments that try to reach CONTRACTS.md.
   for (const p of ['/..%2fCONTRACTS.md', '/%2e%2e/CONTRACTS.md', '/../CONTRACTS.md', '/..%2f..%2fserver.mjs']) {
     const r = await call('GET', p);
     assert.equal(r.status, 404, p);
-    assert.ok(!r.text.includes('netbench contracts'), p);
+    assert.ok(!r.text.includes('underlay contracts'), p);
   }
   const contracts = await readFile(CONTRACTS, 'utf8');
   assert.ok(contracts.length > 0);
@@ -294,4 +294,29 @@ test('chapter lesson: no tutor call to create, reused, context on first event, a
 
   assert.equal((await call('POST', '/api/chapter', { node_id: 'vlan-basics' })).status, 404);
   assert.equal((await call('POST', '/api/lesson', { node_id: 'switch-mac-table', mode: 'chapter' })).status, 400);
+});
+
+test('first run copies the clean seed map into an empty data dir', async () => {
+  const fresh = path.join(dir, 'fresh');
+  const srv = spawn(process.execPath, [SERVER], {
+    env: { ...process.env, PORT: '0', UNDERLAY_DATA_DIR: fresh },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  try {
+    const freshPort = await new Promise((resolve, reject) => {
+      let out = '';
+      srv.stdout.on('data', (c) => {
+        out += c;
+        const m = out.match(/listening on http:\/\/127\.0\.0\.1:(\d+)/);
+        if (m) resolve(Number(m[1]));
+      });
+      srv.on('exit', (code) => reject(new Error(`server exited ${code}`)));
+    });
+    const map = await (await fetch(`http://127.0.0.1:${freshPort}/api/map`)).json();
+    const seed = JSON.parse(await readFile(path.join(HERE, '..', 'learner', 'map.seed.json'), 'utf8'));
+    assert.equal(map.nodes.length, seed.nodes.length);
+    assert.ok(map.nodes.every((n) => n.status === 'untested' && n.evidence === ''));
+  } finally {
+    srv.kill();
+  }
 });

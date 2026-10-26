@@ -1,10 +1,10 @@
 # Chapter guide
 
-How to write a netbench chapter. The reference chapter is `public/chapters/switch-mac-table.js`: read it in full before writing. The learner approved its format, so match its voice, density and structure. The file format is in `CONTRACTS.md` ("Chapters").
+How to write an underlay chapter. The reference chapter is `public/chapters/switch-mac-table.js`: read it in full before writing. The learner approved its format, so match its voice, density and structure. The file format is in `CONTRACTS.md` ("Chapters").
 
 ## Who is reading
 
-Anh is a cloud engineer: strong on AWS, Kubernetes, Cilium and Proxmox, and learning the networking underneath. They debug real systems, so they want *mechanisms* they can reason from, not definitions. Use "you". Use they/them if a third person is needed. A tutor reads Anh's checkpoint answers in a side drawer, so the chapter does not need to anticipate every confusion.
+The learner is a cloud engineer: strong on AWS, Kubernetes, Cilium and Proxmox, and learning the networking underneath. They debug real systems, so they want *mechanisms* they can reason from, not definitions. Use "you". Use they/them if a third person is needed. A tutor reads the learner's checkpoint answers in a side drawer, so the chapter does not need to anticipate every confusion.
 
 Each map node in `learner/map.json` has a `truth` (the one idea the chapter must lock in), `twins` (AWS, K8s and Proxmox angles), a `lab` idea, `prereqs`, and sometimes `evidence` from the placement test. A node with status `gap` and evidence that names a wrong belief: build a checkpoint whose distractor is exactly that belief.
 
@@ -12,8 +12,8 @@ Each map node in `learner/map.json` has a `truth` (the one idea the chapter must
 
 - `number`: from the table in the plan. `kicker`: the layer name (`Physical`, `Layer 2`, `Layer 3`, `Layer 4`, `Overlays`, `Services`). `title`: the map node's title exactly. `lede`: one or two sentences stating the core idea plainly.
 - **3 to 5 sections.** The usual arc:
-  1. Start from something Anh already holds (a prereq) and reason forward. Show the bytes or the table, not an abstraction.
-  2. The mechanism, built so that Anh could have discovered it ("how could you have worked this out yourself?").
+  1. Start from something the learner already holds (a prereq) and reason forward. Show the bytes or the table, not an abstraction.
+  2. The mechanism, built so that the learner could have discovered it ("how could you have worked this out yourself?").
   3. Proof in netlab (labs).
   4. "Where you've met this": AWS, Kubernetes/Cilium and Proxmox.
   5. "What to keep": 3 to 5 bullets.
@@ -27,14 +27,14 @@ Each map node in `learner/map.json` has a `truth` (the one idea the chapter must
 - Option text reads `label: short reason` when a reason helps. The receipt shows only the part before `: `, so the label must stand alone.
 - `key` is the 0-based index of the correct option. Vary its position across checkpoints.
 - `why`: one or two sentences that make the answer inevitable. The tutor sees it as well.
-- A checkpoint may ask Anh to predict a lab's output, with the lab placed *after* it (see `c3` in the reference chapter). This is the strongest kind: the prediction gets tested against reality.
+- A checkpoint may ask the learner to predict a lab's output, with the lab placed *after* it (see `c3` in the reference chapter). This is the strongest kind: the prediction gets tested against reality.
 
 **Spoiler traps (found in review, so check each one):**
 - The text above a checkpoint sets up the *situation* only. Any rule, definition, man-page quote or worked example that decides the answer goes *after* it. Example: don't explain "admin state vs carrier" right before asking what a downed peer looks like.
 - Don't give a worked example whose pattern matches the answer, e.g. decoding a MAC byte whose bits are exactly the ones the checkpoint asks about. Pick a byte with a different pattern.
 - A wrong option's *label* (the part before `: `) must itself be wrong. If the label is literally what the lab prints (`DOWN`), the receipt marks a true statement wrong. Make the label carry the false belief.
 - Labels must be **distinct** across a checkpoint's options. A bare number or a bare "Yes"/"No" label almost always collides with another option or with the true answer, so put the belief in the label ("Zero: the switch still knows n23c").
-- Re-read every sentence above each checkpoint, asking "could Anh answer from this alone?" If yes, move it.
+- Re-read every sentence above each checkpoint, asking "could the learner answer from this alone?" If yes, move it.
 
 **Claims vs observation (found in review):**
 - Claim only what a lab printed. "You could see it with tcpdump on b" needs a lab that runs tcpdump on b. An inference from a virtual interface (veth has no FCS) is not evidence about physical NICs; label general knowledge as such.
@@ -54,7 +54,7 @@ Labs run as root in the OrbStack machine `netlab` (Ubuntu 26.04, iproute2 6.19, 
 - Counting frames or table entries: disable IPv6 inside each netns before links come up (`sysctl -qw net.ipv6.conf.all.disable_ipv6=1 net.ipv6.conf.default.disable_ipv6=1`). Otherwise router solicitations and DAD fill tables and captures by themselves.
 - Use background `tcpdump` plus `timeout`, never an unbounded wait. Record its PID (`TP=$!`) and `wait $TP`; don't rely on `wait %N`.
 - **A zero count needs a positive control.** "0 packets seen" is also what a capture that never started prints. In the same capture, also count something known to be non-zero (e.g. the host's own handshake), and print both. Count with a pattern match (`grep -c`), never by counting lines; tcpdump output can contain blank lines. Use `-n`, `-l`, and a filter.
-- `explain` is one line telling Anh what the lab does and, where useful, what to look for (e.g. "(expect 0)").
+- `explain` is one line telling the learner what the lab does and, where useful, what to look for (e.g. "(expect 0)").
 - Use 2 to 4 labs per chapter. A chapter with nothing to run (a pure AWS concept, say) may have 0 to 1 labs, but say why in the file's header comment.
 
 ## Widgets

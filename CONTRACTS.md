@@ -1,4 +1,4 @@
-# netbench contracts
+# underlay contracts
 
 Shared formats that every part builds against. Change them here first.
 
@@ -17,7 +17,8 @@ public/lesson.html         # workbench (Phase 4)
 public/app.css, public/map.js, public/lesson.js   (Phase 4)
 public/sim/switch-sim.js   # browser simulator, ES module (Phase 5)
 labs/setup-netlab.sh       # OrbStack VM (Phase 6)
-learner/map.json           # knowledge map (Phase 2 seeds it; server updates it)
+learner/map.seed.json      # clean knowledge map, committed; copied to map.json on first run
+learner/map.json           # your map (gitignored); server updates it
 learner/propositions.jsonl # one proposition per line, appended by server
 learner/sessions/<lesson_id>.jsonl      # transcript, one event per line
 learner/sessions/<lesson_id>.meta.json  # {claude_session_id, node_id, mode, started}
@@ -47,14 +48,14 @@ Sim scenarios: `switch-learning | switch-flood | vlan-broadcast | vlan-trunk`.
 
 ## How the server calls the tutor (verified 2026-10-25, claude 2.1.296)
 ```
-claude -p --safe-mode --tools "" --model "$NETBENCH_MODEL" \
+claude -p --safe-mode --tools "" --model "$UNDERLAY_MODEL" \
   --output-format json --json-schema "<contents of turn-schema.json>" \
   --system-prompt-file prompts/<mode>.md \
   [--resume <claude_session_id>] "<message>"
 ```
 - stdout is a JSON object: use `.structured_output` (the turn), `.session_id`, `.is_error`, `.total_cost_usd`.
 - `--safe-mode` keeps the user's CLAUDE.md/plugins/hooks out of the tutor. Auth still uses the subscription. Do NOT use `--bare` (it needs an API key).
-- `NETBENCH_MODEL` defaults to `opus`.
+- `UNDERLAY_MODEL` defaults to `opus`.
 - First message of a lesson = a JSON block containing: the mode, the target node, its prereqs with their statuses, every other node's id/title/status, and all propositions for those nodes. Later messages = the learner event as JSON.
 
 ## HTTP API

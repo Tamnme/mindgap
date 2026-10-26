@@ -1,6 +1,6 @@
-// netbench HTTP server. Contracts: netbench/CONTRACTS.md. No npm deps.
+// underlay HTTP server. Contracts: CONTRACTS.md. No npm deps.
 import { createServer } from 'node:http';
-import { readFile, writeFile, rename, appendFile, mkdir, readdir } from 'node:fs/promises';
+import { readFile, writeFile, rename, appendFile, mkdir, readdir, copyFile, constants } from 'node:fs/promises';
 import { spawn, execFile } from 'node:child_process';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -10,12 +10,13 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(HERE, 'public');
 const PROMPTS_DIR = path.join(HERE, 'prompts');
 const SCHEMA_PATH = path.join(PROMPTS_DIR, 'turn-schema.json');
-const DATA_DIR = path.resolve(process.env.NETBENCH_DATA_DIR || path.join(HERE, 'learner'));
+const DATA_DIR = path.resolve(process.env.UNDERLAY_DATA_DIR || path.join(HERE, 'learner'));
+const SEED_PATH = path.join(HERE, 'learner', 'map.seed.json');
 const MAP_PATH = path.join(DATA_DIR, 'map.json');
 const PROPS_PATH = path.join(DATA_DIR, 'propositions.jsonl');
 const SESS_DIR = path.join(DATA_DIR, 'sessions');
 const PORT = Number(process.env.PORT ?? 4810);
-const MODEL = process.env.NETBENCH_MODEL || 'opus';
+const MODEL = process.env.UNDERLAY_MODEL || 'opus';
 const CLAUDE_BIN = process.env.CLAUDE_BIN || 'claude';
 const ORB_BIN = process.env.ORB_BIN || 'orb';
 const MODES = { teach: 'teacher.md', practice: 'practice.md', probe: 'prober.md', chapter: 'chapter.md' };
@@ -419,6 +420,12 @@ const server = createServer(async (req, res) => {
   }
 });
 
+// First run: start from the clean seed map. COPYFILE_EXCL never overwrites a learner's progress.
+await mkdir(DATA_DIR, { recursive: true });
+await copyFile(SEED_PATH, MAP_PATH, constants.COPYFILE_EXCL).catch((e) => {
+  if (e.code !== 'EEXIST') throw e;
+});
+
 server.listen(PORT, '127.0.0.1', () => {
-  console.log(`netbench listening on http://127.0.0.1:${server.address().port}`);
+  console.log(`underlay listening on http://127.0.0.1:${server.address().port}`);
 });

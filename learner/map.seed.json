@@ -17,8 +17,8 @@
         "https://man7.org/linux/man-pages/man4/veth.4.html",
         "https://pve.proxmox.com/wiki/Network_Configuration"
       ],
-      "status": "shaky",
-      "evidence": "After a re-teach with the lab's @ifN pairing table, correctly said tcpdump on lab-lxc2 sees nothing when pod3 sends (confidence 5, no reasoning given). Before that, two confident misses: pod eth0 goes straight to ens5, and one shared root device."
+      "status": "untested",
+      "evidence": ""
     },
     {
       "id": "frames-mac",
@@ -61,8 +61,8 @@
         "https://pve.proxmox.com/wiki/Network_Configuration",
         "https://man7.org/linux/man-pages/man8/bridge.8.html"
       ],
-      "status": "gap",
-      "evidence": "Placement 2026-10-24: said a switch maps IP→MAC."
+      "status": "untested",
+      "evidence": ""
     },
     {
       "id": "unknown-unicast-flooding",
@@ -105,8 +105,8 @@
         "https://docs.aws.amazon.com/vpc/latest/userguide/subnet-sizing.html",
         "https://datatracker.ietf.org/doc/html/rfc919"
       ],
-      "status": "gap",
-      "evidence": "Placement 2026-10-24: said a broadcast goes to the router."
+      "status": "untested",
+      "evidence": ""
     },
     {
       "id": "vlan-access",
@@ -127,8 +127,8 @@
         "https://pve.proxmox.com/wiki/Network_Configuration",
         "https://man7.org/linux/man-pages/man8/bridge.8.html"
       ],
-      "status": "gap",
-      "evidence": "Placement 2026-10-24: said two hosts in the same subnet on different VLANs can ping."
+      "status": "untested",
+      "evidence": ""
     },
     {
       "id": "vlan-trunk-8021q",
@@ -173,8 +173,8 @@
         "https://datatracker.ietf.org/doc/html/rfc826",
         "https://pve.proxmox.com/wiki/Network_Configuration"
       ],
-      "status": "solid",
-      "evidence": "Placement 2026-10-24: answered the ARP-for-gateway question correctly (once, no confidence given)."
+      "status": "untested",
+      "evidence": ""
     },
     {
       "id": "linux-bridge-vlan-aware",
@@ -240,8 +240,8 @@
         "https://datatracker.ietf.org/doc/html/rfc4632",
         "https://docs.aws.amazon.com/vpc/latest/userguide/subnet-sizing.html"
       ],
-      "status": "solid",
-      "evidence": "Placement 2026-10-24: subnet math answered correctly (once, no confidence given)."
+      "status": "untested",
+      "evidence": ""
     },
     {
       "id": "default-gateway",
@@ -308,8 +308,8 @@
         "https://docs.aws.amazon.com/vpc/latest/userguide/route-tables-priority.html",
         "https://man7.org/linux/man-pages/man8/ip-route.8.html"
       ],
-      "status": "gap",
-      "evidence": "Placement 2026-10-24: picked /24 over /26 for 10.0.5.77."
+      "status": "untested",
+      "evidence": ""
     },
     {
       "id": "routing-table-next-hop",
@@ -420,8 +420,8 @@
         "https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/network_mtu.html",
         "https://datatracker.ietf.org/doc/html/rfc1191"
       ],
-      "status": "shaky",
-      "evidence": "Placement 2026-10-24: recognised the MTU symptom but did not know PMTUD or ICMP frag-needed."
+      "status": "untested",
+      "evidence": ""
     },
     {
       "id": "udp",
@@ -509,8 +509,8 @@
         "https://datatracker.ietf.org/doc/html/rfc9293",
         "https://man7.org/linux/man-pages/man8/iptables.8.html"
       ],
-      "status": "gap",
-      "evidence": "Placement 2026-10-24: said 'refused' means a firewall."
+      "status": "untested",
+      "evidence": ""
     },
     {
       "id": "stateful-vs-stateless-filtering",
@@ -531,8 +531,8 @@
         "https://docs.aws.amazon.com/vpc/latest/userguide/vpc-security-groups.html",
         "https://docs.aws.amazon.com/vpc/latest/userguide/infrastructure-security.html"
       ],
-      "status": "solid",
-      "evidence": "Placement 2026-10-24: security-group statefulness answered correctly (once, no confidence given)."
+      "status": "untested",
+      "evidence": ""
     },
     {
       "id": "sg-vs-nacl",
@@ -577,8 +577,8 @@
         "https://docs.aws.amazon.com/vpc/latest/userguide/nat-gateway-basics.html",
         "https://datatracker.ietf.org/doc/html/rfc3022"
       ],
-      "status": "solid",
-      "evidence": "Placement 2026-10-24: NAT port translation answered correctly (once, no confidence given)."
+      "status": "untested",
+      "evidence": ""
     },
     {
       "id": "encapsulation-vxlan",
@@ -716,8 +716,8 @@
         "https://man7.org/linux/man-pages/man5/resolv.conf.5.html",
         "https://kubernetes.io/docs/concepts/services-networking/dns-pod-service/"
       ],
-      "status": "solid",
-      "evidence": "Placement 2026-10-24: K8s DNS ndots/search answered correctly (once, no confidence given)."
+      "status": "untested",
+      "evidence": ""
     },
     {
       "id": "debug-method",

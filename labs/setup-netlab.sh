@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Idempotent setup for the OrbStack "netlab" lab VM used by netbench.
+# Idempotent setup for the OrbStack "netlab" lab VM used by underlay.
 # Creates the machine if missing, installs networking tools as root, prints versions.
 set -euo pipefail
 
-ORB="${ORB:-/Users/macos/.orbstack/bin/orb}"
+ORB="${ORB:-orb}"
 MACHINE="netlab"
 
 if ! "$ORB" list -q | grep -qx "$MACHINE"; then
