@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rename, rm } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -52,10 +52,31 @@ test('migrate refuses when target state/map.json already exists, moving nothing'
   try {
     await oldLayout(dataDir);
     await migrate(dataDir);
+    await assert.rejects(migrate(dataDir), /already migrated/);
+    assert.equal(existsSync(path.join(dataDir, 'map.json')), false);
+    assert.equal(existsSync(path.join(dataDir, 'courses', 'networking', 'state', 'map.json')), true);
+  } finally {
+    await rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test('migrate resumes a partial run: propositions and sessions already moved, map.json still old', async () => {
+  const dataDir = await mkdtemp(path.join(tmpdir(), 'mindgap-migrate-'));
+  try {
     await oldLayout(dataDir);
-    await assert.rejects(migrate(dataDir), /already/);
-    assert.equal(existsSync(path.join(dataDir, 'map.json')), true);
-    assert.equal(existsSync(path.join(dataDir, 'sessions', 'x-1.meta.json')), true);
+    const state = path.join(dataDir, 'courses', 'networking', 'state');
+    await mkdir(state, { recursive: true });
+    await rename(path.join(dataDir, 'propositions.jsonl'), path.join(state, 'propositions.jsonl'));
+    await rename(path.join(dataDir, 'sessions'), path.join(state, 'sessions'));
+    const { moved } = await migrate(dataDir);
+    assert.deepEqual(moved, ['map.json']);
+    assert.equal(await readFile(path.join(state, 'map.json'), 'utf8'), MAP);
+    assert.equal(await readFile(path.join(state, 'propositions.jsonl'), 'utf8'), PROPS);
+    const meta = JSON.parse(await readFile(path.join(state, 'sessions', 'x-1.meta.json'), 'utf8'));
+    assert.deepEqual(meta, { ...META, course: 'networking' });
+    assert.equal(existsSync(path.join(dataDir, 'map.json')), false);
+    assert.equal(existsSync(path.join(dataDir, 'propositions.jsonl')), false);
+    assert.equal(existsSync(path.join(dataDir, 'sessions')), false);
   } finally {
     await rm(dataDir, { recursive: true, force: true });
   }
@@ -83,8 +104,11 @@ test('migrate refuses when a destination file already exists, before moving anyt
     const state = path.join(dataDir, 'courses', 'networking', 'state');
     await mkdir(state, { recursive: true });
     await writeFile(path.join(state, 'propositions.jsonl'), 'KEEP-ME\n');
-    await assert.rejects(migrate(dataDir), /propositions\.jsonl already exists/);
+    await assert.rejects(migrate(dataDir), (err) =>
+      err.message.includes(path.join(dataDir, 'propositions.jsonl')) &&
+      err.message.includes(path.join(state, 'propositions.jsonl')));
     assert.equal(await readFile(path.join(state, 'propositions.jsonl'), 'utf8'), 'KEEP-ME\n');
+    assert.equal(existsSync(path.join(dataDir, 'propositions.jsonl')), true);
     assert.equal(existsSync(path.join(dataDir, 'map.json')), true);
     assert.equal(existsSync(path.join(state, 'map.json')), false);
   } finally {
