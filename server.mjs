@@ -397,7 +397,17 @@ function safeDecode(s) {
   }
 }
 
+// Cross-site guard: a browser page on another origin can send text/plain POSTs and reach 127.0.0.1, but it
+// cannot make the Host header say our port, and a JSON POST needs a CORS preflight it will not get.
+function checkRequest(req) {
+  const port = server.address().port;
+  if (![`127.0.0.1:${port}`, `localhost:${port}`].includes(req.headers.host)) throw new HttpError(403, 'forbidden host');
+  const type = String(req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
+  if (req.method === 'POST' && type !== 'application/json') throw new HttpError(415, 'content-type must be application/json');
+}
+
 async function api(req, res, pathname) {
+  checkRequest(req);
   const method = req.method;
   const query = new URLSearchParams(req.url.split('?')[1] ?? '');
   const lessonM = pathname.match(/^\/api\/lesson\/([^/]+)$/);

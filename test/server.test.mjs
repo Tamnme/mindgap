@@ -594,3 +594,33 @@ test('agy server does not reuse a claude chapter lesson; it creates one tagged a
     srv.kill();
   }
 });
+
+// rawCall sends exactly the headers it is given, so a test can forge Host or Content-Type.
+function rawCall(method, urlPath, headers, body) {
+  return new Promise((resolve, reject) => {
+    const req = http.request({ host: '127.0.0.1', port, method, path: urlPath, headers }, (res) => {
+      let text = '';
+      res.setEncoding('utf8');
+      res.on('data', (c) => (text += c));
+      res.on('end', () => resolve({ status: res.statusCode, text }));
+    });
+    req.on('error', reject);
+    req.end(body);
+  });
+}
+
+test('POST with a non-JSON content type is 415 and changes no approval', async () => {
+  const file = path.join(dataDir, 'courses', 'capnet', 'state', 'lab-approval.json');
+  const before = await readFile(file, 'utf8').catch(() => null);
+  const body = JSON.stringify({ caps: ['NET_ADMIN'], network: true });
+  const r = await rawCall('POST', '/api/courses/capnet/lab-approval', { 'content-type': 'text/plain', 'content-length': Buffer.byteLength(body) }, body);
+  assert.equal(r.status, 415, r.text);
+  assert.equal(await readFile(file, 'utf8').catch(() => null), before);
+});
+
+test('an /api request with a foreign Host is 403', async () => {
+  const r = await rawCall('GET', '/api/courses', { host: `evil.example:${port}` });
+  assert.equal(r.status, 403, r.text);
+  const ok = await rawCall('GET', '/api/courses', { host: `localhost:${port}` });
+  assert.equal(ok.status, 200, ok.text);
+});
