@@ -13,7 +13,7 @@ else
   echo "Machine '$MACHINE' already exists, skipping create."
 fi
 
-PACKAGES="iproute2 bridge-utils tcpdump iputils-ping iputils-tracepath traceroute netcat-openbsd dnsutils ethtool iptables conntrack"
+PACKAGES="iproute2 bridge-utils tcpdump iputils-ping iputils-tracepath traceroute netcat-openbsd dnsutils ethtool iptables conntrack dnsmasq-base"
 
 "$ORB" -m "$MACHINE" -u root bash -lc "
   set -euo pipefail

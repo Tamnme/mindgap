@@ -144,7 +144,7 @@ Next, make the switch forget everything and send unicast straight away. The lab 
           checkpoint: {
             id: 'c3',
             prompt: 'With an empty table and no ARP, hA pings hC three times. How many of the echo requests does hB see?',
-            options: ['0: they are unicast to hC', '1: only the first', '2: the first two', '3: all of them'],
+            options: ['Never flooded (0): they are unicast to hC', 'Flooded once, then learned (1): only the first', 'Flooded twice (2): the first two', 'Always flooded (3): all of them'],
             key: 1,
             why: "The first request's destination is unknown, so it floods to hB as well. hC's reply teaches the switch where hC is, so requests 2 and 3 go out p3 only.",
           },
