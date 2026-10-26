@@ -36,13 +36,15 @@ appendFileSync(path.join(dir, 'claude-calls.jsonl'), JSON.stringify(args) + '\\n
 const ctl = path.join(dir, 'control');
 const control = existsSync(ctl) ? readFileSync(ctl, 'utf8').trim() : 'ok';
 const message = args[args.length - 1];
-const turn = message.startsWith('CONTEXT:')
+const canned = message.startsWith('CONTEXT:')
   ? { say: 'hi', question: null, sim: null, lab: null, lesson_done: false,
       node_updates: [{ id: 'switch-mac-table', status: 'shaky', note: 'said IP to MAC' }],
       propositions: [{ claim: 'Switch learns MAC from source', because: ['frames-mac'], node: 'switch-mac-table' }] }
   : { say: 'next', question: null, sim: null, lab: null, lesson_done: false,
       node_updates: [{ id: 'frames-mac', status: 'solid', note: 'answered correctly' }],
       propositions: [{ claim: 'Frames carry src and dst MAC', because: [], node: 'frames-mac' }] };
+const tf = path.join(dir, 'turn.json');
+const turn = existsSync(tf) ? JSON.parse(readFileSync(tf, 'utf8')) : canned;
 const reply = control === 'error'
   ? { type: 'result', is_error: true, result: 'rate limited boom', session_id: 'sess-err' }
   : { type: 'result', is_error: false, session_id: 'sess-abc', structured_output: turn, total_cost_usd: 0 };
@@ -679,4 +681,119 @@ test('course schema extends the turn schema: same seven fields, four more requir
   for (const key of Object.keys(turn.properties)) {
     assert.deepEqual(course.properties[key], turn.properties[key], key);
   }
+});
+
+// Course-session tests. FAKE_CLAUDE answers with <dir>/turn.json while it exists.
+const courseTurn = (o = {}) => ({
+  say: 'ok', question: null, sim: null, lab: null, node_updates: [], propositions: [], lesson_done: false,
+  goal: null, assessment: null, plan: null, approved: false, ...o,
+});
+const GOAL = { text: 'Debug a VLAN outage', background: 'runs a home lab' };
+const ASSESSMENT = { strands: [{ strand: 'L2', assessment: 'knows frames' }], summary: 'enter at switching' };
+const setTurn = (t) => writeFile(path.join(dir, 'turn.json'), JSON.stringify(courseTurn(t)));
+const goalPath = () => path.join(stateDir(), 'goal.json');
+const startCourse = () => call('POST', '/api/lesson', { course: 'net', mode: 'course' });
+const say = (id) => call('POST', '/api/turn', { course: 'net', lesson_id: id, event: { type: 'ask', text: 'hello' } });
+const lastMessage = async () => (await readCalls()).at(-1).at(-1);
+
+// Runs fn, then puts the shared map back and removes goal.json and the canned turn.
+async function withCourseState(fn) {
+  const before = await readFile(path.join(stateDir(), 'map.json'), 'utf8');
+  try {
+    await fn(JSON.parse(before));
+  } finally {
+    await rm(path.join(dir, 'turn.json'), { force: true });
+    await rm(goalPath(), { force: true });
+    await writeFile(path.join(stateDir(), 'map.json'), before);
+  }
+}
+
+test('course mode starts without a node_id: schema, context, lesson id', () => withCourseState(async () => {
+  await setTurn({ say: 'what do you want?' });
+  const r = await startCourse();
+  assert.equal(r.status, 200, r.text);
+  assert.match(r.json.lesson_id, /^course-\d+$/);
+  const argv = (await readCalls()).at(-1);
+  const schema = JSON.parse(argv[argv.indexOf('--json-schema') + 1]);
+  assert.ok(schema.properties.plan);
+  const ctx = JSON.parse(argv.at(-1).slice(CONTEXT_PREFIX.length));
+  assert.equal(ctx.mode, 'course');
+  assert.equal(ctx.learner, null);
+  assert.deepEqual(ctx.nodes.map((n) => n.id), MAP.nodes.map((n) => n.id));
+  assert.equal(ctx.course.slug, 'net');
+  const meta = (await call('GET', `/api/lesson/${r.json.lesson_id}?course=net`)).json.meta;
+  assert.equal(meta.mode, 'course');
+  assert.equal(meta.node_id, null);
+}));
+
+test('course session happy path: plan approved, map scoped, goal saved, lab approval untouched', () => withCourseState(async (mapBefore) => {
+  await setTurn({ goal: GOAL, assessment: ASSESSMENT });
+  const r = await startCourse();
+  assert.equal(r.status, 200, r.text);
+  const id = r.json.lesson_id;
+  await setTurn({ plan: { approach: 'macs then table', in_scope: ['frames-mac', 'switch-mac-table'] } });
+  assert.equal((await say(id)).json.turn.plan.in_scope.length, 2);
+  await setTurn({ approved: true, lesson_done: true });
+  const last = await say(id);
+  assert.equal(last.json.turn.lesson_done, true);
+  assert.equal(last.json.turn.approved, true);
+
+  const map = (await call('GET', '/api/courses/net/map')).json;
+  assert.equal(map.nodes.find((n) => n.id === 'vlan-basics').in_scope, false);
+  assert.ok(!('in_scope' in map.nodes.find((n) => n.id === 'frames-mac')));
+  assert.ok(!('in_scope' in map.nodes.find((n) => n.id === 'switch-mac-table')));
+  assert.deepEqual(map.nodes.map(({ in_scope, ...n }) => n), mapBefore.nodes);
+  const goal = JSON.parse(await readFile(goalPath(), 'utf8'));
+  assert.equal(goal.goal, GOAL.text);
+  assert.equal(goal.background, GOAL.background);
+  assert.ok(goal.approved_at);
+  assert.ok(!existsSync(path.join(stateDir(), 'lab-approval.json')));
+}));
+
+test('a refused plan is nulled, then reported once in a SERVER block', () => withCourseState(async () => {
+  await setTurn({ goal: GOAL, assessment: ASSESSMENT });
+  const id = (await startCourse()).json.lesson_id;
+  await setTurn({ plan: { approach: 'x', in_scope: ['switch-mac-table'] } });
+  const bad = await say(id);
+  assert.equal(bad.json.turn.plan, null);
+  await setTurn({});
+  await say(id);
+  const msg = await lastMessage();
+  assert.ok(msg.startsWith('SERVER:\n- plan refused'), msg);
+  assert.match(msg.split('EVENT:')[0], /frames-mac/);
+  assert.ok(msg.includes('\nEVENT:\n'));
+  await say(id);
+  assert.ok((await lastMessage()).startsWith(EVENT_PREFIX));
+}));
+
+test('an abandoned course session leaves map.json and goal.json alone', () => withCourseState(async (mapBefore) => {
+  await setTurn({ goal: GOAL, assessment: ASSESSMENT });
+  const id = (await startCourse()).json.lesson_id;
+  await setTurn({ plan: { approach: 'x', in_scope: ['frames-mac', 'switch-mac-table'] } });
+  await say(id);
+  assert.deepEqual((await call('GET', '/api/courses/net/map')).json, mapBefore);
+  assert.ok(!existsSync(goalPath()));
+}));
+
+test('after an approved session a teach lesson sees the learner and off-goal nodes', () => withCourseState(async () => {
+  await setTurn({ goal: GOAL, assessment: ASSESSMENT });
+  const id = (await startCourse()).json.lesson_id;
+  await setTurn({ plan: { approach: 'x', in_scope: ['frames-mac', 'switch-mac-table'] } });
+  await say(id);
+  await setTurn({ approved: true });
+  await say(id);
+  await rm(path.join(dir, 'turn.json'));
+  const t = await call('POST', '/api/lesson', { course: 'net', node_id: 'switch-mac-table', mode: 'teach' });
+  assert.equal(t.status, 200, t.text);
+  const ctx = JSON.parse((await lastMessage()).slice(CONTEXT_PREFIX.length));
+  assert.equal(ctx.learner.goal, GOAL.text);
+  assert.equal(ctx.other_nodes.find((n) => n.id === 'vlan-basics').in_scope, false);
+}));
+
+test('teach mode still needs a node_id, and the mode error lists only /api/lesson modes', async () => {
+  const r = await call('POST', '/api/lesson', { course: 'net', mode: 'teach' });
+  assert.equal(r.status, 400);
+  const bad = await call('POST', '/api/lesson', { course: 'net', node_id: 'frames-mac', mode: 'chapter' });
+  assert.equal(bad.status, 400);
+  assert.match(bad.json.error, /teach, practice, probe, course$/);
 });
