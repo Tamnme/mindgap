@@ -32,11 +32,11 @@ cd mindgap
 node server.mjs
 ```
 
-Labs need Docker. The first lab run builds the lab image (a minute or two) and asks for your approval.
+Labs need Docker. The first lab run builds the lab image (a minute or two) and asks for your approval. The image is built once. After a Dockerfile change, run `docker rm -f mindgap-networking` and `docker rmi -f mindgap-networking`; the next lab run rebuilds it.
 
 Open http://localhost:4810 and start with **Placement check**.
 
-On first run the server copies `learner/map.seed.json` to `learner/map.json`. Your progress lives in `learner/` and is gitignored.
+On first access to a course, the server copies `courses/<slug>/map.seed.json` to `<data>/courses/<slug>/state/map.json`. Your progress lives in `learner/` and is gitignored.
 
 | Variable | Default | |
 |---|---|---|
@@ -44,6 +44,10 @@ On first run the server copies `learner/map.seed.json` to `learner/map.json`. Yo
 | `MINDGAP_MODEL` | `opus` for claude | Model for the tutor (`sonnet` is cheaper and faster) |
 | `MINDGAP_DATA_DIR` | `learner/` | Where your map, propositions and transcripts live |
 | `PORT` | `4810` | |
+
+## Upgrading from netbench/underlay
+
+Stop the server, back up `learner/`, then run `node scripts/migrate-learner-v1.mjs` (with `MINDGAP_DATA_DIR` set if your data is elsewhere). It moves your old files into `courses/networking/state/` and converts your map to the current format. Start the server again afterwards.
 
 ## Tutors
 
@@ -60,7 +64,7 @@ mindgap calls one tutor CLI for every turn. **Claude Code** and **agy** are supp
 
 ## Safety
 
-Lab commands run only inside a Docker container, never on your host. The container has no network and no extra Linux capabilities by default. A course that needs more (network access, or capabilities such as `NET_ADMIN`) shows you exactly what it asks for on the first Run; nothing beyond the defaults runs until you approve that request. Commands run only when you click **Run**, with a 30-second timeout and 64 KB of output. The server listens on `127.0.0.1` only. The tutor runs with `--safe-mode` and no tools, so it can't touch your files or your Claude Code config.
+Lab commands run only inside a Docker container, never on your host. The container has no network and no extra Linux capabilities by default. A course that needs more (network access, or capabilities such as `NET_ADMIN`) shows you exactly what it asks for on the first Run; nothing beyond the defaults runs until you approve that request. Commands run only when you click **Run**, with a 30-second timeout and 64 KB of output. The server listens on `127.0.0.1` only. The Claude tutor runs with `--safe-mode` and `--tools ""`, so it has no tools and can't touch your files or your Claude Code config. The agy tutor has no tool-disabling switch that mindgap uses: it is relied on to refuse tool use in headless mode, and `scripts/tutor-gate.mjs` checks that.
 
 ## Development
 

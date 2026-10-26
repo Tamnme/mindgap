@@ -4,7 +4,7 @@ Shared formats that every part builds against. Change them here first.
 
 ## Run
 `node server.mjs` → http://localhost:4810. No npm dependencies. Node ≥ 22.
-Env: `MINDGAP_DATA_DIR` (default `learner/`), `MINDGAP_COURSES_DIR` (default `courses/`), `MINDGAP_TUTOR` (`claude` default | `agy`; unknown → exit 1), `MINDGAP_MODEL` (default `opus` for claude, unset for agy).
+Env: `MINDGAP_DATA_DIR` (default `learner/`), `MINDGAP_COURSES_DIR` (default `courses/`), `MINDGAP_TUTOR` (`claude` default | `agy`; unknown → exit 1), `MINDGAP_MODEL` (default `opus` for claude, unset for agy). Binaries: `DOCKER_BIN` (default `docker`), `CLAUDE_BIN` (default `claude`), `AGY_BIN` (default `agy`).
 
 ## Files
 ```
@@ -15,7 +15,10 @@ prompts/teacher.md         # system prompt, mode=teach
 prompts/practice.md        # system prompt, mode=practice
 prompts/prober.md          # system prompt, mode=probe
 prompts/chapter.md         # system prompt, mode=chapter
-public/                    # UI (still on the pre-course API until the UI task lands)
+lib/labs.mjs               # lab runner: one Docker container per course, approval, runLab/labStatus
+lib/tutors/                # tutor CLI adapters (claude, agy), chosen by MINDGAP_TUTOR
+scripts/                   # migrate-learner-v1.mjs (old layout), tutor-gate.mjs, lab-parity.mjs
+public/                    # UI
 courses/<slug>/course.json           # {slug, title, layers:[{id,name}], lab}
 courses/<slug>/map.seed.json         # clean knowledge map, committed; nodes use links
 courses/<slug>/prompt.md             # course-specific text appended to every mode prompt (optional)
