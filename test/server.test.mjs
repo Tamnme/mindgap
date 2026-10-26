@@ -110,6 +110,20 @@ async function readJsonl(file) {
 
 const stateDir = () => path.join(dataDir, 'courses', 'net', 'state');
 
+// Resolves with the child's exit code; kills it and fails if it has not exited within ms.
+function exitWithin(srv, ms) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      srv.kill();
+      reject(new Error(`server did not exit within ${ms} ms`));
+    }, ms);
+    srv.on('exit', (code) => {
+      clearTimeout(timer);
+      resolve(code);
+    });
+  });
+}
+
 function startServer(env) {
   const srv = spawn(process.execPath, [SERVER], {
     env: { ...process.env, PORT: '0', MINDGAP_COURSES_DIR: path.join(dir, 'courses'), ...env },
@@ -119,12 +133,22 @@ function startServer(env) {
   srv.stderr.on('data', (c) => (stderr += c));
   const port = new Promise((resolve, reject) => {
     let out = '';
+    const timer = setTimeout(() => {
+      srv.kill();
+      reject(new Error(`server did not listen within 10 s: ${stderr}`));
+    }, 10_000);
     srv.stdout.on('data', (c) => {
       out += c;
       const m = out.match(/listening on http:\/\/127\.0\.0\.1:(\d+)/);
-      if (m) resolve(Number(m[1]));
+      if (m) {
+        clearTimeout(timer);
+        resolve(Number(m[1]));
+      }
     });
-    srv.on('exit', (code) => reject(new Error(`server exited ${code}: ${stderr}`)));
+    srv.on('exit', (code) => {
+      clearTimeout(timer);
+      reject(new Error(`server exited ${code}: ${stderr}`));
+    });
   });
   return { srv, port };
 }
@@ -453,7 +477,25 @@ test('unknown MINDGAP_TUTOR exits 1 and lists the valid tutors', async () => {
   });
   let stderr = '';
   srv.stderr.on('data', (c) => (stderr += c));
-  const code = await new Promise((resolve) => srv.on('exit', resolve));
-  assert.equal(code, 1);
-  assert.match(stderr, /claude, agy/);
+  try {
+    const code = await exitWithin(srv, 5000);
+    assert.equal(code, 1);
+    assert.match(stderr, /claude, agy/);
+  } finally {
+    srv.kill();
+  }
+});
+
+test('agy server does not reuse a claude chapter lesson; it creates one tagged agy', async () => {
+  const claudeChapter = await call('POST', '/api/chapter', { course: 'net', node_id: 'switch-mac-table' });
+  assert.equal(claudeChapter.json.meta.tutor, 'claude');
+  const { srv, port: agyPort } = startServer({ MINDGAP_DATA_DIR: dataDir, MINDGAP_TUTOR: 'agy', AGY_BIN: path.join(dir, 'agy'), FAKE_DIR: dir });
+  try {
+    const r = await call('POST', '/api/chapter', { course: 'net', node_id: 'switch-mac-table' }, await agyPort);
+    assert.equal(r.status, 200, r.text);
+    assert.notEqual(r.json.lesson_id, claudeChapter.json.lesson_id);
+    assert.equal(r.json.meta.tutor, 'agy');
+  } finally {
+    srv.kill();
+  }
 });

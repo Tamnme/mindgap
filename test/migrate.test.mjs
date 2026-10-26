@@ -142,7 +142,16 @@ test('server refuses to start on an old-layout data dir and points at the migrat
     });
     let stderr = '';
     srv.stderr.on('data', (c) => (stderr += c));
-    const code = await new Promise((resolve) => srv.on('exit', resolve));
+    const code = await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        srv.kill();
+        reject(new Error('server did not exit within 5 s'));
+      }, 5000);
+      srv.on('exit', (c) => {
+        clearTimeout(timer);
+        resolve(c);
+      });
+    });
     assert.notEqual(code, 0);
     assert.match(stderr, /node scripts\/migrate-learner-v1\.mjs/);
   } finally {

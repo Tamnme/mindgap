@@ -231,6 +231,8 @@ async function callTutor(c, meta, message) {
     const { err, stdout, stderr } = await new Promise((resolve) => {
       const child = execFile(bin, args, { cwd, timeout: TUTOR_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 },
         (e, o, s) => resolve({ err: e, stdout: o, stderr: s }));
+      // An early-exiting tutor makes the write to stdin fail with EPIPE; that must not crash the server.
+      child.stdin.on('error', () => {});
       child.stdin.end();
     });
     if (err && err.code === 'ENOENT') throw new HttpError(502, `${TUTOR} not found on PATH`);
@@ -391,7 +393,10 @@ async function chapterLesson(body) {
     .map((f) => f.slice(0, -'.meta.json'.length)).sort();
   for (const id of ids.reverse()) {
     const meta = await loadMeta(c, id);
-    if (meta.mode === 'chapter' && meta.node_id === node_id) return { lesson_id: id, meta, events: await readEvents(c, id) };
+    // A chapter lesson bound to another tutor is skipped, so a fresh one is created under this tutor.
+    if (meta.mode === 'chapter' && meta.node_id === node_id && (meta.tutor ?? 'claude') === TUTOR) {
+      return { lesson_id: id, meta, events: await readEvents(c, id) };
+    }
   }
   const lesson_id = `${node_id}-${Date.now()}`;
   const meta = { course: c.slug, tutor: TUTOR, tutor_session_id: null, node_id, mode: 'chapter', started: new Date().toISOString(), labs_sent: 0 };
