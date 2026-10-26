@@ -65,13 +65,19 @@ if (cmd === 'info') process.exit(0);
 if (cmd === 'image') process.exit(st.images[args[2]] ? 0 : 1);
 if (cmd === 'build') { st.images[args[2]] = true; save(); process.exit(0); }
 if (cmd === 'inspect') {
-  const state = st.containers[args.at(-1)];
-  if (!state) process.exit(1);
-  process.stdout.write((state === 'running' ? 'true' : 'false') + '\\n');
+  const c = st.containers[args.at(-1)];
+  if (!c) process.exit(1);
+  process.stdout.write((c.running ? 'true' : 'false') + '|' + c.label + '\\n');
   process.exit(0);
 }
-if (cmd === 'run') { st.containers[args[args.indexOf('--name') + 1]] = 'running'; save(); process.exit(0); }
-if (cmd === 'start') { st.containers[args[1]] = 'running'; save(); process.exit(0); }
+if (cmd === 'run') {
+  const label = (args.find((a) => a.startsWith('mindgap.request=')) ?? '').slice('mindgap.request='.length);
+  st.containers[args[args.indexOf('--name') + 1]] = { running: true, label };
+  save();
+  process.exit(0);
+}
+if (cmd === 'start') { st.containers[args[1]].running = true; save(); process.exit(0); }
+if (cmd === 'rm') { delete st.containers[args.at(-1)]; save(); process.exit(0); }
 if (cmd === 'exec') {
   if (args[2] === 'sh') process.exit(0);
   process.stdout.write('EXEC:' + args.slice(1).join(' '));
@@ -187,6 +193,8 @@ before(async () => {
   await mkdir(path.join(courseDir, 'chapters'), { recursive: true });
   // A lab with no extra privileges, so it runs without approval.
   await writeFile(path.join(courseDir, 'course.json'), JSON.stringify({ slug: 'net', title: 'Net', layers: [{ id: 'L2', name: 'L2' }], lab: { dockerfile: 'lab/Dockerfile', caps: [], network: false, hostname: 'netlab' } }));
+  await mkdir(path.join(courseDir, 'lab'), { recursive: true });
+  await writeFile(path.join(courseDir, 'lab', 'Dockerfile'), 'FROM scratch\n');
   await writeFile(path.join(courseDir, 'map.seed.json'), JSON.stringify(MAP, null, 2));
   await writeFile(path.join(courseDir, 'prompt.md'), 'COURSE-PROMPT-MARKER');
   await writeFile(path.join(courseDir, 'chapters', 'index.json'), JSON.stringify(['switch-mac-table']));
@@ -353,7 +361,8 @@ test('lab output is recorded and included in the next tutor message only', async
 test('lab with extra privileges: 428 until approved, 400 for a mismatched approval, then runs with the approved request', async () => {
   // Created here, not in before(): the course list test pins the set of courses.
   const capDir = path.join(dir, 'courses', 'capnet');
-  await mkdir(capDir, { recursive: true });
+  await mkdir(path.join(capDir, 'lab'), { recursive: true });
+  await writeFile(path.join(capDir, 'lab', 'Dockerfile'), 'FROM scratch\n');
   await writeFile(path.join(capDir, 'course.json'), JSON.stringify({ slug: 'capnet', title: 'Capnet', layers: [{ id: 'L2', name: 'L2' }], lab: { dockerfile: 'lab/Dockerfile', caps: ['NET_ADMIN'], network: true, hostname: 'netlab' } }));
   await writeFile(path.join(capDir, 'map.seed.json'), JSON.stringify(MAP, null, 2));
   const started = await call('POST', '/api/lesson', { course: 'capnet', node_id: 'frames-mac', mode: 'teach' });

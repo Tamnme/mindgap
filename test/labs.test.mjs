@@ -1,12 +1,14 @@
 // Self-check for lib/labs.mjs. Uses a fake docker binary that keeps its state in a file.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, readFile, chmod, rm } from 'node:fs/promises';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtemp, writeFile, readFile, chmod, rm, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { labStatus, labRequest, isApproved, approve, runLab } from '../lib/labs.mjs';
 
 // Fake docker: logs argv, keeps image and container state in docker-state.json.
+// Containers are {running, label}; inspect prints "<running>|<label>" like the real format string.
 // exec with `sh` is the remount; exec with `big` prints 70 KB; any other exec echoes its argv.
 const FAKE_DOCKER = `
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
@@ -22,13 +24,20 @@ if (cmd === 'info') process.exit(0);
 if (cmd === 'image') process.exit(st.images[args[2]] ? 0 : 1);
 if (cmd === 'build') { st.images[args[2]] = true; save(); process.exit(0); }
 if (cmd === 'inspect') {
-  const state = st.containers[args.at(-1)];
-  if (!state) process.exit(1);
-  process.stdout.write((state === 'running' ? 'true' : 'false') + '\\n');
+  const c = st.containers[args.at(-1)];
+  if (!c) process.exit(1);
+  process.stdout.write((c.running ? 'true' : 'false') + '|' + c.label + '\\n');
   process.exit(0);
 }
-if (cmd === 'run') { st.containers[args[args.indexOf('--name') + 1]] = 'running'; save(); process.exit(0); }
-if (cmd === 'start') { st.containers[args[1]] = 'running'; save(); process.exit(0); }
+if (cmd === 'run') {
+  const name = args[args.indexOf('--name') + 1];
+  const label = (args.find((a) => a.startsWith('mindgap.request=')) ?? '').slice('mindgap.request='.length);
+  st.containers[name] = { running: true, label };
+  save();
+  process.exit(0);
+}
+if (cmd === 'start') { st.containers[args[1]].running = true; save(); process.exit(0); }
+if (cmd === 'rm') { delete st.containers[args.at(-1)]; save(); process.exit(0); }
 if (cmd === 'exec') {
   if (args[2] === 'sh') process.exit(0);
   // No process.exit after a large write: it can drop the unflushed pipe data. Let the process end on its own.
@@ -40,6 +49,7 @@ if (cmd === 'exec') {
 
 const REMOUNT = 'mount --bind /proc/sys/net /proc/sys/net && mount -o remount,bind,rw /proc/sys/net';
 const NET_LAB = { caps: ['NET_ADMIN', 'SYS_ADMIN'], network: true, hostname: 'netlab' };
+const NET_REQUEST = JSON.stringify({ caps: ['NET_ADMIN', 'SYS_ADMIN'], network: true });
 
 let dir;
 let fakeBin;
@@ -61,9 +71,10 @@ after(async () => {
   if (dir) await rm(dir, { recursive: true, force: true });
 });
 
-// Each test gets its own state dir so approval files never leak between tests.
+// Each test gets its own course dir and state dir, so approval files and Dockerfiles never leak between tests.
+// The Dockerfile is written at lab.dockerfile, resolved against the course dir, so runLab's containment check sees a real file.
 function course(lab, name) {
-  return {
+  const c = {
     slug: 'net',
     title: 'Net',
     layers: [],
@@ -71,6 +82,13 @@ function course(lab, name) {
     dir: path.join(dir, 'courses', name),
     stateDir: path.join(dir, 'data', name, 'state'),
   };
+  mkdirSync(c.dir, { recursive: true });
+  if (c.lab) {
+    const file = path.join(c.dir, c.lab.dockerfile);
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, 'FROM scratch\n');
+  }
+  return c;
 }
 
 async function resetDocker(state = { images: {}, containers: {} }) {
@@ -79,8 +97,13 @@ async function resetDocker(state = { images: {}, containers: {} }) {
 }
 
 async function dockerCalls() {
-  const text = await readFile(path.join(dir, 'docker-calls.jsonl'), 'utf8');
-  return text.split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  try {
+    const text = await readFile(path.join(dir, 'docker-calls.jsonl'), 'utf8');
+    return text.split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  } catch (e) {
+    if (e.code === 'ENOENT') return [];
+    throw e;
+  }
 }
 
 // Short names for the calls the runner makes, so the sequence reads at a glance.
@@ -115,6 +138,12 @@ test('labRequest: sorted caps and the network flag; no lab requests nothing', ()
   assert.deepEqual(labRequest(course(NET_LAB, 'req')), { caps: ['NET_ADMIN', 'SYS_ADMIN'], network: true });
   assert.deepEqual(labRequest(course({ caps: ['SYS_ADMIN', 'NET_ADMIN'], network: false }, 'req2')), { caps: ['NET_ADMIN', 'SYS_ADMIN'], network: false });
   assert.deepEqual(labRequest(course(null, 'req3')), { caps: [], network: false });
+});
+
+test('labRequest: a malformed lab config is refused with a clear error', () => {
+  assert.throws(() => labRequest(course({ caps: 'NET_ADMIN', network: true }, 'bad-caps')), /lab\.caps/);
+  assert.throws(() => labRequest(course({ caps: ['net_admin'], network: true }, 'bad-cap-name')), /lab\.caps/);
+  assert.throws(() => labRequest(course({ caps: [], network: 'yes' }, 'bad-network')), /lab\.network/);
 });
 
 test('isApproved: an empty request with no network needs no approval file', async () => {
@@ -154,28 +183,38 @@ test('runLab on a missing container: image, build, run, remount, then the comman
   const calls = await dockerCalls();
   assert.deepEqual(calls.map(verb), ['inspect', 'image', 'build', 'run', 'remount', 'lab']);
   assert.ok(calls[2].includes('-t') && calls[2].includes('mindgap-net'));
-  assert.ok(calls[2].includes(path.join(c.dir, 'lab/Dockerfile')));
+  assert.ok(calls[2].includes(await realpath(path.join(c.dir, 'lab/Dockerfile'))));
   assert.deepEqual(calls[3], [
     'run', '-d', '--name', 'mindgap-net', '--hostname', 'netlab', '--network', 'bridge',
-    '--cap-add', 'NET_ADMIN', '--cap-add', 'SYS_ADMIN', 'mindgap-net',
+    '--cap-add', 'NET_ADMIN', '--cap-add', 'SYS_ADMIN', '--label', `mindgap.request=${NET_REQUEST}`, 'mindgap-net',
   ]);
   assert.deepEqual(calls[4].slice(0, 4), ['exec', 'mindgap-net', 'sh', '-c']);
   assert.ok(calls[4][4].includes(REMOUNT));
   assert.deepEqual(calls[5], ['exec', 'mindgap-net', 'bash', '-lc', 'echo hi']);
 });
 
-test('runLab on a running container issues only inspect and exec', async () => {
-  await resetDocker({ images: { 'mindgap-net': true }, containers: { 'mindgap-net': 'running' } });
+test('runLab on a running container with the same request issues only inspect and exec', async () => {
+  await resetDocker({ images: { 'mindgap-net': true }, containers: { 'mindgap-net': { running: true, label: NET_REQUEST } } });
   const r = await runLab(course(NET_LAB, 'warm'), 'echo again');
   assert.equal(r.stdout, 'EXEC:mindgap-net bash -lc echo again');
   assert.deepEqual((await dockerCalls()).map(verb), ['inspect', 'lab']);
 });
 
-test('runLab on a stopped container starts it and remounts /proc/sys/net again', async () => {
-  await resetDocker({ images: { 'mindgap-net': true }, containers: { 'mindgap-net': 'stopped' } });
+test('runLab on a stopped container with the same request starts it and remounts again', async () => {
+  await resetDocker({ images: { 'mindgap-net': true }, containers: { 'mindgap-net': { running: false, label: NET_REQUEST } } });
   await runLab(course(NET_LAB, 'stopped'), 'echo back');
   const calls = await dockerCalls();
   assert.deepEqual(calls.map(verb), ['inspect', 'start', 'remount', 'lab']);
+});
+
+test('runLab replaces a container made for a different request: rm -f, then run -d', async () => {
+  const stale = JSON.stringify({ caps: ['NET_ADMIN'], network: false });
+  await resetDocker({ images: { 'mindgap-net': true }, containers: { 'mindgap-net': { running: true, label: stale } } });
+  await runLab(course(NET_LAB, 'stale'), 'echo new');
+  const calls = await dockerCalls();
+  assert.deepEqual(calls.map(verb), ['inspect', 'rm', 'image', 'run', 'remount', 'lab']);
+  assert.deepEqual(calls[1], ['rm', '-f', 'mindgap-net']);
+  assert.ok(calls[3].includes(`mindgap.request=${NET_REQUEST}`));
 });
 
 test('runLab without SYS_ADMIN does not remount', async () => {
@@ -187,8 +226,16 @@ test('runLab without SYS_ADMIN does not remount', async () => {
   assert.ok(!calls.flat().includes('--privileged'));
 });
 
+test('runLab refuses a Dockerfile that resolves outside the course directory, before any build', async () => {
+  await resetDocker();
+  const c = course({ dockerfile: '../../outside/Dockerfile', caps: [], network: false, hostname: 'netlab' }, 'escape');
+  await assert.rejects(runLab(c, 'true'), /inside the course directory/);
+  const calls = await dockerCalls();
+  assert.ok(!calls.some((a) => a[0] === 'build'), `docker was given: ${JSON.stringify(calls)}`);
+});
+
 test('runLab truncates output at 64 KB with a marker', async () => {
-  await resetDocker({ images: { 'mindgap-net': true }, containers: { 'mindgap-net': 'running' } });
+  await resetDocker({ images: { 'mindgap-net': true }, containers: { 'mindgap-net': { running: true, label: NET_REQUEST } } });
   const r = await runLab(course(NET_LAB, 'big'), 'big');
   assert.ok(r.stdout.length <= 64 * 1024 + 60, `stdout is ${r.stdout.length} chars`);
   assert.match(r.stdout, /truncated at 64 KB/);
