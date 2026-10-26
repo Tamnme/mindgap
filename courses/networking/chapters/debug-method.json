@@ -1,0 +1,141 @@
+{
+  "node": "debug-method",
+  "number": "6.4",
+  "kicker": "Services",
+  "title": "Debug method: work the layers",
+  "lede": "A broken connection is one symptom with many possible causes. Test the layers in a fixed order, and the first test that fails tells you which layer to fix.",
+  "sections": [
+    {
+      "id": "ladder",
+      "title": "One command per rung",
+      "blocks": [
+        {
+          "md": "Every chapter so far taught one mechanism. A real outage arrives as one sentence: \"it doesn't work.\" The mechanisms are all still there, and any of them could be the cause. Guessing between them is how an hour disappears.\n\nA method replaces the guessing. Each layer gets one cheap question, asked in an order where each answer depends on the ones before it:\n\n```\nrung  question                       command\n1 L1  is the link up?                ip -br link\n2 L2  does the next hop have a MAC?  ip neigh\n3 L3  which route, which next hop?   ip route get DST\n4 L4  does a handshake complete?     nc -vz DST PORT ; ss\n5 MTU does a full-size packet fit?   ping -M do -s N DST\n6 DNS does the name give an address? getent hosts NAME ; dig\n7 app does the service answer?       curl -v URL\n```\n\nThe order is the order of dependency. A completed handshake (rung 4) already proves that frames, ARP and routes work in both directions for the packets it used. Nothing below it needs retesting for that traffic. When you start from a name, resolve it first, because every other command needs an address. That is a convenience, not a change of the logic.\n\n> [!IMPORTANT]\n> Walk up the rungs. The first one that fails names the layer to fix. A pass rules out only what it tested: that size, that direction, that port.\n\nEach rung ends in one of three results. A pass moves you up. A **loud** failure carries a message. A **silent** failure (no reply, no error) is ambiguous by itself, so it sends you to a second vantage point instead of a theory.\n\nThis chapter does not re-teach the layers. It links to them and spends the words on choosing the next command and reading what it prints. To practise, build a small broken network. Client C reaches server S through router R, and S serves HTTP on port 8080:\n\n```\n  C 10.64.1.2 --- R --- S 10.64.2.50\n   (client)    (router)   (server :8080)\n```\n\nThe build plants three faults. Each hides behind the one before it, so you meet the next fault only after fixing the current one. The labs change things as they go, and the prose after each lab says what changed."
+        },
+        {
+          "lab": {
+            "explain": "Build C-R-S with its faults in place, then send the one ping that starts the investigation",
+            "cmd": "for n in n64c n64r n64s; do ip netns del $n 2>/dev/null; done; sleep 0.5\nmk() { ip netns add $1; ip netns exec $1 sysctl -qw net.ipv6.conf.all.disable_ipv6=1 net.ipv6.conf.default.disable_ipv6=1; ip -n $1 link set lo up; }\nmk n64c; mk n64r; mk n64s\nip link add eth0 netns n64c type veth peer name eth0 netns n64r\nip link add eth1 netns n64r type veth peer name eth0 netns n64s\nfor p in \"n64c eth0\" \"n64r eth0\" \"n64r eth1\" \"n64s eth0\"; do set -- $p; ip -n $1 link set $2 up; done\nip -n n64c addr add 10.64.1.2/24 dev eth0; ip -n n64c route add default via 10.64.1.1\nip -n n64r addr add 10.64.1.1/24 dev eth0; ip -n n64r addr add 10.64.2.1/28 dev eth1\nip -n n64s addr add 10.64.2.50/24 dev eth0\nip netns exec n64r sysctl -qw net.ipv4.ip_forward=1\nip -n n64r link set eth1 mtu 1400\nip netns exec n64r nft add table inet t64\nip netns exec n64r nft add chain inet t64 out '{ type filter hook output priority 0 ; }'\nip netns exec n64r nft add rule inet t64 out icmp type destination-unreachable icmp code frag-needed drop\nsleep 1\necho \"C pings S: $(ip netns exec n64c ping -c1 -W2 10.64.2.50 2>&1 | grep -E 'bytes from|Unreach|loss' | head -1)\""
+          }
+        },
+        {
+          "md": "That one line is the whole report. Work from its exact text."
+        },
+        {
+          "checkpoint": {
+            "id": "c1",
+            "prompt": "The ping printed \"From 10.64.1.1 icmp_seq=1 Destination Net Unreachable\". 10.64.1.1 is R, C's gateway. Which layer does this symptom point to?",
+            "options": [
+              "Port (L4): S refused the connection, and a closed port answers with an unreachable",
+              "Neighbour (L2): C never learned its gateway's MAC address",
+              "Route (L3): a router has no path to the destination",
+              "Link (L1): the cable between C and R is down"
+            ],
+            "key": 2,
+            "why": "The message came from R, so C's frame reached R: the link is up and C resolved R's MAC. R itself then reported that it cannot forward to 10.64.2.50, and a router says \"net unreachable\" when its table has no matching route."
+          }
+        }
+      ]
+    },
+    {
+      "id": "rounds",
+      "title": "Three rounds of the method",
+      "blocks": [
+        {
+          "md": "**Round 1.** The reply came from R's address, which is the first useful fact. A message tells you where it was produced as well as what happened. C's frame reached R, so C's link works and C found its gateway's MAC. R then declined to forward, and the usual meaning of \"net unreachable\" from a router is that its table has no route for the destination (see 3.7 for the ICMP codes).\n\nThe lab below still walks the rungs in order on C, because skipping rungs is how a wrong theory survives. Then it repeats rung 3 on R, since R is the machine that spoke. Compare R's interface address with S's address using 3.1 (addressing and subnet math), and 3.5 (routing table and next hop) for what `ip route get` prints."
+        },
+        {
+          "lab": {
+            "explain": "Rungs 1-3 on C, then rung 3 on R; the lab repairs the fault it finds and pings again",
+            "cmd": "ip netns list | grep -q n64c || { echo \"Run the first lab first.\"; exit 1; }\necho \"L1  C eth0: $(ip -n n64c -br link show eth0 | awk '{print $2}'), carrier $(ip netns exec n64c cat /sys/class/net/eth0/carrier)\"\nip netns exec n64c ping -c1 -W1 10.64.1.1 >/dev/null\necho \"L2  C neighbour: $(ip -n n64c neigh show 10.64.1.1 | awk '{print $1, $NF}')\"\necho \"L3  C route:     $(ip -n n64c route get 10.64.2.50 | head -1)\"\necho \"L3  R route:     $(ip -n n64r route get 10.64.2.50 2>&1 | head -1)\"\necho \"    R eth1:      $(ip -n n64r -br addr show eth1 | awk '{print $3}')\"\nip -n n64r addr del 10.64.2.1/28 dev eth1; ip -n n64r addr add 10.64.2.1/24 dev eth1\necho \"L3  R route now: $(ip -n n64r route get 10.64.2.50 2>&1 | head -1)\"\necho \"C pings S now: $(ip netns exec n64c ping -c2 -W1 10.64.2.50 2>&1 | grep -E 'bytes from|Unreach|loss' | head -1)\""
+          }
+        },
+        {
+          "md": "Rungs 1 and 2 pass on C: the interface is `UP` with carrier 1, and the gateway's neighbour entry is `REACHABLE`. Rung 3 passes on C too, because C's route says \"via 10.64.1.1\". The failure is on R: `ip route get` there answers `Network is unreachable`. R's `eth1` holds `10.64.2.1/28`. A /28 spans 16 addresses, 10.64.2.0 to 10.64.2.15, so S at 10.64.2.50 is outside the subnet R thinks is attached to that link, and R has no other route that covers it.\n\nThis was fault 1, a wrong mask on R. The lab changed it: R's address on `eth1` is now `/24`, and `ip route get` on R now finds the connected route.\n\nThe symptom changed too. The loud error is gone and the ping prints `100% packet loss`. A changed symptom after a fix is evidence of progress. It is also a harder symptom, because silence names nobody."
+        },
+        {
+          "md": "**Round 2.** The ping gets no reply and no error, and `nc -vz` to port 8080 on S ends with a timeout message rather than a refusal (4.4 covers why that difference matters). A silent failure could be a request that never arrives, a request that arrives and is not answered, or an answer lost on the way back. Those are three different faults on three different machines.\n\nTo tell them apart, put a capture at the far end. The next lab runs `tcpdump` on S's `eth0` while C sends two pings and one `nc -vz`, then counts what S saw."
+        },
+        {
+          "checkpoint": {
+            "id": "c2",
+            "prompt": "C pings S twice and runs one nc -vz to port 8080, and neither gets any answer. What does the capture on S's eth0 show?",
+            "options": [
+              "Nothing arrives: a filter on R is eating the packets",
+              "Requests and SYNs arrive, and nothing leaves S",
+              "Replies leave S and are lost on the way back through R",
+              "Pings arrive but SYNs do not: only ICMP gets through"
+            ],
+            "key": 1,
+            "why": "R now forwards (round 1 fixed that), and the requests do arrive. S sends nothing back because it has no route toward C's subnet, so the only thing visible on its link is the incoming traffic."
+          }
+        },
+        {
+          "lab": {
+            "explain": "Capture on S while C pings and runs nc -vz; count requests, replies, SYNs and SYN/ACKs; then check S's route to C and repair it",
+            "cmd": "ip netns list | grep -q n64c || { echo \"Run the first lab first.\"; exit 1; }\nip netns exec n64s timeout 20 python3 -m http.server 8080 --bind 10.64.2.50 --directory /tmp >/dev/null 2>&1 &\nSP=$!\nip netns exec n64s timeout 8 tcpdump -nl -i eth0 'icmp or tcp port 8080' >/tmp/n64.cap 2>/dev/null &\nTP=$!\nsleep 1\nip netns exec n64c ping -c2 -W1 -q 10.64.2.50 | grep loss\necho \"nc says: $(ip netns exec n64c nc -vz -w2 10.64.2.50 8080 2>&1)\"\nsleep 0.5; kill $TP 2>/dev/null; wait $TP 2>/dev/null\necho \"S saw: $(grep -c 'echo request' /tmp/n64.cap) echo requests, $(grep -c 'echo reply' /tmp/n64.cap) echo replies, $(grep -c 'Flags \\[S\\],' /tmp/n64.cap) SYNs, $(grep -c 'Flags \\[S\\.\\]' /tmp/n64.cap) SYN/ACKs\"\necho \"S route to C: $(ip -n n64s route get 10.64.1.2 2>&1 | head -1)\"\nip -n n64s route add default via 10.64.2.1\necho \"S route now:  $(ip -n n64s route get 10.64.1.2 2>&1 | head -1)\"\necho \"C pings S now: $(ip netns exec n64c ping -c1 -W1 10.64.2.50 2>&1 | grep -E 'bytes from|loss' | head -1)\"\necho \"nc now says: $(ip netns exec n64c nc -vz -w2 10.64.2.50 8080 2>&1)\"\nkill $SP 2>/dev/null; wait $SP 2>/dev/null; true"
+          }
+        },
+        {
+          "md": "S's capture shows 2 echo requests, 0 echo replies, 2 SYNs and 0 SYN/ACKs. The non-zero request count is the positive control: the capture was running, so the zero replies is a real zero. The second SYN is consistent with `nc` retransmitting within its 2-second window.\n\nThe traffic reached S and S sent nothing. Rung 3 on S explains it: `ip route get 10.64.1.2` there answers `Network is unreachable`. S has only the connected route for 10.64.2.0/24 and no route toward C's subnet. This was fault 2, a missing return route. A reply needs its own route, so the forward path can be perfect and the exchange still fails. 3.2 (default gateway) covers the route S was missing.\n\nThe lab added `default via 10.64.2.1` on S. Afterwards the ping answers with `ttl=63` (R decremented the TTL from 64 once, see 3.8) and `nc -vz` prints `succeeded`.\n\nThe rule from this round: when requests arrive and nothing leaves, stop looking at the network between the two machines and read the far machine's own state."
+        },
+        {
+          "md": "**Round 3.** After round 2's repair, ping and `nc -vz` succeed. Before declaring victory, try something closer to real work: send data to S over TCP and count the bytes that arrive."
+        },
+        {
+          "checkpoint": {
+            "id": "c3",
+            "prompt": "Ping and nc -vz now succeed, and a 6-byte message reaches S. A 20000-byte stream over a new TCP connection delivers 0 bytes. Which layer does this point to?",
+            "options": [
+              "Route (L3): the path back to C is missing again",
+              "Application: the listener on S reads only a few bytes",
+              "Neighbour (L2): ARP entries expire in the middle of a transfer",
+              "Path size (MTU): full-size packets die on a narrower link"
+            ],
+            "key": 3,
+            "why": "Every rung that uses small packets passes, and the message that fits in one small segment arrives. What changes with the big stream is packet size, so the first rung to test is the one that sends full-size packets with DF set."
+          }
+        },
+        {
+          "md": "The ladder's size rung is `ping -M do -s N`, which sets DF and sends a packet of N + 28 bytes (20 of IP header, 8 of ICMP). Bisect on N. The largest size that answers marks the path MTU, and 3.9 explains why the answer to a too-big packet normally comes back as an ICMP message, and what a black hole is when that message does not.\n\nThe lab runs the same ping at four sizes, then sends a 6-byte message and a 20000-byte stream to S over fresh TCP connections and counts the bytes that arrive. It then reads R's firewall rule, because the ICMP message that should report a size drop never arrives, so the device that would have sent it is the one to inspect. The lab removes the rule and repeats everything."
+        },
+        {
+          "lab": {
+            "explain": "Ping at four sizes with DF, send 6 and 20000 bytes over TCP, show the rule on R, remove it, repeat, then curl S",
+            "cmd": "ip netns list | grep -q n64c || { echo \"Run the first lab first.\"; exit 1; }\nrx() { ip netns exec n64s timeout 6 nc -l -p $1 > /tmp/n64.rx$1 2>/dev/null & echo $!; }\nsizes() { for s in 56 1000 1372 1472; do echo \"  -s $s: $(ip netns exec n64c ping -M do -s $s -c1 -W1 10.64.2.50 2>&1 | grep -oE '^[0-9]+ bytes from|Frag needed.*|too long.*' | head -1 | grep . || echo 'no answer')\"; done; }\necho \"ping with DF set:\"; sizes\nP1=$(rx 9001); P2=$(rx 9002); sleep 0.5\necho hello | ip netns exec n64c nc -w2 10.64.2.50 9001\nhead -c 20000 /dev/zero | ip netns exec n64c nc -w3 10.64.2.50 9002\nwait $P1 2>/dev/null; kill $P2 2>/dev/null; wait $P2 2>/dev/null\necho \"TCP bytes that reached S: small $(wc -c </tmp/n64.rx9001), big $(wc -c </tmp/n64.rx9002)\"\necho \"R rule: $(ip netns exec n64r nft list table inet t64 | grep drop | xargs)\"\nip netns exec n64r nft delete table inet t64\nip -n n64c route flush cache\necho \"rule removed:\"; sizes\necho \"C's cached $(ip -n n64c route get 10.64.2.50 | tr '\\n' ' ' | grep -o 'mtu [0-9]*')\"\nip -n n64c route flush cache\nP3=$(rx 9003); sleep 0.5\nhead -c 20000 /dev/zero | ip netns exec n64c nc -w3 10.64.2.50 9003\nwait $P3 2>/dev/null\necho \"TCP big now: $(wc -c </tmp/n64.rx9003) bytes\"\nip netns exec n64s timeout 6 python3 -m http.server 8080 --bind 10.64.2.50 --directory /tmp >/dev/null 2>&1 &\nSP=$!; sleep 1\necho \"curl: HTTP $(ip netns exec n64c curl -s -m 3 -o /dev/null -w '%{http_code}' http://10.64.2.50:8080/)\"\nkill $SP 2>/dev/null; wait $SP 2>/dev/null; true"
+          }
+        },
+        {
+          "md": "Sizes 56, 1000 and 1372 answer. 1472 gets no answer. Packet sizes are N + 28, so 1372 makes a 1400-byte packet that fits and 1472 makes a 1500-byte packet that does not. The TCP numbers agree: the 6-byte message arrives, the 20000-byte stream delivers 0 bytes, so the big transfer delivers nothing.\n\nThe rule on R is `icmp type destination-unreachable icmp code 4 drop`, and code 4 is \"fragmentation needed\". It is the message that would have told C to send smaller packets. This was fault 3, an MTU black hole: R's `eth1` has an MTU of 1400, and the message that would have explained the drops is the one R was told to discard. The fix is to stop dropping it. The lab deleted the rule.\n\nWith the rule gone, the 1472 ping prints `Frag needed and DF set (mtu = 1400)`, so the path now explains itself. C caches `mtu 1400` for S. After the cache is flushed, a fresh 20000-byte stream delivers all 20000 bytes, because the first oversize segment now triggers the message and TCP shrinks its segments. Finally `curl` returns `HTTP 200`: the application rung passes because the rungs under it do.\n\nOne thing the labs did not exercise: DNS. These namespaces have no names. In a real investigation rung 6 sits here, `getent hosts NAME` shows what the system's resolver returns and `dig` shows what a DNS server returns; 6.2 and 6.3 explain why those two can differ."
+        }
+      ]
+    },
+    {
+      "id": "table",
+      "title": "From symptom to layer",
+      "blocks": [
+        {
+          "md": "Most outages announce a layer in their first line. This table maps what you see to the rung to run first. The readings are the usual ones, so confirm each with the command in the third column before acting on it. The rows about errors from a router, silent timeouts and large packets are what the three rounds above printed.\n\n| Symptom | Layer | First command | Chapter |\n|---|---|---|---|\n| `NO-CARRIER`, interface `DOWN` | L1 link | `ip -br link` | 1.1 Links, NICs and virtual cables |\n| Neighbour entry `FAILED` or `INCOMPLETE`; \"Destination Host Unreachable\" from your own address | L2 neighbour | `ip neigh` | 2.8 ARP: IP → MAC |\n| Same subnet, works for some hosts only; broadcasts do not arrive | L2 VLAN or bridge | `bridge vlan show` | 2.4 to 2.7 |\n| Interface has no address | L3 configuration | `ip -br addr` | 3.1; 6.1 DHCP |\n| \"Network is unreachable\", or a router reports \"Net Unreachable\" | L3 route | `ip route get DST` | 3.4, 3.5, 3.2 |\n| Traceroute stops at one hop | L3, past that hop (or replies filtered or rate-limited) | `traceroute -n DST` | 3.8 TTL and traceroute |\n| \"Connection refused\" | L4, port closed (an RST came back) | `ss -ltn` on the server | 4.1, 4.4 |\n| Connect times out, nothing came back | L4, packets dropped, or no return path | capture at the far end | 4.4, 4.5, 4.6, 4.7 |\n| Connects, then stalls on large transfers; small pings work | MTU | `ping -M do -s N DST` | 3.9; 5.1 for tunnel overhead |\n| Works by IP, fails by name; \"Temporary failure in name resolution\" | DNS | `getent hosts NAME` | 6.2, 6.3 |\n| Resolves, connects, but the response is an error | application | `curl -v URL`, server logs | 4.1 |\n\nFour reading rules sit behind the table:\n\n1. **Who spoke.** An error from a router means frames got to the router. An error from the local stack usually means the packet never left.\n2. **Loud or silent.** A refusal is an answer. A silence needs a capture at the far end to say which half of the trip failed.\n3. **A fix that changes the symptom is progress.** The ping went from an error to silence, then to success. If the symptom does not move after a fix, the diagnosis was wrong: discard it instead of stacking a second fix.\n4. **A zero needs a positive control.** \"0 replies\" was meaningful only because the same capture also counted 2 requests.\n\n> [!IMPORTANT]\n> Choose the next command by asking which layer the last result did not yet rule out. Then read the result for who produced it and what it tested."
+        }
+      ]
+    },
+    {
+      "id": "twins",
+      "title": "Where you've met this",
+      "blocks": [
+        {
+          "md": "**AWS.** The ladder maps onto the tools AWS gives you, with one caveat about capture: [Traffic Mirroring](https://aws.amazon.com/vpc/faqs/) supports packet capture at an instance's ENI, but there is no capture point on the VPC's internal links (for example the implied router), a point the FAQ does not address and that is general knowledge. [Reachability Analyzer](https://docs.aws.amazon.com/vpc/latest/reachability/what-is-reachability-analyzer.html) tests connectivity between a source and a destination resource and, when the destination is not reachable, names the blocking component: a security group, network ACL, route table or load balancer. That is rungs 3 and 4 as a configuration check. [VPC Flow Logs](https://aws.amazon.com/vpc/faqs/) record allowed and denied traffic with an accept or reject action, which is the silent-drop evidence when mirroring is not set up. Whether either tool would show an MTU black hole like the one in this chapter was not checked; use `ping -M do -s N` from an instance for that rung.\n\n**Kubernetes.** Run the ladder from inside the cluster, not from your laptop. [`kubectl debug`](https://kubernetes.io/docs/tasks/debug/debug-application/debug-running-pod/) adds an ephemeral debug container to a running Pod, so you can run `ip route get`, `nc` and `curl` in that Pod's network namespace. Test the pod IP first, then the Service name, so a failure splits into \"network\" and \"Service or DNS\" (see 5.2 and 6.3). Cilium and Hubble can report drops at the datapath; that was not checked here, and 5.3 is the chapter for the datapath.\n\n**Proxmox.** Run the ladder from the guest first, then from the host. On the host, `bridge fdb show` and `bridge vlan show` (2.7) answer the L2 questions, and a capture on the VM's tap interface versus the physical NIC splits the path in two, the same trick as the capture on S. Nothing Proxmox-specific was verified for this chapter: the commands are standard Linux."
+        }
+      ]
+    },
+    {
+      "id": "keep",
+      "title": "What to keep",
+      "blocks": [
+        {
+          "md": "- Walk the rungs in dependency order: link, neighbour, route, handshake, size, name, application. The first failure names the layer.\n- A pass rules out only what it tested. A handshake says nothing about full-size packets.\n- Read who produced a message. An error from R proves frames reached R.\n- Silence is ambiguous: capture at the far end to learn whether the packet arrived, and read that machine's own routes.\n- A fix that changes the symptom is progress. A fix that changes nothing means the diagnosis was wrong."
+        }
+      ]
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Smoke test: Linux bridge lab0 with three netns (hA, hB, hC) on 10.0.0.0/24.
-# Runs INSIDE netlab as root, e.g.:
-#   orb -m netlab -u root bash -lc "$(cat labs/smoke.sh)"
+# Runs INSIDE the networking lab container as root, e.g.:
+#   docker exec mindgap-networking bash -lc "$(cat labs/smoke.sh)"
 set -euo pipefail
 
 BR="lab0"

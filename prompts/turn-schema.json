@@ -28,7 +28,7 @@
       "additionalProperties": false,
       "required": ["cmd", "explain"],
       "properties": {
-        "cmd": { "type": "string", "description": "Bash run inside the OrbStack machine 'netlab' only after the learner clicks Run." },
+        "cmd": { "type": "string", "description": "Bash run inside the course's lab container only after the learner clicks Run." },
         "explain": { "type": "string" }
       }
     },

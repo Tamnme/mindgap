@@ -3,38 +3,47 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>underlay · map</title>
+  <title>mindgap · courses</title>
   <link rel="stylesheet" href="app.css">
 </head>
 <body>
-  <main style="padding: 16px; max-width: 1400px; margin: 0 auto;">
+  <main style="padding: 16px; max-width: 900px; margin: 0 auto;">
     <header style="margin-bottom: 12px;">
-      <h1>underlay · your networking map</h1>
-      <p class="muted small">New here? Run a <strong>Placement check</strong> to find your gaps. Then work top to bottom; click a topic to open it.</p>
+      <h1>mindgap · courses</h1>
+      <p class="muted small">Pick a course to open its map.</p>
     </header>
-
-    <div class="map-toolbar">
-      <button id="btn-next" class="primary" disabled>Next lesson</button>
-      <button id="btn-practice" disabled>Practice shaky (0)</button>
-      <button id="btn-probe" disabled>Placement check (0 untested)</button>
-      <button id="btn-debug" disabled>Debug drill</button>
-      <span id="busy" class="small muted hidden"><span class="spinner"></span><span id="busy-text">Starting lesson… this can take up to a minute.</span></span>
-    </div>
     <div id="error" class="notice error hidden" role="alert"></div>
-
-    <div class="map-layout">
-      <section class="panel">
-        <div class="map-scroll">
-          <svg id="map" class="map-svg" role="img" aria-label="Knowledge map"></svg>
-        </div>
-        <div class="map-legend"><b style="color:#2f9e44">✓</b> solid · <b style="color:#f08c00">~</b> shaky · <b style="color:#e03131">!</b> gap · no badge = not tested yet · CHAPTER tag = written chapter ready · select a node to see what it builds on</div>
-      </section>
-
-      <aside id="side" class="panel side" aria-live="polite">
-        <p class="muted">Select a node to see its evidence and lesson options.</p>
-      </aside>
-    </div>
+    <ul id="courses"></ul>
   </main>
-  <script type="module" src="map.js"></script>
+  <script type="module">
+    const list = document.getElementById('courses');
+    const showError = (msg) => {
+      const box = document.getElementById('error');
+      box.textContent = msg;
+      box.classList.toggle('hidden', !msg);
+    };
+    try {
+      const res = await fetch('/api/courses');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const courses = await res.json();
+      // One course: skip the list entirely.
+      if (courses.length === 1) {
+        location.replace(`map.html?course=${encodeURIComponent(courses[0].slug)}`);
+      } else if (!courses.length) {
+        showError('No courses found. Add one under courses/.');
+      } else {
+        for (const c of courses) {
+          const a = document.createElement('a');
+          a.href = `map.html?course=${encodeURIComponent(c.slug)}`;
+          a.textContent = c.title || c.slug;
+          const li = document.createElement('li');
+          li.append(a);
+          list.append(li);
+        }
+      }
+    } catch (err) {
+      showError(`Could not load courses: ${err.message}`);
+    }
+  </script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-// underlay switch simulator. Pure model first (no DOM, testable in node),
+// mindgap switch simulator. Pure model first (no DOM, testable in node),
 // then a small SVG/HTML view. Importing this module must not touch `document`.
 
 export const BROADCAST = 'ff:ff:ff:ff:ff:ff';

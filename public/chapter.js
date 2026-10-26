@@ -2,10 +2,11 @@
 // Chapter prose is authored and model text comes from the tutor: both go through renderMarkdown (escapes first).
 
 import { renderMarkdown } from './md.js';
-import { createLabCard, fillLabCard } from './labcard.js';
+import { createLabCard, fillLabCard, runLabCommand, setLabBusy } from './labcard.js';
 import { firstOpenCheckpoint, flatBlocks, answerEvent, answersFrom, sectionState } from './chapter-logic.js';
 
 const $ = (id) => document.getElementById(id);
+const course = new URLSearchParams(location.search).get('course');
 const nodeId = new URLSearchParams(location.search).get('node');
 
 const S = {
@@ -13,6 +14,7 @@ const S = {
   lessonId: null,
   answers: {},      // checkpoint id -> learner event
   units: [],        // [{el, block}] in reading order, one per block
+  lab: null,        // course lab state: {available, reason?, request, approved}
   queue: [],        // learner events waiting for the tutor
   sending: false,
   unread: 0,
@@ -40,6 +42,14 @@ function showError(msg) {
 
 async function postJson(url, body) {
   const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  let data = {};
+  try { data = await res.json(); } catch { /* empty body */ }
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+async function getJson(url) {
+  const res = await fetch(url);
   let data = {};
   try { data = await res.json(); } catch { /* empty body */ }
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
@@ -182,18 +192,17 @@ function widgetCard(w) {
 // ---------- labs ----------
 
 async function runLab(card) {
-  const btn = card.querySelector('.run');
-  btn.disabled = true;
-  btn.textContent = '… Running';
+  setLabBusy(card, true);
   try {
-    const out = await postJson('/api/lab', { lesson_id: S.lessonId, cmd: card.dataset.cmd });
-    fillLabCard(card, { cmd: card.dataset.cmd, ...out });
-    showError('');
+    const out = await runLabCommand(card, { course, lessonId: S.lessonId });
+    if (out) {
+      fillLabCard(card, { cmd: card.dataset.cmd, ...out });
+      showError('');
+    }
   } catch (err) {
     showError(`Lab run failed: ${err.message}`);
   } finally {
-    btn.disabled = false;
-    btn.textContent = '↻ Run again';
+    setLabBusy(card, false);
   }
 }
 
@@ -213,7 +222,7 @@ function renderArticle() {
       if (block.md) node = md(block.md);
       else if (block.checkpoint) node = checkpointCard(block.checkpoint);
       else if (block.widget) node = widgetCard(block.widget);
-      else if (block.lab) node = createLabCard(block.lab, runLab);
+      else if (block.lab) node = createLabCard(block.lab, runLab, S.lab);
       const unit = el('div', { class: 'unit' }, [node]);
       sec.append(unit);
       S.units.push({ el: unit, block, section: s.id });
@@ -248,7 +257,7 @@ function renderToc() {
     const has = S.chapterIds.includes(n.id);
     const label = [el('span', { class: 'toc-num', text: String(i + 1) }), el('span', { text: n.title }), el('span', { class: `dot ${n.status}`, title: n.status })];
     const item = has && !current
-      ? el('a', { class: 'toc-item', href: `chapter.html?node=${encodeURIComponent(n.id)}` }, label)
+      ? el('a', { class: 'toc-item', href: `chapter.html?course=${encodeURIComponent(course)}&node=${encodeURIComponent(n.id)}` }, label)
       : el('div', { class: `toc-item${current ? ' current' : ' no-chapter'}`, title: has ? '' : 'No chapter yet' }, label);
     toc.append(item);
     if (current) {
@@ -320,7 +329,7 @@ async function pump() {
   S.sending = true;
   setTutorState('reviewing…');
   try {
-    const { turn } = await postJson('/api/turn', { lesson_id: S.lessonId, event: S.queue[0] });
+    const { turn } = await postJson('/api/turn', { course, lesson_id: S.lessonId, event: S.queue[0] });
     S.queue.shift();
     handleTurn(turn);
   } catch (err) {
@@ -364,23 +373,26 @@ function replay(events) {
 }
 
 async function init() {
-  if (!nodeId) return showError('No chapter in the URL. Open one from the map.');
+  if (!course || !nodeId) return showError('No chapter in the URL. Open one from the map.');
+  $('back-map').href = `map.html?course=${encodeURIComponent(course)}`;
   // Phones: the chapter list starts folded so the reading starts at the top of the screen.
   if (!matchMedia('(min-width: 960px)').matches) $('toc-wrap').open = false;
   try {
-    const [mod, mapRes, idxRes, lesson] = await Promise.all([
-      import(`/chapters/${encodeURIComponent(nodeId)}.js`),
-      fetch('/api/map'),
-      fetch('/chapters/index.json'),
-      postJson('/api/chapter', { node_id: nodeId }),
+    const c = encodeURIComponent(course);
+    const [chapter, map, info, lesson] = await Promise.all([
+      getJson(`/api/courses/${c}/chapters/${encodeURIComponent(nodeId)}`),
+      getJson(`/api/courses/${c}/map`),
+      getJson(`/api/courses/${c}`),
+      postJson('/api/chapter', { course, node_id: nodeId }),
     ]);
-    S.chapter = mod.default;
-    S.map = await mapRes.json();
-    S.chapterIds = idxRes.ok ? await idxRes.json() : [nodeId];
+    S.chapter = chapter;
+    S.lab = info.lab;
+    S.map = map;
+    S.chapterIds = info.chapters || [];
     S.node = S.map.nodes.find((n) => n.id === nodeId) || { layer: '', title: S.chapter.title };
     S.lessonId = lesson.lesson_id;
 
-    document.title = `underlay · ${S.chapter.title}`;
+    document.title = `mindgap · ${S.chapter.title}`;
     $('ch-number').textContent = `Chapter ${S.chapter.number} · ${S.chapter.kicker}`;
     $('side-layer').textContent = S.chapter.kicker;
     $('ch-title').textContent = S.chapter.title;

@@ -6,13 +6,21 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { firstOpenCheckpoint, flatBlocks, answerEvent, answersFrom, sectionState } from '../public/chapter-logic.js';
 
-const PUB = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
-const ids = JSON.parse(await readFile(path.join(PUB, 'chapters', 'index.json'), 'utf8'));
-const map = JSON.parse(await readFile(path.join(PUB, '..', 'learner', 'map.seed.json'), 'utf8'));
+const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
+const COURSE = path.join(ROOT, 'courses', 'networking');
+const ids = JSON.parse(await readFile(path.join(COURSE, 'chapters', 'index.json'), 'utf8'));
+const map = JSON.parse(await readFile(path.join(COURSE, 'map.seed.json'), 'utf8'));
+
+test('every seed node carries links, not twins', () => {
+  for (const n of map.nodes) {
+    assert.ok(Array.isArray(n.links), `${n.id} has links array`);
+    assert.ok(!('twins' in n), `${n.id} has no twins key`);
+  }
+});
 
 for (const id of ids) {
   test(`chapter ${id} is well formed`, async () => {
-    const ch = (await import(`../public/chapters/${id}.js`)).default;
+    const ch = JSON.parse(await readFile(path.join(COURSE, 'chapters', `${id}.json`), 'utf8'));
     assert.equal(ch.node, id);
     assert.ok(map.nodes.some((n) => n.id === id), 'chapter node exists on the map');
     const blocks = flatBlocks(ch);
