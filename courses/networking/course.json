@@ -27,5 +27,10 @@
       "name": "Services and debugging"
     }
   ],
-  "lab": null
+  "lab": {
+    "dockerfile": "lab/Dockerfile",
+    "caps": ["NET_ADMIN", "SYS_ADMIN"],
+    "network": true,
+    "hostname": "netlab"
+  }
 }
