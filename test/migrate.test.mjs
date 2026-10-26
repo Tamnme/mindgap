@@ -61,6 +61,37 @@ test('migrate refuses when target state/map.json already exists, moving nothing'
   }
 });
 
+test('migrate with a malformed meta throws naming the file and moves nothing', async () => {
+  const dataDir = await mkdtemp(path.join(tmpdir(), 'mindgap-migrate-'));
+  try {
+    await oldLayout(dataDir);
+    await writeFile(path.join(dataDir, 'sessions', 'bad-1.meta.json'), '{not json');
+    await assert.rejects(migrate(dataDir), /bad-1\.meta\.json/);
+    assert.equal(existsSync(path.join(dataDir, 'map.json')), true);
+    assert.equal(existsSync(path.join(dataDir, 'propositions.jsonl')), true);
+    assert.equal(existsSync(path.join(dataDir, 'sessions', 'x-1.meta.json')), true);
+    assert.equal(existsSync(path.join(dataDir, 'courses', 'networking', 'state', 'map.json')), false);
+  } finally {
+    await rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test('migrate refuses when a destination file already exists, before moving anything', async () => {
+  const dataDir = await mkdtemp(path.join(tmpdir(), 'mindgap-migrate-'));
+  try {
+    await oldLayout(dataDir);
+    const state = path.join(dataDir, 'courses', 'networking', 'state');
+    await mkdir(state, { recursive: true });
+    await writeFile(path.join(state, 'propositions.jsonl'), 'KEEP-ME\n');
+    await assert.rejects(migrate(dataDir), /propositions\.jsonl already exists/);
+    assert.equal(await readFile(path.join(state, 'propositions.jsonl'), 'utf8'), 'KEEP-ME\n');
+    assert.equal(existsSync(path.join(dataDir, 'map.json')), true);
+    assert.equal(existsSync(path.join(state, 'map.json')), false);
+  } finally {
+    await rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test('server refuses to start on an old-layout data dir and points at the migration script', async () => {
   const dataDir = await mkdtemp(path.join(tmpdir(), 'mindgap-migrate-'));
   try {
