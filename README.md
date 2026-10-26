@@ -6,7 +6,7 @@ underlay is a local tutor for engineers who already run VPCs, clusters and hyper
 
 The tutor's teaching method comes from [learnharness](https://github.com/amosblomqvist/learnharness), an agent harness for learning difficult things. See [Credits](#credits-and-license).
 
-<!-- TODO: screenshot of the map -->
+![The underlay map on first run: every topic untested, grouped by layer](docs/img/map.png)
 
 ## How it works
 
