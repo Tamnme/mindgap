@@ -2,6 +2,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { mkdtemp, mkdir, writeFile, readFile, chmod, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -52,17 +53,29 @@ const FAKE_ORB = `
 process.stdout.write('ORB:' + process.argv.slice(2).join(' '));
 `;
 
+// Fake agy: logs argv, cwd and whether the turn schema sits in cwd; always returns the same canned turn.
+const FAKE_AGY = `
+import { appendFileSync, existsSync } from 'node:fs';
+import path from 'node:path';
+const dir = process.env.FAKE_DIR;
+const args = process.argv.slice(2);
+const cwd = process.cwd();
+appendFileSync(path.join(dir, 'agy-calls.jsonl'), JSON.stringify({ args, cwd, schema: existsSync(path.join(cwd, 'turn-schema.json')) }) + '\\n');
+const turn = { say: 'hi from agy', question: null, sim: null, lab: null, lesson_done: false, node_updates: [], propositions: [] };
+process.stdout.write(JSON.stringify({ conversation_id: 'conv-1', structured_output: turn }));
+`;
+
 let dir;
 let dataDir;
 let child;
 let port;
 let lessonId;
 
-function call(method, urlPath, body) {
+function call(method, urlPath, body, at = port) {
   return new Promise((resolve, reject) => {
     const data = body === undefined ? undefined : JSON.stringify(body);
     const headers = data ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(data) } : {};
-    const req = http.request({ host: '127.0.0.1', port, method, path: urlPath, headers }, (res) => {
+    const req = http.request({ host: '127.0.0.1', port: at, method, path: urlPath, headers }, (res) => {
       let text = '';
       res.setEncoding('utf8');
       res.on('data', (c) => (text += c));
@@ -80,6 +93,11 @@ function call(method, urlPath, body) {
 
 async function readCalls() {
   const text = await readFile(path.join(dir, 'claude-calls.jsonl'), 'utf8');
+  return text.split('\n').filter(Boolean).map((l) => JSON.parse(l));
+}
+
+async function readAgyCalls() {
+  const text = await readFile(path.join(dir, 'agy-calls.jsonl'), 'utf8');
   return text.split('\n').filter(Boolean).map((l) => JSON.parse(l));
 }
 
@@ -124,19 +142,26 @@ before(async () => {
 
   const claudeJs = path.join(dir, 'fake-claude.mjs');
   const orbJs = path.join(dir, 'fake-orb.mjs');
+  const agyJs = path.join(dir, 'fake-agy.mjs');
   await writeFile(claudeJs, FAKE_CLAUDE);
   await writeFile(orbJs, FAKE_ORB);
+  await writeFile(agyJs, FAKE_AGY);
   const claudeBin = path.join(dir, 'claude');
   const orbBin = path.join(dir, 'orb');
+  const agyBin = path.join(dir, 'agy');
   await writeFile(claudeBin, `#!/bin/sh\nexec "${process.execPath}" "${claudeJs}" "$@"\n`);
   await writeFile(orbBin, `#!/bin/sh\nexec "${process.execPath}" "${orbJs}" "$@"\n`);
+  await writeFile(agyBin, `#!/bin/sh\nexec "${process.execPath}" "${agyJs}" "$@"\n`);
   await chmod(claudeBin, 0o755);
   await chmod(orbBin, 0o755);
+  await chmod(agyBin, 0o755);
 
   const started = startServer({
     MINDGAP_DATA_DIR: dataDir,
     MINDGAP_MODEL: 'opus',
+    MINDGAP_TUTOR: 'claude',
     CLAUDE_BIN: claudeBin,
+    AGY_BIN: agyBin,
     ORB_BIN: orbBin,
     FAKE_DIR: dir,
   });
@@ -227,6 +252,9 @@ test('lesson start and turn: argv, node_update applied, proposition appended', a
   const lesson = await call('GET', `/api/lesson/${lessonId}?course=net`);
   assert.equal(lesson.status, 200);
   assert.equal(lesson.json.meta.course, 'net');
+  assert.equal(lesson.json.meta.tutor, 'claude');
+  assert.equal(lesson.json.meta.tutor_session_id, 'sess-abc');
+  assert.ok(!('claude_session_id' in lesson.json.meta));
   assert.deepEqual(lesson.json.events.map((e) => e.role), ['system', 'tutor', 'learner', 'tutor']);
 });
 
@@ -365,4 +393,67 @@ test('first access copies the clean seed map into the course state dir', async (
   } finally {
     srv.kill();
   }
+});
+
+test('agy server: lesson runs in an empty temp cwd with the schema file, removed afterwards', async () => {
+  const { srv, port: agyPort } = startServer({ MINDGAP_DATA_DIR: dataDir, MINDGAP_TUTOR: 'agy', AGY_BIN: path.join(dir, 'agy'), FAKE_DIR: dir });
+  try {
+    const start = await call('POST', '/api/lesson', { course: 'net', node_id: 'switch-mac-table', mode: 'teach' }, await agyPort);
+    assert.equal(start.status, 200, start.text);
+    assert.equal(start.json.turn.say, 'hi from agy');
+
+    const first = (await readAgyCalls()).at(-1);
+    assert.notEqual(first.cwd, path.resolve(HERE, '..'));
+    assert.ok(first.cwd.includes('mindgap-turn-'), first.cwd);
+    assert.equal(first.schema, true);
+    assert.ok(!first.args.includes('--conversation'));
+    assert.ok(first.args.includes('--json-schema'));
+    assert.equal(existsSync(first.cwd), false);
+
+    const lesson = await call('GET', `/api/lesson/${start.json.lesson_id}?course=net`, undefined, await agyPort);
+    assert.equal(lesson.json.meta.tutor, 'agy');
+    assert.equal(lesson.json.meta.tutor_session_id, 'conv-1');
+
+    const t = await call('POST', '/api/turn', { course: 'net', lesson_id: start.json.lesson_id, event: { type: 'lost' } }, await agyPort);
+    assert.equal(t.status, 200, t.text);
+    const second = (await readAgyCalls()).at(-1);
+    assert.equal(second.args[second.args.indexOf('--conversation') + 1], 'conv-1');
+  } finally {
+    srv.kill();
+  }
+});
+
+test('agy server refuses a claude lesson with 409 naming both tutors', async () => {
+  const { srv, port: agyPort } = startServer({ MINDGAP_DATA_DIR: dataDir, MINDGAP_TUTOR: 'agy', AGY_BIN: path.join(dir, 'agy'), FAKE_DIR: dir });
+  try {
+    const r = await call('POST', '/api/turn', { course: 'net', lesson_id: lessonId, event: { type: 'lost' } }, await agyPort);
+    assert.equal(r.status, 409, r.text);
+    assert.match(r.json.error, /claude/);
+    assert.match(r.json.error, /agy/);
+  } finally {
+    srv.kill();
+  }
+});
+
+test('agy server with a missing binary: lesson start is 502 naming the tutor', async () => {
+  const { srv, port: agyPort } = startServer({ MINDGAP_DATA_DIR: path.join(dir, 'missing-data'), MINDGAP_TUTOR: 'agy', AGY_BIN: '/nonexistent/agy' });
+  try {
+    const r = await call('POST', '/api/lesson', { course: 'net', node_id: 'switch-mac-table', mode: 'teach' }, await agyPort);
+    assert.equal(r.status, 502, r.text);
+    assert.match(r.json.error, /agy not found/);
+  } finally {
+    srv.kill();
+  }
+});
+
+test('unknown MINDGAP_TUTOR exits 1 and lists the valid tutors', async () => {
+  const srv = spawn(process.execPath, [SERVER], {
+    env: { ...process.env, PORT: '0', MINDGAP_DATA_DIR: path.join(dir, 'bogus-data'), MINDGAP_TUTOR: 'bogus' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let stderr = '';
+  srv.stderr.on('data', (c) => (stderr += c));
+  const code = await new Promise((resolve) => srv.on('exit', resolve));
+  assert.equal(code, 1);
+  assert.match(stderr, /claude, agy/);
 });

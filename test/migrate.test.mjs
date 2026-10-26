@@ -37,11 +37,27 @@ test('migrate moves old files into courses/networking/state and adds course to m
     assert.equal(await readFile(path.join(state, 'propositions.jsonl'), 'utf8'), PROPS);
     assert.equal(await readFile(path.join(state, 'sessions', 'x-1.jsonl'), 'utf8'), TRANSCRIPT);
     const meta = JSON.parse(await readFile(path.join(state, 'sessions', 'x-1.meta.json'), 'utf8'));
-    assert.deepEqual(meta, { ...META, course: 'networking' });
+    assert.deepEqual(meta, { ...META, course: 'networking', tutor: 'claude' });
 
     assert.equal(existsSync(path.join(dataDir, 'map.json')), false);
     assert.equal(existsSync(path.join(dataDir, 'propositions.jsonl')), false);
     assert.equal(existsSync(path.join(dataDir, 'sessions')), false);
+  } finally {
+    await rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test('migrate renames claude_session_id to tutor_session_id, sets tutor, and leaves migrated metas alone', async () => {
+  const dataDir = await mkdtemp(path.join(tmpdir(), 'mindgap-migrate-'));
+  try {
+    await oldLayout(dataDir);
+    await writeFile(path.join(dataDir, 'sessions', 'y-2.meta.json'), JSON.stringify({ id: 'y-2', node_id: 'y', mode: 'teach', claude_session_id: 'sess-1' }));
+    await writeFile(path.join(dataDir, 'sessions', 'z-3.meta.json'), JSON.stringify({ id: 'z-3', tutor: 'agy', tutor_session_id: 'conv-9' }));
+    await migrate(dataDir);
+    const sessions = path.join(dataDir, 'courses', 'networking', 'state', 'sessions');
+    const read = async (f) => JSON.parse(await readFile(path.join(sessions, f), 'utf8'));
+    assert.deepEqual(await read('y-2.meta.json'), { id: 'y-2', node_id: 'y', mode: 'teach', tutor: 'claude', tutor_session_id: 'sess-1', course: 'networking' });
+    assert.deepEqual(await read('z-3.meta.json'), { id: 'z-3', tutor: 'agy', tutor_session_id: 'conv-9', course: 'networking' });
   } finally {
     await rm(dataDir, { recursive: true, force: true });
   }
@@ -73,7 +89,7 @@ test('migrate resumes a partial run: propositions and sessions already moved, ma
     assert.equal(await readFile(path.join(state, 'map.json'), 'utf8'), MAP);
     assert.equal(await readFile(path.join(state, 'propositions.jsonl'), 'utf8'), PROPS);
     const meta = JSON.parse(await readFile(path.join(state, 'sessions', 'x-1.meta.json'), 'utf8'));
-    assert.deepEqual(meta, { ...META, course: 'networking' });
+    assert.deepEqual(meta, { ...META, course: 'networking', tutor: 'claude' });
     assert.equal(existsSync(path.join(dataDir, 'map.json')), false);
     assert.equal(existsSync(path.join(dataDir, 'propositions.jsonl')), false);
     assert.equal(existsSync(path.join(dataDir, 'sessions')), false);

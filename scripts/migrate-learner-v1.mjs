@@ -8,6 +8,15 @@ import { fileURLToPath } from 'node:url';
 const COURSE = 'networking';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
+// Renames the claude-only session field and tags the lesson's tutor. Metas already migrated are left as they are.
+function toTutorMeta(meta) {
+  const { claude_session_id, ...rest } = meta;
+  if (claude_session_id !== undefined) rest.tutor_session_id = claude_session_id;
+  rest.tutor ??= 'claude';
+  rest.course = COURSE;
+  return rest;
+}
+
 export async function migrate(dataDir) {
   const state = path.join(dataDir, 'courses', COURSE, 'state');
   const target = (name) => path.join(state, name);
@@ -43,7 +52,7 @@ export async function migrate(dataDir) {
       if (!meta || typeof meta !== 'object' || Array.isArray(meta)) {
         throw new Error(`cannot migrate: ${file} is not a JSON object`);
       }
-      metas.push([f, { ...meta, course: COURSE }]);
+      metas.push([f, toTutorMeta(meta)]);
     }
   }
 

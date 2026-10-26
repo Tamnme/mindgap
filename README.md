@@ -21,7 +21,7 @@ Each idea is meant to land as something you could have derived, not a fact to me
 ## Requirements
 
 - **Node.js 22 or newer.** No npm dependencies.
-- **[Claude Code](https://claude.com/claude-code)**, logged in. The server calls `claude -p` for every tutor turn, on your subscription.
+- **[Claude Code](https://claude.com/claude-code)** or **agy**, logged in. The server calls the tutor CLI for every turn, on your subscription. Pick with `MINDGAP_TUTOR`.
 - **[OrbStack](https://orbstack.dev)** on macOS, for the labs. Optional: chapters and the tutor work without it, but lab commands won't run.
 
 ## Quickstart
@@ -39,7 +39,8 @@ On first run the server copies `learner/map.seed.json` to `learner/map.json`. Yo
 
 | Variable | Default | |
 |---|---|---|
-| `MINDGAP_MODEL` | `opus` | Model for the tutor (`sonnet` is cheaper and faster) |
+| `MINDGAP_TUTOR` | `claude` | Tutor CLI: `claude` or `agy`. A lesson stays with the tutor it started with |
+| `MINDGAP_MODEL` | `opus` for claude | Model for the tutor (`sonnet` is cheaper and faster) |
 | `MINDGAP_DATA_DIR` | `learner/` | Where your map, propositions and transcripts live |
 | `PORT` | `4810` | |
 

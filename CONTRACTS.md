@@ -4,7 +4,7 @@ Shared formats that every part builds against. Change them here first.
 
 ## Run
 `node server.mjs` → http://localhost:4810. No npm dependencies. Node ≥ 22.
-Env: `MINDGAP_DATA_DIR` (default `learner/`), `MINDGAP_COURSES_DIR` (default `courses/`), `MINDGAP_MODEL` (default `opus`).
+Env: `MINDGAP_DATA_DIR` (default `learner/`), `MINDGAP_COURSES_DIR` (default `courses/`), `MINDGAP_TUTOR` (`claude` default | `agy`; unknown → exit 1), `MINDGAP_MODEL` (default `opus` for claude, unset for agy).
 
 ## Files
 ```
@@ -25,7 +25,7 @@ courses/<slug>/chapters/<node_id>.json  # chapter content, see Chapters below
 <data>/courses/<slug>/state/map.json              # your map; copied from map.seed.json on first access
 <data>/courses/<slug>/state/propositions.jsonl    # one proposition per line, appended by server
 <data>/courses/<slug>/state/sessions/<lesson_id>.jsonl      # transcript, one event per line
-<data>/courses/<slug>/state/sessions/<lesson_id>.meta.json  # {course, claude_session_id, node_id, mode, started, labs_sent}
+<data>/courses/<slug>/state/sessions/<lesson_id>.meta.json  # {course, tutor, tutor_session_id, node_id, mode, started, labs_sent}
 ```
 `<data>` is `MINDGAP_DATA_DIR`. A course is a folder under the courses dir (shipped) or under `<data>/courses/` (learner-made). The first folder with the slug wins.
 
@@ -46,19 +46,18 @@ courses/<slug>/chapters/<node_id>.json  # chapter content, see Chapters below
 } ] }
 ```
 
-## Tutor turn (claude -p output) — `prompts/turn-schema.json`
+## Tutor turn (adapter output, `structured_output`) — `prompts/turn-schema.json`
 Fields: `say`, `question{kind,prompt,options,wants_confidence}|null`, `sim{scenario}|null`,
 `lab{cmd,explain}|null`, `node_updates[{id,status,note}]`, `propositions[{claim,because,node}]`, `lesson_done`.
 Sim scenarios: `switch-learning | switch-flood | vlan-broadcast | vlan-trunk`.
 
-## How the server calls the tutor (verified 2026-10-25, claude 2.1.296)
-```
-claude -p --safe-mode --tools "" --model "$MINDGAP_MODEL" \
-  --output-format json --json-schema "<contents of turn-schema.json>" \
-  --system-prompt "<prompts/<mode>.md>" + "\n\n" + "<courses/<slug>/prompt.md, if present>" \
-  [--resume <claude_session_id>] "<message>"
-```
-- stdout is a JSON object: use `.structured_output` (the turn), `.session_id`, `.is_error`, `.total_cost_usd`.
+## How the server calls the tutor (adapters in `lib/tutors/`)
+`MINDGAP_TUTOR` picks one adapter: `claude` (default) or `agy`. Each adapter exports `buildCall({systemPrompt, schemaText, message, sessionId, model, schemaFile}) -> {bin, args}` and `parseOutput(stdout) -> {turn, sessionId, error}`. Binaries come from `CLAUDE_BIN` / `AGY_BIN`.
+- Every call runs with cwd = a fresh `mindgap-turn-*` temp dir (holds `turn-schema.json`), stdin closed, and the dir is removed afterwards. The tutor gets no tools.
+- `claude`: `claude -p --safe-mode --tools "" --model <MINDGAP_MODEL|opus> --output-format json --json-schema <turn-schema.json> --system-prompt "<prompts/<mode>.md>\n\n<courses/<slug>/prompt.md, if present>" [--resume <tutor_session_id>] "<message>"`. Reads `.structured_output`, `.session_id`, `.is_error`.
+- `agy`: `agy --output-format json --json-schema <schema> [--model <MINDGAP_MODEL>] [--conversation <tutor_session_id>] -p "<message>"`. agy has no system-prompt flag, so the first turn prepends `SYSTEM INSTRUCTIONS:` plus the prompt to the message. Reads `.structured_output`, `.conversation_id`.
+- Timeout 180 s, stdout cap 16 MB. A parse or tutor error is HTTP 502 with the adapter's error, plus `: <first 500 chars of stderr>` when stderr is present. A missing binary is 502 `<tutor> not found on PATH`.
+- A lesson is bound to the tutor it started with (`meta.tutor`); a turn under a different `MINDGAP_TUTOR` is 409. Lessons with no `tutor` field count as `claude`.
 - `--safe-mode` keeps the user's CLAUDE.md/plugins/hooks out of the tutor. Auth still uses the subscription. Do NOT use `--bare` (it needs an API key).
 - First message of a lesson = a JSON block containing: the mode, the target node, its prereqs with their statuses, every other node's id/title/status, and all propositions for those nodes. Later messages = the learner event as JSON.
 
@@ -70,13 +69,13 @@ Binds 127.0.0.1 only. Unknown or invalid course slugs → 404. A malformed `cour
 | GET | `/api/courses/:slug` | → `{...course.json, chapters: string[]}` (`chapters` = `chapters/index.json`, `[]` if absent) |
 | GET | `/api/courses/:slug/map` | → state map.json (seeded on first access) |
 | GET | `/api/courses/:slug/chapters/:id` | → chapter JSON, 404 if absent |
-| POST | `/api/lesson` | `{course, node_id, mode}` → `{lesson_id, turn}` (starts a claude session, first turn) |
+| POST | `/api/lesson` | `{course, node_id, mode}` → `{lesson_id, turn}` (starts a tutor session, first turn) |
 | POST | `/api/turn` | `{course, lesson_id, event}` → `{turn}` |
 | POST | `/api/lab` | `{course, lesson_id, cmd}` → `{stdout, stderr, code}`. Also appended to the transcript as a `lab` event. The next `/api/turn` should include it. |
 | POST | `/api/chapter` | `{course, node_id}` → `{lesson_id, meta, events[]}`. Reuses the node's latest `chapter`-mode lesson or creates one **without** a tutor call; 404 when `courses/<course>/chapters/<node_id>.json` doesn't exist. `/api/lesson` refuses mode `chapter`. |
 | GET | `/api/lesson/:id?course=<slug>` | → `{meta, events[]}` (for reload). Missing or unknown course → 404. |
 
-Lesson meta gains `course`. Lesson ids are `<node_id>-<timestamp>`.
+Lesson meta gains `course`, `tutor` and `tutor_session_id`. Lesson ids are `<node_id>-<timestamp>`.
 
 Learner `event` shapes:
 - `{type:"answer", choice?:string, text?:string, confidence?:1..5, reasoning?:string}`

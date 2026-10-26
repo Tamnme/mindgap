@@ -1,12 +1,14 @@
 // mindgap HTTP server. Contracts: CONTRACTS.md. No npm deps.
 import { createServer } from 'node:http';
 import { existsSync } from 'node:fs';
-import { readFile, writeFile, rename, appendFile, readdir } from 'node:fs/promises';
+import { readFile, writeFile, rename, appendFile, readdir, mkdtemp, rm } from 'node:fs/promises';
 import { spawn, execFile } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { listCourses, loadCourse, ensureState, CourseNotFound } from './lib/courses.mjs';
+import { getTutor, TUTORS } from './lib/tutors/index.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(HERE, 'public');
@@ -18,8 +20,13 @@ const COURSE_OPTS = {
   dataDir: DATA_DIR,
 };
 const PORT = Number(process.env.PORT ?? 4810);
-const MODEL = process.env.MINDGAP_MODEL || 'opus';
-const CLAUDE_BIN = process.env.CLAUDE_BIN || 'claude';
+const TUTOR = process.env.MINDGAP_TUTOR || 'claude';
+if (!TUTORS.includes(TUTOR)) {
+  console.error(`MINDGAP_TUTOR=${TUTOR} is not a tutor. Valid: ${TUTORS.join(', ')}`);
+  process.exit(1);
+}
+const tutor = getTutor(TUTOR);
+const MODEL = process.env.MINDGAP_MODEL || (TUTOR === 'claude' ? 'opus' : undefined);
 const ORB_BIN = process.env.ORB_BIN || 'orb';
 const MODES = { teach: 'teacher.md', practice: 'practice.md', probe: 'prober.md', chapter: 'chapter.md' };
 const BODY_LIMIT = 256 * 1024;
@@ -210,40 +217,40 @@ async function systemPrompt(c, mode) {
   return course === null ? base : base + '\n\n' + course;
 }
 
+// Every tutor call runs in a fresh empty cwd (holds the turn schema, no repo access), removed afterwards.
 async function callTutor(c, meta, message) {
   const schema = await readFile(SCHEMA_PATH, 'utf8');
-  const args = [
-    '-p', '--safe-mode', '--tools', '', '--model', MODEL,
-    '--output-format', 'json', '--json-schema', schema,
-    '--system-prompt', await systemPrompt(c, meta.mode),
-  ];
-  if (meta.claude_session_id) args.push('--resume', meta.claude_session_id);
-  args.push(message);
-
-  const { err, stdout, stderr } = await new Promise((resolve) =>
-    execFile(CLAUDE_BIN, args, { timeout: TUTOR_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 },
-      (e, o, s) => resolve({ err: e, stdout: o, stderr: s })));
-
-  let out;
+  const sys = await systemPrompt(c, meta.mode);
+  const cwd = await mkdtemp(path.join(tmpdir(), 'mindgap-turn-'));
   try {
-    out = JSON.parse(stdout);
-  } catch {
-    const why = err ? err.message : (stderr || stdout || 'empty output').trim();
-    throw new HttpError(502, `tutor returned no JSON: ${why}`);
+    const schemaFile = path.join(cwd, 'turn-schema.json');
+    await writeFile(schemaFile, schema);
+    const { bin, args } = tutor.buildCall({
+      systemPrompt: sys, schemaText: schema, message, sessionId: meta.tutor_session_id, model: MODEL, schemaFile,
+    });
+    const { err, stdout, stderr } = await new Promise((resolve) => {
+      const child = execFile(bin, args, { cwd, timeout: TUTOR_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 },
+        (e, o, s) => resolve({ err: e, stdout: o, stderr: s }));
+      child.stdin.end();
+    });
+    if (err && err.code === 'ENOENT') throw new HttpError(502, `${TUTOR} not found on PATH`);
+    const parsed = tutor.parseOutput(stdout ?? '');
+    if (parsed.error) {
+      const detail = (stderr || (err && err.message) || '').trim().slice(0, 500);
+      throw new HttpError(502, detail ? `${parsed.error}: ${detail}` : parsed.error);
+    }
+    return parsed;
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
   }
-  if (out.is_error || !out.structured_output) {
-    throw new HttpError(502, String(out.result ?? 'tutor returned no structured_output'));
-  }
-  return out;
 }
 
 // Calls the tutor, then persists everything. labsTotal = lab events the message has seen.
 async function advance(c, id, meta, message, record, labsTotal) {
-  const out = await callTutor(c, meta, message);
-  const turn = out.structured_output;
+  const { turn, sessionId } = await callTutor(c, meta, message);
   const ts = new Date().toISOString();
 
-  meta.claude_session_id = out.session_id || meta.claude_session_id || null;
+  meta.tutor_session_id = sessionId || meta.tutor_session_id || null;
   meta.labs_sent = labsTotal;
   await updateMap(c, (map) => applyNodeUpdates(map, turn.node_updates ?? []));
 
@@ -267,7 +274,7 @@ async function startLesson(body) {
   if (!map.nodes.some((n) => n.id === node_id)) throw new HttpError(404, `unknown node: ${node_id}`);
 
   const lesson_id = `${node_id}-${Date.now()}`;
-  const meta = { course: c.slug, claude_session_id: null, node_id, mode, started: new Date().toISOString(), labs_sent: 0 };
+  const meta = { course: c.slug, tutor: TUTOR, tutor_session_id: null, node_id, mode, started: new Date().toISOString(), labs_sent: 0 };
   await writeAtomic(metaPath(c, lesson_id), JSON.stringify(meta, null, 2));
 
   const ctx = await contextFor(c, map, node_id, mode);
@@ -286,12 +293,17 @@ async function turn(body) {
   try {
     const c = await openCourse(body.course);
     const meta = await loadMeta(c, lesson_id);
+    // Lessons predating the tutor field were all started with claude.
+    const lessonTutor = meta.tutor ?? 'claude';
+    if (lessonTutor !== TUTOR) {
+      throw new HttpError(409, `lesson ${lesson_id} was started with ${lessonTutor}; this server runs ${TUTOR}`);
+    }
     const labs = (await readEvents(c, lesson_id)).filter((e) => e.role === 'lab');
     const pending = labs.slice(meta.labs_sent ?? 0).map((e) => e.data);
     let message = 'EVENT:\n' + JSON.stringify(event, null, 2);
     if (pending.length) message += '\nLAB_OUTPUT:\n' + JSON.stringify(pending, null, 2);
     // Chapter lessons start without a tutor call, so their first event carries the context.
-    if (!meta.claude_session_id && meta.mode === 'chapter') {
+    if (!meta.tutor_session_id && meta.mode === 'chapter') {
       const ctx = await contextFor(c, await loadMap(c), meta.node_id, 'chapter');
       message = 'CONTEXT:\n' + JSON.stringify(ctx, null, 2) + '\n' + message;
     }
@@ -382,7 +394,7 @@ async function chapterLesson(body) {
     if (meta.mode === 'chapter' && meta.node_id === node_id) return { lesson_id: id, meta, events: await readEvents(c, id) };
   }
   const lesson_id = `${node_id}-${Date.now()}`;
-  const meta = { course: c.slug, claude_session_id: null, node_id, mode: 'chapter', started: new Date().toISOString(), labs_sent: 0 };
+  const meta = { course: c.slug, tutor: TUTOR, tutor_session_id: null, node_id, mode: 'chapter', started: new Date().toISOString(), labs_sent: 0 };
   await writeAtomic(metaPath(c, lesson_id), JSON.stringify(meta, null, 2));
   return { lesson_id, meta, events: [] };
 }
