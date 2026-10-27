@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { listCourses, loadCourse, ensureState, CourseNotFound } from './lib/courses.mjs';
 import { getTutor, TUTORS } from './lib/tutors/index.mjs';
 import { reviewTurn, applyPlan } from './lib/course-session.mjs';
+import { SourceError, UPLOAD_MAX, validId, listSources, importSource, removeSource, sectionIds, readSections } from './lib/sources.mjs';
 import { labStatus, labRequest, isApproved, approve, runLab, ApprovalMismatch } from './lib/labs.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -70,7 +71,7 @@ function send(res, status, body) {
   res.end(data);
 }
 
-function readJson(req) {
+function readJson(req, limit = BODY_LIMIT) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let size = 0;
@@ -78,9 +79,9 @@ function readJson(req) {
     req.on('data', (c) => {
       if (failed) return;
       size += c.length;
-      if (size > BODY_LIMIT) {
+      if (size > limit) {
         failed = true;
-        reject(new HttpError(413, 'request body exceeds 256 KB'));
+        reject(new HttpError(413, `request body exceeds ${limit >= 1024 * 1024 ? `${Math.ceil(limit / (1024 * 1024))} MB` : `${Math.ceil(limit / 1024)} KB`}`));
         return;
       }
       chunks.push(c);
@@ -119,10 +120,6 @@ async function readLines(file) {
   return text.split('\n').filter(Boolean).map((l) => JSON.parse(l));
 }
 
-function validId(id) {
-  return typeof id === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(id);
-}
-
 // Loads the course and creates its state dir (seeded map, sessions) on first access.
 async function openCourse(slug) {
   let course;
@@ -142,6 +139,7 @@ const propsPath = (c) => path.join(c.stateDir, 'propositions.jsonl');
 const sessDir = (c) => path.join(c.stateDir, 'sessions');
 const metaPath = (c, id) => path.join(sessDir(c), `${id}.meta.json`);
 const transcriptPath = (c, id) => path.join(sessDir(c), `${id}.jsonl`);
+const sourcesDir = (c) => path.join(DATA_DIR, 'courses', c.slug, 'sources');
 const chapterPath = (c, id) => path.join(c.dir, 'chapters', `${id}.json`);
 
 async function loadMap(c) {
@@ -223,8 +221,10 @@ async function courseContext(c, map) {
     nodes: map.nodes.map((n) => ({
       id: n.id, title: n.title, layer: n.layer, prereqs: n.prereqs, truth: n.truth, status: n.status, evidence: n.evidence,
       ...(n.in_scope === false ? { in_scope: false } : {}),
+      ...(n.source_sections?.length ? { source_sections: n.source_sections } : {}),
     })),
     propositions: lines.slice(-200),
+    sources: (await listSources(sourcesDir(c))).map((s) => ({ id: s.id, title: s.title, sections: s.sections })),
   };
 }
 
@@ -234,6 +234,8 @@ async function baseContext(c, map, nodeId, mode) {
   const prereqs = (target.prereqs ?? []).map((id) => byId.get(id)).filter(Boolean);
   const inScope = new Set([target.id, ...prereqs.map((n) => n.id)]);
   const propositions = (await readLines(propsPath(c))).filter((p) => inScope.has(p.node));
+  // Lessons get the sections their node is tagged with (dangling ids skipped), up to the excerpt cap.
+  const excerpts = target.source_sections?.length ? await readSections(sourcesDir(c), target.source_sections) : [];
   return {
     mode,
     learner: await readLearner(c),
@@ -243,6 +245,7 @@ async function baseContext(c, map, nodeId, mode) {
       .filter((n) => !inScope.has(n.id))
       .map((n) => ({ id: n.id, title: n.title, status: n.status, ...(n.in_scope === false ? { in_scope: false } : {}) })),
     propositions,
+    ...(excerpts.length ? { sources: excerpts } : {}),
   };
 }
 
@@ -298,7 +301,7 @@ async function advance(c, id, meta, message, record, labsTotal, event = null) {
   let accepted = false;
   if (meta.mode === 'course') {
     // The server keeps only what the acceptance rules allow; the reviewed turn is what gets stored and returned.
-    const r = reviewTurn({ meta, turn, map: await loadMap(c), event });
+    const r = reviewTurn({ meta, turn, map: await loadMap(c), event, sectionIds: await sectionIds(sourcesDir(c)) });
     turn = r.turn;
     accepted = turn.approved;
     Object.assign(meta, r.meta);
@@ -315,7 +318,7 @@ async function advance(c, id, meta, message, record, labsTotal, event = null) {
   if (accepted && !goal) throw new Error('approval accepted without a goal on record');
   await updateMap(c, (map) => {
     applyNodeUpdates(map, turn.node_updates ?? []);
-    if (accepted) Object.assign(map, applyPlan(map, meta.pending_plan.in_scope));
+    if (accepted) Object.assign(map, applyPlan(map, meta.pending_plan.in_scope, meta.pending_plan.sources ?? []));
   });
   if (goal) await writeAtomic(goalPath(c), JSON.stringify(goal, null, 2) + '\n');
 
@@ -377,6 +380,11 @@ async function turn(body) {
     const pending = labs.slice(meta.labs_sent ?? 0).map((e) => e.data);
     let message = 'EVENT:\n' + JSON.stringify(event, null, 2);
     // Notes from reviewing the previous turn go first; advance() clears them once this turn persists.
+    // Sections the tutor asked for last turn; advance() replaces pending_reads, so they are sent once.
+    if (meta.mode === 'course' && meta.pending_reads?.length) {
+      const sections = await readSections(sourcesDir(c), meta.pending_reads);
+      message = 'SOURCES:\n' + JSON.stringify(sections, null, 2) + '\n' + message;
+    }
     if (meta.server_notes?.length) message = 'SERVER:\n' + meta.server_notes.map((n) => `- ${n}\n`).join('') + message;
     if (pending.length) message += '\nLAB_OUTPUT:\n' + JSON.stringify(pending, null, 2);
     // Chapter lessons start without a tutor call, so their first event carries the context.
@@ -495,6 +503,8 @@ async function api(req, res, pathname) {
   const mapM = pathname.match(/^\/api\/courses\/([^/]+)\/map$/);
   const chapterM = pathname.match(/^\/api\/courses\/([^/]+)\/chapters\/([^/]+)$/);
   const approvalM = pathname.match(/^\/api\/courses\/([^/]+)\/lab-approval$/);
+  const sourcesM = pathname.match(/^\/api\/courses\/([^/]+)\/sources$/);
+  const sourceM = pathname.match(/^\/api\/courses\/([^/]+)\/sources\/([^/]+)$/);
   const courseM = pathname.match(/^\/api\/courses\/([^/]+)$/);
   if (method === 'GET' && pathname === '/api/courses') return send(res, 200, await listCourses(COURSE_OPTS));
   if (method === 'GET' && courseM) return send(res, 200, await courseInfo(safeDecode(courseM[1])));
@@ -502,6 +512,14 @@ async function api(req, res, pathname) {
   if (method === 'GET' && chapterM) return send(res, 200, await getChapter(safeDecode(chapterM[1]), safeDecode(chapterM[2])));
   if (method === 'GET' && lessonM) {
     return send(res, 200, await getLesson(await openCourse(query.get('course')), safeDecode(lessonM[1])));
+  }
+  if (method === 'GET' && sourcesM) return send(res, 200, await listSources(sourcesDir(await openCourse(safeDecode(sourcesM[1])))));
+  if (method === 'POST' && sourcesM) return send(res, 201, await addSource(safeDecode(sourcesM[1]), req));
+  if (method === 'DELETE' && sourceM) {
+    const c = await openCourse(safeDecode(sourceM[1]));
+    if (!(await removeSource(sourcesDir(c), safeDecode(sourceM[2])))) throw new HttpError(404, 'unknown source');
+    res.writeHead(204);
+    return res.end();
   }
   if (method === 'POST' && pathname === '/api/lesson') return send(res, 200, await startLesson(await readJson(req)));
   if (method === 'POST' && pathname === '/api/chapter') return send(res, 200, await chapterLesson(await readJson(req)));
@@ -513,6 +531,24 @@ async function api(req, res, pathname) {
     return res.end();
   }
   throw new HttpError(404, 'not found');
+}
+
+const UPLOAD_BODY_LIMIT = Math.ceil(UPLOAD_MAX * 4 / 3) + 64 * 1024;
+
+async function addSource(slug, req) {
+  const c = await openCourse(slug);
+  const body = await readJson(req, UPLOAD_BODY_LIMIT);
+  const hasUrl = body.url !== undefined;
+  const hasData = body.data_base64 !== undefined;
+  if (hasUrl === hasData) throw new HttpError(400, 'send exactly one of url or data_base64');
+  if (hasUrl) {
+    if (typeof body.url !== 'string') throw new HttpError(400, 'url must be a string');
+    return importSource(sourcesDir(c), { url: body.url });
+  }
+  if (typeof body.data_base64 !== 'string' || typeof body.filename !== 'string' || !body.filename) {
+    throw new HttpError(400, 'data_base64 and filename must be strings');
+  }
+  return importSource(sourcesDir(c), { filename: body.filename, data: Buffer.from(body.data_base64, 'base64') });
 }
 
 async function serveStatic(res, pathname) {
@@ -546,7 +582,9 @@ const server = createServer(async (req, res) => {
     if (pathname.startsWith('/api/')) return await api(req, res, pathname);
     if (req.method !== 'GET') throw new HttpError(405, 'method not allowed');
     return await serveStatic(res, pathname);
-  } catch (err) {
+  } catch (e) {
+    let err = e;
+    if (err instanceof SourceError) err = new HttpError(err.status, err.message, err.body);
     const status = err instanceof HttpError ? err.status : 500;
     if (status === 500) console.error(err);
     if (!res.headersSent) send(res, status, err.body ?? { error: err.message || 'internal error' });

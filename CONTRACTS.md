@@ -4,7 +4,7 @@ Shared formats that every part builds against. Change them here first.
 
 ## Run
 `node server.mjs` → http://localhost:4810. No npm dependencies. Node ≥ 22.
-Env: `MINDGAP_DATA_DIR` (default `learner/`), `MINDGAP_COURSES_DIR` (default `courses/`), `MINDGAP_TUTOR` (`claude` default | `agy`; unknown → exit 1), `MINDGAP_MODEL` (default `opus` for claude, unset for agy), `MINDGAP_EFFORT` (default `low` for agy, unused by claude). Binaries: `DOCKER_BIN` (default `docker`), `CLAUDE_BIN` (default `claude`), `AGY_BIN` (default `agy`).
+Env: `MINDGAP_DATA_DIR` (default `learner/`), `MINDGAP_COURSES_DIR` (default `courses/`), `MINDGAP_TUTOR` (`claude` default | `agy`; unknown → exit 1), `MINDGAP_MODEL` (default `opus` for claude, unset for agy), `MINDGAP_EFFORT` (default `low` for agy, unused by claude). Binaries: `DOCKER_BIN` (default `docker`), `CLAUDE_BIN` (default `claude`), `AGY_BIN` (default `agy`), `MARKITDOWN_BIN` (default `markitdown`, read per call; only sources need it).
 
 ## Files
 ```
@@ -16,7 +16,7 @@ prompts/practice.md        # system prompt, mode=practice
 prompts/prober.md          # system prompt, mode=probe
 prompts/chapter.md         # system prompt, mode=chapter
 prompts/course.md          # system prompt, mode=course
-prompts/course-schema.json # course-session output schema (turn schema + goal, assessment, plan, approved)
+prompts/course-schema.json # course-session output schema (turn schema + goal, assessment, plan, approved, read_sections)
 lib/labs.mjs               # lab runner: one Docker container per course, approval, runLab/labStatus
 lib/tutors/                # tutor CLI adapters (claude, agy), chosen by MINDGAP_TUTOR
 scripts/                   # migrate-learner-v1.mjs (old layout), tutor-gate.mjs, lab-parity.mjs
@@ -48,6 +48,7 @@ courses/<slug>/chapters/<node_id>.json  # chapter content, see Chapters below
   "sources": ["https://..."],
   "status": "gap",                     // untested | gap | shaky | solid
   "in_scope": false,                   // optional; only ever false, set by an approved course plan
+  "source_sections": ["<sourceId>-<n>"], // optional; section ids the node rests on, written only by an approved plan (`plan.sources`); distinct from `sources` above
   "evidence": "Placement 2026-10-24: said a switch maps IP→MAC."
 } ] }
 ```
@@ -62,9 +63,9 @@ Sim scenarios: `switch-learning | switch-flood | vlan-broadcast | vlan-trunk`.
 The schema is per mode: `schemaFor(mode)` in `server.mjs` picks `prompts/course-schema.json` for `course`, else `turn-schema.json`.
 `POST /api/lesson {course, mode:"course"}` starts a course-level probe → plan session. `node_id` is ignored. The lesson id is `course-<timestamp>` and its meta has `node_id: null` and, for course lessons, `goal, assessment, pending_plan, plan_presented, server_notes`. Every course-mode tutor turn (including the first) is reviewed by `reviewTurn` (`lib/course-session.mjs`) before node updates are applied and before anything is stored, so the transcript and the response hold the reviewed turn.
 
-First message: `CONTEXT:` + JSON `{mode:"course", course:{slug,title,layers}, learner:{goal,background}|null, nodes:[{id,title,layer,prereqs,truth,status,evidence,in_scope?}], propositions}` (the last 200 lines of propositions.jsonl; `in_scope` appears only as `false`).
+First message: `CONTEXT:` + JSON `{mode:"course", course:{slug,title,layers}, learner:{goal,background}|null, nodes:[{id,title,layer,prereqs,truth,status,evidence,in_scope?,source_sections?}], propositions, sources}` (the last 200 lines of propositions.jsonl; `in_scope` appears only as `false`; `source_sections` only when non-empty; `sources` is the TOC, see Sources).
 
-When the review refuses a field, it becomes a note in `meta.server_notes`. The next message starts with `SERVER:\n- <note>\n- <note>\n` immediately followed by the usual `EVENT:` text; the notes are cleared when that turn is stored (notes from reviewing it go to the message after).
+When the review refuses a field, it becomes a note in `meta.server_notes`. The next message starts with `SERVER:\n- <note>\n- <note>\n` then, if the previous turn's `read_sections` was accepted and non-empty, `SOURCES:\n<JSON of [{id, source, heading, text}]>\n` (see below), then the usual `EVENT:` text; the notes are cleared when that turn is stored (notes from reviewing it go to the message after).
 
 | Field | Kept only when |
 |---|---|
@@ -76,7 +77,11 @@ When the review refuses a field, it becomes a note in `meta.server_notes`. The n
 | `approved` | previous turn presented an accepted plan, this turn carries no plan field (even a refused one), the event it answers is `ask` or `answer` (never the first turn), and a goal is on record |
 | `lesson_done` | only with accepted approval |
 
-On accepted approval the server sets `in_scope: false` on every node outside the plan (in-scope nodes carry no `in_scope` key; nothing else in the map changes) and writes `<stateDir>/goal.json` = `{goal, background, approved_at}`. An abandoned session changes neither. `goal.json` may hold `goal: null` (background only); readers tolerate null. Node-level modes get `learner:{goal,background}|null` from it and list off-goal nodes in `other_nodes` with `in_scope: false`.
+Sources (course mode). `courseContext` always carries `sources: [{id, title, sections: [{id, heading, chars}]}]` (the TOC, no text, `[]` when none). The course schema has required `read_sections: string[]`: `reviewTurn` keeps it only when it is an array of at most `READ_MAX` (5) ids that all exist in this course's index, else it refuses with a `SERVER:` note naming the problem and keeps `[]`. The kept list is stored as `meta.pending_reads` every course turn (an empty list too), and the next message gets a `SOURCES:` block holding `readSections(...)` of it (capped at `EXCERPT_MAX` chars; unknown ids skipped); that turn's own `read_sections` replaces it, so each block is sent once. Source text is untrusted reference material, only ever inside JSON. `plan.sources` is required: `[{node, sections}]`; `checkPlan` refuses a node not in `in_scope`, a node listed twice, or an id not in the index (absent counts as `[]`).
+
+Node-level modes (teach/practice/probe/chapter): `baseContext` adds `sources: [{id, source, heading, text}]` for the target node's `source_sections` tags, in tag order up to `EXCERPT_MAX` chars total, dangling ids skipped; the key is absent when the node has no tags or none resolve.
+
+On accepted approval the server sets `in_scope: false` on every node outside the plan (in-scope nodes carry no `in_scope` key). In-scope nodes get `source_sections` = the ids `plan.sources` lists for them, or lose the key; off-scope nodes keep their `source_sections`. The URL list `sources` is never touched. Nothing else in the map changes. It also writes `<stateDir>/goal.json` = `{goal, background, approved_at}`. An abandoned session changes neither. `goal.json` may hold `goal: null` (background only); readers tolerate null. Node-level modes get `learner:{goal,background}|null` from it and list off-goal nodes in `other_nodes` with `in_scope: false`.
 
 ## How the server calls the tutor (adapters in `lib/tutors/`)
 `MINDGAP_TUTOR` picks one adapter: `claude` (default) or `agy`. Each adapter exports `buildCall({systemPrompt, schemaText, message, sessionId, model, schemaFile}) -> {bin, args}` and `parseOutput(stdout) -> {turn, sessionId, error}`. Binaries come from `CLAUDE_BIN` / `AGY_BIN`.
@@ -96,12 +101,17 @@ Binds 127.0.0.1 only. Unknown or invalid course slugs → 404. A malformed `cour
 | GET | `/api/courses/:slug` | → `{...course.json, chapters: string[], lab}` (`chapters` = `chapters/index.json`, `[]` if absent; `lab` = `{available, reason?, request:{caps, network}, approved}`, `reason` set when Docker is unavailable) |
 | GET | `/api/courses/:slug/map` | → state map.json (seeded on first access) |
 | GET | `/api/courses/:slug/chapters/:id` | → chapter JSON, 404 if absent |
+| GET | `/api/courses/:slug/sources` | → `[{id, title, origin:{kind,value}, added, truncated, sections:[{id, heading, chars}]}]`, oldest first |
+| POST | `/api/courses/:slug/sources` | `{url}` or `{filename, data_base64}` (exactly one of url / data_base64; filename required with data_base64) → 201 + the list shape above. Body limit `ceil(UPLOAD_MAX*4/3)+64 KB`. 400 bad input or non-http(s) URL, 413 over a cap, 422 `{error, stderr}` when markitdown fails, 502 fetch failed, 503 `{error: "markitdown is not installed", install: "pip install 'markitdown[all]'"}` |
+| DELETE | `/api/courses/:slug/sources/:id` | → 204, or 404 for an unknown or non-`validId` id |
 | POST | `/api/lesson` | `{course, node_id, mode}` → `{lesson_id, turn}` (starts a tutor session, first turn); `mode: "course"` needs no `node_id` |
 | POST | `/api/turn` | `{course, lesson_id, event}` → `{turn}` |
 | POST | `/api/courses/:slug/lab-approval` | `{caps, network}` (must equal the course's `lab.request` exactly) → 204, or 400 on mismatch. Writes `<stateDir>/lab-approval.json`. |
 | POST | `/api/lab` | `{course, lesson_id, cmd}` → `{stdout, stderr, code}`. Also appended to the transcript as a `lab` event. The next `/api/turn` should include it. 503 `{error: reason}` when Docker is unavailable; 428 `{error: 'lab needs approval', request}` until the course's request is approved. |
 | POST | `/api/chapter` | `{course, node_id}` → `{lesson_id, meta, events[]}`. Reuses the node's latest `chapter`-mode lesson or creates one **without** a tutor call; 404 when `courses/<course>/chapters/<node_id>.json` doesn't exist. `/api/lesson` refuses mode `chapter`. |
 | GET | `/api/lesson/:id?course=<slug>` | → `{meta, events[]}` (for reload). Missing or unknown course → 404. |
+
+Sources: one file per source at `<data>/courses/<slug>/sources/<id>.json`, never under the course dir. Shape `{id, title, origin:{kind:"url"|"file", value}, added, truncated, sections:[{id, heading, text}]}`. Ids: source `s<base36 ms>`, section `<sourceId>-<n>`. Caps (`lib/sources.mjs`): `FETCH_MAX` 10 MB, `FETCH_TIMEOUT_MS` 30 s, `UPLOAD_MAX` 20 MB decoded, `CONVERT_TIMEOUT_MS` 60 s, `TEXT_MAX` 1 MB of Markdown (longer is cut, `truncated: true`), `SECTION_MAX` 6000 chars, `EXCERPT_MAX` 20000 chars per tutor message, `READ_MAX` 5 ids. Only `http:`/`https:` URLs are fetched; text is converted by `markitdown -x <ext>` on stdin.
 
 Lesson meta gains `course`, `tutor` and `tutor_session_id`. Lesson ids are `<node_id>-<timestamp>` (`course-<timestamp>` for course sessions).
 

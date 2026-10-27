@@ -18,7 +18,7 @@ const CONTEXT_PREFIX = 'CONTEXT:\n';
 
 const MAP = {
   nodes: [
-    { id: 'frames-mac', title: 'Frames carry MAC', layer: 'L2', prereqs: [], truth: 't', twins: {}, lab: '', sim: null, sources: [], status: 'gap', evidence: '' },
+    { id: 'frames-mac', title: 'Frames carry MAC', layer: 'L2', prereqs: [], truth: 't', twins: {}, lab: '', sim: null, sources: ['https://example.com/x'], status: 'gap', evidence: '' },
     { id: 'switch-mac-table', title: 'Switch: MAC to port', layer: 'L2', prereqs: ['frames-mac'], truth: 't', twins: {}, lab: '', sim: 'switch-learning', sources: [], status: 'untested', evidence: '' },
     { id: 'vlan-basics', title: 'VLANs', layer: 'L2', prereqs: [], truth: 't', twins: {}, lab: '', sim: null, sources: [], status: 'untested', evidence: '' },
   ],
@@ -715,10 +715,10 @@ test('a non-string lab.hostname is reported on the course page as unavailable, n
   assert.match(info.json.lab.reason, /lab\.hostname/);
 });
 
-test('course schema extends the turn schema: same seven fields, four more required', async () => {
+test('course schema extends the turn schema: same seven fields, five more required', async () => {
   const turn = JSON.parse(await readFile(path.join(PROMPTS, 'turn-schema.json'), 'utf8'));
   const course = JSON.parse(await readFile(path.join(PROMPTS, 'course-schema.json'), 'utf8'));
-  assert.deepEqual(course.required, [...turn.required, 'goal', 'assessment', 'plan', 'approved']);
+  assert.deepEqual(course.required, [...turn.required, 'goal', 'assessment', 'plan', 'approved', 'read_sections']);
   for (const key of Object.keys(turn.properties)) {
     assert.deepEqual(course.properties[key], turn.properties[key], key);
   }
@@ -727,7 +727,7 @@ test('course schema extends the turn schema: same seven fields, four more requir
 // Course-session tests. FAKE_CLAUDE answers with <dir>/turn.json while it exists.
 const courseTurn = (o = {}) => ({
   say: 'ok', question: null, sim: null, lab: null, node_updates: [], propositions: [], lesson_done: false,
-  goal: null, assessment: null, plan: null, approved: false, ...o,
+  goal: null, assessment: null, plan: null, approved: false, read_sections: [], ...o,
 });
 const GOAL = { text: 'Debug a VLAN outage', background: 'runs a home lab' };
 const ASSESSMENT = { strands: [{ strand: 'L2', assessment: 'knows frames' }], summary: 'enter at switching' };
@@ -767,6 +767,16 @@ test('course mode starts without a node_id: schema, context, lesson id', () => w
   assert.equal(meta.node_id, null);
 }));
 
+test('course context carries existing source_sections on a node', () => withCourseState(async (map) => {
+  map.nodes[0].source_sections = ['sx-1'];
+  await writeFile(path.join(stateDir(), 'map.json'), JSON.stringify(map));
+  await setTurn({ say: 'hi' });
+  assert.equal((await startCourse()).status, 200);
+  const ctx = JSON.parse((await lastMessage()).slice(CONTEXT_PREFIX.length));
+  assert.deepEqual(ctx.nodes[0].source_sections, ['sx-1']);
+  assert.ok(!('source_sections' in ctx.nodes[1]));
+}));
+
 test('course session happy path: plan approved, map scoped, goal saved, lab approval untouched', () => withCourseState(async (mapBefore) => {
   await setTurn({ goal: GOAL, assessment: ASSESSMENT });
   const r = await startCourse();
@@ -783,7 +793,8 @@ test('course session happy path: plan approved, map scoped, goal saved, lab appr
   assert.equal(map.nodes.find((n) => n.id === 'vlan-basics').in_scope, false);
   assert.ok(!('in_scope' in map.nodes.find((n) => n.id === 'frames-mac')));
   assert.ok(!('in_scope' in map.nodes.find((n) => n.id === 'switch-mac-table')));
-  assert.deepEqual(map.nodes.map(({ in_scope, ...n }) => n), mapBefore.nodes);
+  assert.deepEqual(map.nodes.map(({ in_scope, source_sections, ...n }) => n), mapBefore.nodes);
+  assert.deepEqual(map.nodes.find((n) => n.id === 'frames-mac').sources, ['https://example.com/x']);
   const goal = JSON.parse(await readFile(goalPath(), 'utf8'));
   assert.equal(goal.goal, GOAL.text);
   assert.equal(goal.background, GOAL.background);
@@ -888,3 +899,169 @@ test('a corrupt goal.json does not stop a teach lesson: learner is null', () => 
   const ctx = JSON.parse((await lastMessage()).slice(CONTEXT_PREFIX.length));
   assert.equal(ctx.learner, null);
 }));
+
+// Source routes. FAKE_MARKITDOWN turns stdin into "# Doc\n\n<stdin>" and records the -x hint.
+const FAKE_MARKITDOWN = `
+let s = '';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', (c) => (s += c));
+process.stdin.on('end', () => process.stdout.write('# Doc\\n\\n' + s + '\\n\\n## Part two\\n\\nmore'));
+`;
+
+async function startSourcesServer(bin) {
+  const started = startServer({ MINDGAP_DATA_DIR: path.join(dir, 'src-data'), MARKITDOWN_BIN: bin });
+  return { srv: started.srv, at: await started.port };
+}
+
+test('sources: add by URL and upload, list, delete, path safety, guards', async () => {
+  const js = path.join(dir, 'fake-markitdown.mjs');
+  const bin = path.join(dir, 'markitdown');
+  await writeFile(js, FAKE_MARKITDOWN);
+  await writeFile(bin, `#!/bin/sh\nexec "${process.execPath}" "${js}" "$@"\n`);
+  await chmod(bin, 0o755);
+  const site = http.createServer((req, res) => {
+    res.writeHead(200, { 'content-type': 'text/html' });
+    res.end('<p>from the web</p>');
+  });
+  await new Promise((r) => site.listen(0, '127.0.0.1', r));
+  const { srv, at } = await startSourcesServer(bin);
+  try {
+    const url = `http://127.0.0.1:${site.address().port}/page`;
+    const a = await call('POST', '/api/courses/net/sources', { url }, at);
+    assert.equal(a.status, 201, a.text);
+    assert.equal(a.json.origin.kind, 'url');
+    const b = await call('POST', '/api/courses/net/sources', { filename: 'n.txt', data_base64: Buffer.from('hello upload').toString('base64') }, at);
+    assert.equal(b.status, 201, b.text);
+    assert.equal(b.json.origin.value, 'n.txt');
+
+    const list = await call('GET', '/api/courses/net/sources', undefined, at);
+    assert.equal(list.status, 200);
+    assert.deepEqual(list.json.map((s) => s.id).sort(), [a.json.id, b.json.id].sort());
+    assert.ok(list.json[0].sections.every((x) => x.chars > 0 && x.heading));
+
+    // exactly one of url / data_base64; filename required; data must be a string
+    for (const body of [{}, { url, filename: 'a.txt', data_base64: 'aGk=' }, { data_base64: 'aGk=' }, { filename: 'a.txt', data_base64: 5 }]) {
+      assert.equal((await call('POST', '/api/courses/net/sources', body, at)).status, 400, JSON.stringify(body));
+    }
+    assert.equal((await call('POST', '/api/courses/nope/sources', { url }, at)).status, 404);
+
+    // guards: static still refuses DELETE; a non-JSON POST is 415
+    assert.equal((await call('DELETE', '/index.html', undefined, at)).status, 405);
+    const raw = await new Promise((resolve, reject) => {
+      const req = http.request({ host: '127.0.0.1', port: at, method: 'POST', path: '/api/courses/net/sources', headers: { 'content-type': 'text/plain' } }, (res) => { res.resume(); resolve(res.statusCode); });
+      req.on('error', reject);
+      req.end('{}');
+    });
+    assert.equal(raw, 415);
+
+    assert.equal((await call('DELETE', '/api/courses/net/sources/..', undefined, at)).status, 404);
+    assert.equal((await call('DELETE', '/api/courses/net/sources/..%2Fetc', undefined, at)).status, 404);
+    assert.equal((await call('DELETE', `/api/courses/net/sources/${a.json.id}`, undefined, at)).status, 204);
+    assert.equal((await call('DELETE', `/api/courses/net/sources/${a.json.id}`, undefined, at)).status, 404);
+    assert.equal((await call('GET', '/api/courses/net/sources', undefined, at)).json.length, 1);
+  } finally {
+    srv.kill();
+    site.close();
+  }
+});
+
+test('sources: missing markitdown is 503 with the install line', async () => {
+  const { srv, at } = await startSourcesServer('/nonexistent/markitdown');
+  try {
+    const r = await call('POST', '/api/courses/net/sources', { filename: 'n.txt', data_base64: 'aGk=' }, at);
+    assert.equal(r.status, 503, r.text);
+    assert.match(r.json.install, /markitdown\[all\]/);
+  } finally {
+    srv.kill();
+  }
+});
+
+test('sources: the 413 message names the real limit', async () => {
+  const { srv, at } = await startSourcesServer('/nonexistent/markitdown');
+  try {
+    const big = Buffer.alloc(300 * 1024, 'a').toString('base64');
+    const r = await call('POST', '/api/lesson', { pad: big }, at);
+    assert.equal(r.status, 413);
+    assert.match(r.json.error, /256 KB/);
+  } finally {
+    srv.kill();
+  }
+});
+
+// Slice f1: sources reach the tutor. Sources are written straight into learner data, as importSource would.
+const srcDir = () => path.join(dataDir, 'courses', 'net', 'sources');
+async function putSource(id, title, texts) {
+  await mkdir(srcDir(), { recursive: true });
+  const sections = texts.map((text, i) => ({ id: `${id}-${i + 1}`, heading: `H${i + 1}`, text }));
+  await writeFile(path.join(srcDir(), `${id}.json`), JSON.stringify({ id, title, origin: { kind: 'file', value: 'x.txt' }, added: '2026-01-01T00:00:00.000Z', truncated: false, sections }));
+}
+async function withSources(fn) {
+  try { await fn(); } finally { await rm(srcDir(), { recursive: true, force: true }); }
+}
+const ctxOf = (msg) => JSON.parse(msg.slice(msg.indexOf(CONTEXT_PREFIX) + CONTEXT_PREFIX.length));
+
+test('sources: course context carries the TOC without text; read_sections brings SOURCES: next turn only', () => withCourseState(() => withSources(async () => {
+  await putSource('sa', 'Book', ['alpha text', 'beta text']);
+  await setTurn({ say: 'hello' });
+  const id = (await startCourse()).json.lesson_id;
+  const ctx = ctxOf(await lastMessage());
+  assert.deepEqual(ctx.sources, [{ id: 'sa', title: 'Book', sections: [{ id: 'sa-1', heading: 'H1', chars: 10 }, { id: 'sa-2', heading: 'H2', chars: 9 }] }]);
+  assert.ok(!(await lastMessage()).includes('alpha text'));
+  await setTurn({ read_sections: ['sa-2'] });
+  await say(id);
+  assert.ok(!(await lastMessage()).includes('SOURCES:'));
+  await setTurn({});
+  await say(id);
+  const m = await lastMessage();
+  assert.ok(m.startsWith('SOURCES:\n'), m);
+  assert.deepEqual(JSON.parse(m.slice('SOURCES:\n'.length, m.indexOf('\nEVENT:'))), [{ id: 'sa-2', source: 'sa', heading: 'H2', text: 'beta text' }]);
+  await say(id);
+  assert.ok(!(await lastMessage()).includes('SOURCES:'));
+})));
+
+test('sources: an unknown read_sections id is refused with a SERVER note and nothing is read', () => withCourseState(() => withSources(async () => {
+  await putSource('sa', 'Book', ['alpha text']);
+  await setTurn({});
+  const id = (await startCourse()).json.lesson_id;
+  await setTurn({ read_sections: ['sa-1', 'sz-9'] });
+  await say(id);
+  await setTurn({});
+  await say(id);
+  const m = await lastMessage();
+  assert.ok(m.startsWith('SERVER:\n- read_sections refused'), m);
+  assert.match(m, /sz-9/);
+  assert.ok(!m.includes('SOURCES:'));
+  assert.ok(!m.includes('alpha text'));
+})));
+
+test('sources: approval tags nodes, teach lesson gets the excerpt; truncation at EXCERPT_MAX; deleted source skipped', () => withCourseState(() => withSources(async () => {
+  await putSource('sa', 'Book', ['a'.repeat(12000), 'b'.repeat(12000), 'tiny']);
+  await setTurn({ goal: GOAL, assessment: ASSESSMENT });
+  const id = (await startCourse()).json.lesson_id;
+  const sources = [{ node: 'switch-mac-table', sections: ['sa-1', 'sa-2'] }, { node: 'frames-mac', sections: ['sa-3', 'sgone-1'] }];
+  await setTurn({ plan: { approach: 'x', in_scope: ['frames-mac', 'switch-mac-table'], sources } });
+  const refused = await say(id);
+  assert.equal(refused.json.turn.plan, null);
+  await setTurn({ plan: { approach: 'x', in_scope: ['frames-mac', 'switch-mac-table'], sources: [sources[0], { node: 'frames-mac', sections: ['sa-3'] }] } });
+  await say(id);
+  await setTurn({ approved: true });
+  await say(id);
+  const map = (await call('GET', '/api/courses/net/map')).json;
+  assert.deepEqual(map.nodes.find((n) => n.id === 'switch-mac-table').source_sections, ['sa-1', 'sa-2']);
+  assert.deepEqual(map.nodes.find((n) => n.id === 'frames-mac').source_sections, ['sa-3']);
+  assert.deepEqual(map.nodes.find((n) => n.id === 'frames-mac').sources, ['https://example.com/x']);
+  assert.ok(!('source_sections' in map.nodes.find((n) => n.id === 'vlan-basics')));
+
+  await rm(path.join(dir, 'turn.json'));
+  await call('POST', '/api/lesson', { course: 'net', node_id: 'switch-mac-table', mode: 'teach' });
+  const t = ctxOf(await lastMessage());
+  assert.deepEqual(t.sources.map((x) => x.id), ['sa-1']);
+  assert.equal(t.sources[0].text.length, 12000);
+
+  await call('POST', '/api/lesson', { course: 'net', node_id: 'frames-mac', mode: 'practice' });
+  assert.deepEqual(ctxOf(await lastMessage()).sources, [{ id: 'sa-3', source: 'sa', heading: 'H3', text: 'tiny' }]);
+
+  await rm(srcDir(), { recursive: true, force: true });
+  await call('POST', '/api/lesson', { course: 'net', node_id: 'frames-mac', mode: 'teach' });
+  assert.ok(!('sources' in ctxOf(await lastMessage())));
+})));

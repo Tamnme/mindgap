@@ -12,7 +12,8 @@
     "goal",
     "assessment",
     "plan",
-    "approved"
+    "approved",
+    "read_sections"
   ],
   "properties": {
     "say": {
@@ -225,7 +226,8 @@
       "additionalProperties": false,
       "required": [
         "approach",
-        "in_scope"
+        "in_scope",
+        "sources"
       ],
       "properties": {
         "approach": {
@@ -238,11 +240,41 @@
             "type": "string"
           },
           "description": "node ids on the path to the goal"
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "node",
+              "sections"
+            ],
+            "properties": {
+              "node": {
+                "type": "string"
+              },
+              "sections": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "description": "for each node in in_scope that rests on a source, the section ids it rests on"
         }
       }
     },
     "approved": {
       "type": "boolean"
+    },
+    "read_sections": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "section ids from the sources TOC whose text you want in the next message; at most 5; [] for none"
     }
   }
 }

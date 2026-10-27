@@ -34,3 +34,17 @@ export function pickNext(topo, byId, status) {
     (n.prereqs || []).every((p) => !byId.has(p) || isOffGoal(byId.get(p)) || good(status(byId.get(p))));
   return topo.find(ok) || topo.find((n) => !isOffGoal(n) && status(n) === 'gap') || null;
 }
+
+// "data:<mime>;base64,<payload>" -> "<payload>".
+export function dataUrlToBase64(dataUrl) {
+  const i = String(dataUrl).indexOf(',');
+  return i === -1 ? '' : String(dataUrl).slice(i + 1);
+}
+
+// Message for a failed sources request; a 503 with `install` means markitdown is missing.
+export function sourceErrorMessage(status, body) {
+  if (status === 503 && body && body.install) {
+    return `Sources need markitdown: run \`${body.install}\`, then restart mindgap.`;
+  }
+  return (body && body.error) || `HTTP ${status}`;
+}
