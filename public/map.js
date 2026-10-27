@@ -456,7 +456,7 @@ async function writeChapter(nodeId) {
   showError('');
   setBusy(true, 'Writing the chapter… this can take a few minutes.');
   try {
-    const res = await fetch(courseApi(`/chapters/${encodeURIComponent(nodeId)}/write`), { method: 'POST' });
+    const res = await fetch(courseApi(`/chapters/${encodeURIComponent(nodeId)}/write`), { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
     if (!res.ok) throw new Error(await errorText(res));
     location.href = `chapter.html?course=${encodeURIComponent(state.course)}&node=${encodeURIComponent(nodeId)}`;
   } catch (err) {
