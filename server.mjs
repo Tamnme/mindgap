@@ -532,7 +532,7 @@ async function courseInfo(slug) {
     // A malformed lab block must not take the course page down; the reason says what to fix.
     lab = { available: false, reason: err.message };
   }
-  return { ...course, chapters: index === null ? [] : JSON.parse(index), lab };
+  return { ...course, chapters: index === null ? [] : JSON.parse(index), lab, generated: c.generated };
 }
 
 async function getChapter(slug, id) {

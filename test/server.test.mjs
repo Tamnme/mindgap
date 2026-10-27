@@ -1102,6 +1102,8 @@ test('POST /api/courses creates the folder, files and goal background; the list 
   assert.deepEqual(JSON.parse(await readFile(path.join(cdir, 'state', 'goal.json'), 'utf8')), { goal: null, background: 'knows C' });
   assert.ok((await call('GET', '/api/courses')).json.some((c) => c.slug === 'rust-basics' && c.title === 'Rust Basics'));
   assert.deepEqual((await call('GET', '/api/courses/rust-basics/map')).json, { nodes: [] });
+  assert.equal((await call('GET', '/api/courses/rust-basics')).json.generated, true);
+  assert.equal((await call('GET', '/api/courses/net')).json.generated, false);
 });
 
 test('POST /api/courses: same title gets -2, a shipped slug is skipped, bad input is 400', async () => {
