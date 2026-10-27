@@ -50,3 +50,11 @@ test('sourceErrorMessage: 503 with install names markitdown', () => {
   assert.equal(sourceErrorMessage(422, { error: 'bad' }), 'bad');
   assert.equal(sourceErrorMessage(500, null), 'HTTP 500');
 });
+
+test('canWriteChapter: generated courses only, and only without a chapter', async () => {
+  const { canWriteChapter } = await import('../public/map-logic.js');
+  assert.equal(canWriteChapter(true, ['a'], 'b'), true);
+  assert.equal(canWriteChapter(true, ['a'], 'a'), false);
+  assert.equal(canWriteChapter(false, [], 'a'), false);
+  assert.equal(canWriteChapter(undefined, [], 'a'), false);
+});

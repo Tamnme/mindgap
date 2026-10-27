@@ -1,7 +1,7 @@
 // Map home: renders learner/map.json as an SVG graph and drives lesson starts.
 // All map text comes from model-written files, so it is only ever set via textContent.
 
-import { visibleNodes, offGoalCount, isOffGoal, pickNext, dataUrlToBase64, sourceErrorMessage } from './map-logic.js';
+import { visibleNodes, offGoalCount, isOffGoal, pickNext, dataUrlToBase64, sourceErrorMessage, canWriteChapter } from './map-logic.js';
 
 const STATUSES = ['untested', 'gap', 'shaky', 'solid'];
 // Roadmap layout: one yellow topic per layer on a curved spine, its nodes in a column on each side.
@@ -26,6 +26,7 @@ const state = {
   topo: [],
   selected: null,
   chapters: [],
+  generated: false,   // generated courses may write chapters and grow their map
   showOff: false,     // draw off-goal nodes (faded)
 };
 
@@ -144,6 +145,9 @@ const BADGE = { solid: '✓', shaky: '~', gap: '!' };
 function renderMap() {
   const svg = $('map');
   svg.replaceChildren();
+  $('map-empty').classList.toggle('hidden', state.nodes.length > 0);
+  svg.classList.toggle('hidden', state.nodes.length === 0);
+  if (!state.nodes.length) return;
   const { topics, pos, width, height } = layoutFor(visibleNodes(state.nodes, state.showOff));
   svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
   // Scale to the container, but never below 80% so labels stay legible (narrow screens scroll the container).
@@ -281,6 +285,9 @@ function renderSide() {
   const actions = el('div', { class: 'actions' }, [
     el('button', { class: 'primary', 'data-action': 'teach', onclick: () => startLesson(n.id, 'teach'), text: teachLabel }),
   ]);
+  if (canWriteChapter(state.generated, state.chapters, n.id)) {
+    actions.append(el('button', { 'data-action': 'write', onclick: () => writeChapter(n.id), text: 'Write chapter' }));
+  }
   if (status === 'shaky' || status === 'solid') {
     actions.append(el('button', { 'data-action': 'practice', onclick: () => startLesson(n.id, 'practice'), text: 'Practice' }));
   }
@@ -445,6 +452,19 @@ function renderSources(list) {
   );
 }
 
+async function writeChapter(nodeId) {
+  showError('');
+  setBusy(true, 'Writing the chapter… this can take a few minutes.');
+  try {
+    const res = await fetch(courseApi(`/chapters/${encodeURIComponent(nodeId)}/write`), { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+    if (!res.ok) throw new Error(await errorText(res));
+    location.href = `chapter.html?course=${encodeURIComponent(state.course)}&node=${encodeURIComponent(nodeId)}`;
+  } catch (err) {
+    showError(`Could not write the chapter: ${err.message}`);
+    setBusy(false);
+  }
+}
+
 async function startLesson(nodeId, mode) {
   // Nodes with a written chapter teach through it; the tutor lives in its drawer.
   if (mode === 'teach' && state.chapters.includes(nodeId)) {
@@ -483,6 +503,7 @@ async function load() {
     state.layers = (course.layers || []).map((l) => l.id);
     state.layerNames = Object.fromEntries((course.layers || []).map((l) => [l.id, l.name]));
     state.chapters = Array.isArray(course.chapters) ? course.chapters : [];
+    state.generated = course.generated === true;
     $('course-title').textContent = `mindgap · ${course.title || course.slug}`;
     document.title = `mindgap · ${course.title || course.slug}`;
     state.nodes = Array.isArray(data.nodes) ? data.nodes : [];

@@ -10,10 +10,16 @@
   <main style="padding: 16px; max-width: 900px; margin: 0 auto;">
     <header style="margin-bottom: 12px;">
       <h1>mindgap · courses</h1>
-      <p class="muted small">Pick a course to open its map.</p>
+      <p class="muted small">Pick a course to open its map, or start a new one.</p>
     </header>
     <div id="error" class="notice error hidden" role="alert"></div>
     <ul id="courses"></ul>
+    <h2>New course</h2>
+    <form id="new-course">
+      <p><label>Title <input id="title" name="title" required maxlength="80" style="width: 100%;"></label></p>
+      <p><label>Background <textarea id="background" name="background" maxlength="2000" rows="4" style="width: 100%;" placeholder="What do you already know? Optional."></textarea></label></p>
+      <button type="submit" class="primary" id="create">Create course</button>
+    </form>
   </main>
   <script type="module">
     const list = document.getElementById('courses');
@@ -25,25 +31,39 @@
     try {
       const res = await fetch('/api/courses');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const courses = await res.json();
-      // One course: skip the list entirely.
-      if (courses.length === 1) {
-        location.replace(`map.html?course=${encodeURIComponent(courses[0].slug)}`);
-      } else if (!courses.length) {
-        showError('No courses found. Add one under courses/.');
-      } else {
-        for (const c of courses) {
-          const a = document.createElement('a');
-          a.href = `map.html?course=${encodeURIComponent(c.slug)}`;
-          a.textContent = c.title || c.slug;
-          const li = document.createElement('li');
-          li.append(a);
-          list.append(li);
-        }
+      for (const c of await res.json()) {
+        const a = document.createElement('a');
+        a.href = `map.html?course=${encodeURIComponent(c.slug)}`;
+        a.textContent = c.title || c.slug;
+        const li = document.createElement('li');
+        li.append(a);
+        list.append(li);
       }
     } catch (err) {
       showError(`Could not load courses: ${err.message}`);
     }
+
+    document.getElementById('new-course').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('create');
+      showError('');
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/courses', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ title: e.target.title.value.trim(), background: e.target.background.value }),
+        });
+        let body = null;
+        try { body = await res.json(); } catch { /* no JSON body */ }
+        if (res.status !== 201) throw new Error((body && body.error) || `HTTP ${res.status}`);
+        location.href = `map.html?course=${encodeURIComponent(body.slug)}`;
+        return;
+      } catch (err) {
+        showError(err.message);
+      }
+      btn.disabled = false;
+    });
   </script>
 </body>
 </html>

@@ -227,7 +227,9 @@
       "required": [
         "approach",
         "in_scope",
-        "sources"
+        "sources",
+        "new_layers",
+        "new_nodes"
       ],
       "properties": {
         "approach": {
@@ -263,6 +265,76 @@
             }
           },
           "description": "for each node in in_scope that rests on a source, the section ids it rests on"
+        },
+        "new_layers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "name"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          },
+          "description": "layers to add to the course map; [] when the plan only uses existing ones. Only on a generated course"
+        },
+        "new_nodes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "title",
+              "layer",
+              "prereqs",
+              "truth",
+              "status",
+              "evidence"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "lowercase letters, digits, hyphens; max 48"
+              },
+              "title": {
+                "type": "string"
+              },
+              "layer": {
+                "type": "string",
+                "description": "an existing or new layer id"
+              },
+              "prereqs": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "existing or new node ids; no cycles"
+              },
+              "truth": {
+                "type": "string",
+                "description": "the one-sentence correct statement the learner should hold"
+              },
+              "status": {
+                "type": "string",
+                "enum": ["untested", "gap", "shaky", "solid"],
+                "description": "what the probe measured for this node; untested when the probe did not touch it"
+              },
+              "evidence": {
+                "type": "string",
+                "description": "one sentence of what the learner said or did that shows the status; empty when untested"
+              }
+            }
+          },
+          "description": "nodes to add to the map (at most 40, at most 8 new layers); [] when the plan only uses existing ones. Only on a generated course. in_scope may name them"
         }
       }
     },

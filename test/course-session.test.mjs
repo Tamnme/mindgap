@@ -104,7 +104,7 @@ test('empty plan is refused', () => {
 
 test('valid plan is accepted and sets plan_presented', () => {
   const r = reviewTurn({ meta: assessedMeta(), turn: turn({ plan: PLAN(['a', 'b', 'c']) }), map });
-  assert.deepEqual(r.meta.pending_plan, PLAN(['a', 'b', 'c']));
+  assert.deepEqual(r.meta.pending_plan, { ...PLAN(['a', 'b', 'c']), new_layers: [], new_nodes: [] });
   assert.equal(r.meta.plan_presented, true);
 });
 
@@ -114,7 +114,7 @@ test('plan and approved in one turn: plan accepted, approval refused, lesson_don
     turn: turn({ plan: PLAN(['a', 'b']), approved: true, lesson_done: true }),
     map,
   });
-  assert.deepEqual(r.meta.pending_plan, PLAN(['a', 'b']));
+  assert.deepEqual(r.meta.pending_plan, { ...PLAN(['a', 'b']), new_layers: [], new_nodes: [] });
   assert.equal(r.turn.approved, false);
   assert.equal(r.turn.lesson_done, false);
   assert.ok(r.notes.includes('lesson_done refused: the session ends at approval'));
@@ -220,7 +220,7 @@ test('approval with no goal on record is refused', () => {
 test('a refused revised plan with approved: true does not approve the previous plan', () => {
   const r = reviewTurn({ meta: presented(), turn: turn({ plan: PLAN(['zz']), approved: true }), map, event: ANSWER });
   assert.equal(r.turn.approved, false);
-  assert.deepEqual(r.meta.pending_plan, PLAN(['a', 'b']));
+  assert.deepEqual(r.meta.pending_plan, { ...PLAN(['a', 'b']), new_layers: [], new_nodes: [] });
 });
 
 test('a goal change on an approving turn is refused, approval still accepted', () => {
@@ -301,4 +301,113 @@ test('applyPlan tags listed in-scope nodes, clears unlisted in-scope tags, keeps
     const { in_scope: i2, source_sections: s2, ...orig } = before.nodes.find((x) => x.id === n.id);
     assert.deepEqual(rest, orig);
   }
+});
+
+// --- drawn plans (new_layers / new_nodes) ---
+const GEN = { generated: true, layers: ['L1'] };
+const nn = (id, o = {}) => ({ id, title: id.toUpperCase(), layer: 'L1', prereqs: [], truth: `${id} is true`, status: 'untested', evidence: '', ...o });
+const drawn = (new_nodes, o = {}) => ({ approach: 'x', in_scope: new_nodes.map((n) => n.id), sources: [], new_layers: [], new_nodes, ...o });
+const EMPTY = { nodes: [] };
+
+test('drawn plan on an empty map is accepted; in_scope may mix existing and new nodes', () => {
+  const g = { generated: true, layers: [] };
+  assert.equal(checkPlan(EMPTY, drawn([nn('x', { layer: 'new-l' }), nn('y', { layer: 'new-l', prereqs: ['x'] })], { new_layers: [{ id: 'new-l', name: 'N' }] }), new Set(), g), null);
+  assert.equal(checkPlan(map, { approach: 'x', in_scope: ['a', 'n1'], sources: [], new_layers: [], new_nodes: [nn('n1', { prereqs: ['a'] })] }, new Set(), GEN), null);
+});
+
+test('drawn plan whose in_scope misses a prereq of a new node is refused', () => {
+  const p = { approach: 'x', in_scope: ['n1'], sources: [], new_layers: [], new_nodes: [nn('n1', { prereqs: ['a'] })] };
+  assert.match(checkPlan(map, p, new Set(), GEN), /n1 needs a/);
+});
+
+test('sources may tag a new node', () => {
+  const p = drawn([nn('n1')], { sources: [{ node: 'n1', sections: ['s-1'] }] });
+  assert.equal(checkPlan(EMPTY, p, new Set(['s-1']), GEN), null);
+  assert.match(checkPlan(EMPTY, drawn([nn('n1')], { sources: [{ node: 'n1', sections: ['zz'] }] }), new Set(['s-1']), GEN), /unknown section/);
+});
+
+test('bad drawn plans are refused with a note, never thrown', () => {
+  const bad = (nodes, rx, extra = {}, course = GEN) => {
+    const why = checkPlan(map, { approach: 'x', in_scope: ['a'], sources: [], new_layers: [], new_nodes: nodes, ...extra }, new Set(), course);
+    assert.match(why, rx);
+  };
+  bad([nn('p', { prereqs: ['q'] }), nn('q', { prereqs: ['p'] })], /cycle.*\b[pq]\b/);
+  bad([nn('p', { prereqs: ['p'] })], /cycle/);
+  bad([nn('p', { prereqs: ['ghost'] })], /unknown prereq.*ghost/);
+  bad([nn('p', { layer: 'nope' })], /unknown layer.*nope/);
+  bad([nn('p'), nn('p')], /duplicate.*p/);
+  bad([nn('a')], /collides.*a/);
+  bad([nn('p', { layer: 'lay' })], /collides.*lay/, { new_layers: [{ id: 'lay', name: 'x' }] }, { generated: true, layers: ['lay'] });
+  bad([nn('p')], /duplicate.*q/, { new_layers: [{ id: 'q', name: 'x' }, { id: 'q', name: 'y' }] });
+  bad(Array.from({ length: 41 }, (_, i) => nn(`n${i}`)), /at most 40/);
+  bad([nn('p')], /at most 8/, { new_layers: Array.from({ length: 9 }, (_, i) => ({ id: `l${i}`, name: 'x' })) });
+  bad([nn('p', { status: 'great' })], /status must be one of/);
+  bad([nn('p', { status: undefined })], /status must be one of/);
+  bad([nn('p', { evidence: 3 })], /evidence must be text/);
+  bad([nn('index')], /index.*reserved/);
+  bad([nn('Bad_Id')], /invalid id/);
+  bad([nn('p')], /invalid id/, { new_layers: [{ id: '-x', name: 'x' }] });
+  bad([nn('x'.repeat(49))], /invalid id/);
+  bad(['str'], /new_nodes/);
+  bad([null], /new_nodes/);
+  bad([nn('p', { title: '' })], /title/);
+  bad([nn('p', { truth: '  ' })], /truth/);
+  bad([nn('p', { prereqs: 'a' })], /prereqs/);
+  bad([nn('p', { prereqs: [1] })], /prereqs/);
+  bad([{ id: 'p', title: 't', layer: 'L1', truth: 't', status: 'untested', evidence: '' }], /prereqs/);
+  bad([nn('p')], /new_layers/, { new_layers: [{ id: 'q' }] });
+  bad([nn('p')], /new_layers/, { new_layers: 'x' });
+});
+
+test('non-array new_nodes is refused', () => {
+  assert.match(checkPlan(map, { approach: 'x', in_scope: ['a'], new_nodes: 'x' }, new Set(), GEN), /new_nodes must be an array/);
+});
+
+test('exactly 40 nodes and 8 layers are allowed', () => {
+  const ns = Array.from({ length: 40 }, (_, i) => nn(`n${i}`, { layer: `l${i % 8}` }));
+  const ls = Array.from({ length: 8 }, (_, i) => ({ id: `l${i}`, name: 'x' }));
+  assert.equal(checkPlan(EMPTY, drawn(ns, { new_layers: ls }), new Set(), { generated: true, layers: [] }), null);
+});
+
+test('a fixed course refuses new_nodes / new_layers; empty or absent ones are fine', () => {
+  const FIXED = "this course's map is fixed; choose from its nodes";
+  assert.equal(checkPlan(map, { approach: 'x', in_scope: ['a'], new_nodes: [nn('z')] }, new Set()), FIXED);
+  assert.equal(checkPlan(map, { approach: 'x', in_scope: ['a'], new_layers: [{ id: 'z', name: 'Z' }] }, new Set(), { generated: false, layers: [] }), FIXED);
+  assert.equal(checkPlan(map, { approach: 'x', in_scope: ['a'], new_nodes: [], new_layers: [] }, new Set()), null);
+  assert.equal(checkPlan(map, { approach: 'x', in_scope: ['a'] }, new Set()), null);
+});
+
+test('reviewTurn on a shipped course: drawn plan gets a SERVER-bound note, no pending plan', () => {
+  const meta = { goal: { text: 'g', background: null }, assessment: { summary: 's' } };
+  const r = reviewTurn({ meta, turn: turn({ plan: drawn([nn('z')]) }), map });
+  assert.equal(r.turn.plan, null);
+  assert.ok(r.notes.some((n) => n.startsWith('plan refused:') && n.includes('map is fixed')), r.notes.join('|'));
+  assert.equal(r.meta.pending_plan, undefined);
+});
+
+test('reviewTurn on a generated course keeps a drawn plan; absent new_* normalised to []', () => {
+  const meta = { goal: { text: 'g', background: null }, assessment: { summary: 's' } };
+  const r = reviewTurn({ meta, turn: turn({ plan: drawn([nn('z')]) }), map: EMPTY, course: GEN });
+  assert.deepEqual(r.notes, []);
+  assert.equal(r.meta.pending_plan.new_nodes[0].id, 'z');
+  const r2 = reviewTurn({ meta, turn: turn({ plan: { approach: 'x', in_scope: ['a'] } }), map });
+  assert.deepEqual(r2.meta.pending_plan.new_nodes, []);
+  assert.deepEqual(r2.meta.pending_plan.new_layers, []);
+});
+
+test('applyPlan appends new nodes with their probed status and evidence, leaves existing nodes intact, never mutates input', () => {
+  const before = structuredClone(map);
+  const out = applyPlan(map, ['a', 'z', 'y'], [], [{ ...nn('z', { prereqs: ['a'], status: 'shaky', evidence: 'mixed up ports' }), extra: 1 }, nn('y')]);
+  assert.deepEqual(map, before);
+  assert.deepEqual(out.nodes.slice(0, 4).map((n) => n.id), ['a', 'b', 'c', 'd']);
+  assert.deepEqual(out.nodes[4], { id: 'z', title: 'Z', layer: 'L1', prereqs: ['a'], truth: 'z is true', status: 'shaky', evidence: 'mixed up ports' });
+  assert.deepEqual(out.nodes[5], { id: 'y', title: 'Y', layer: 'L1', prereqs: [], truth: 'y is true', status: 'untested', evidence: '' });
+  for (const n of before.nodes) {
+    const { in_scope, source_sections, ...rest } = out.nodes.find((x) => x.id === n.id);
+    const { in_scope: i0, source_sections: s0, ...rest0 } = n;
+    assert.deepEqual(rest, rest0);
+  }
+  assert.equal(out.nodes[4].in_scope, undefined);
+  assert.equal(out.nodes[1].in_scope, false);
+  assert.deepEqual(applyPlan(map, ['a']).nodes.length, 4);
 });

@@ -1,22 +1,23 @@
 // mindgap HTTP server. Contracts: CONTRACTS.md. No npm deps.
 import { createServer } from 'node:http';
 import { existsSync } from 'node:fs';
-import { readFile, writeFile, rename, appendFile, readdir, mkdtemp, rm } from 'node:fs/promises';
+import { readFile, writeFile, rename, appendFile, readdir, mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { listCourses, loadCourse, ensureState, CourseNotFound } from './lib/courses.mjs';
+import { listCourses, loadCourse, ensureState, createCourse, CourseNotFound, InvalidCourse } from './lib/courses.mjs';
 import { getTutor, TUTORS } from './lib/tutors/index.mjs';
-import { reviewTurn, applyPlan } from './lib/course-session.mjs';
+import { reviewTurn, applyPlan, checkPlan } from './lib/course-session.mjs';
 import { SourceError, UPLOAD_MAX, validId, listSources, importSource, removeSource, sectionIds, readSections } from './lib/sources.mjs';
+import { normalizeChapter, checkChapter } from './lib/chapters.mjs';
 import { labStatus, labRequest, isApproved, approve, runLab, ApprovalMismatch } from './lib/labs.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(HERE, 'public');
 const PROMPTS_DIR = path.join(HERE, 'prompts');
-const SCHEMAS = { course: 'course-schema.json' };
+const SCHEMAS = { course: 'course-schema.json', write: 'chapter-schema.json' };
 const schemaFor = (mode) => path.join(PROMPTS_DIR, SCHEMAS[mode] ?? 'turn-schema.json');
 const DATA_DIR = path.resolve(process.env.MINDGAP_DATA_DIR || path.join(HERE, 'learner'));
 const COURSE_OPTS = {
@@ -33,9 +34,10 @@ const tutor = getTutor(TUTOR);
 const MODEL = process.env.MINDGAP_MODEL || (TUTOR === 'claude' ? 'opus' : undefined);
 // agy's default effort runs a teach turn past TUTOR_TIMEOUT_MS and medium took 168s; low took 12s. Claude ignores it.
 const EFFORT = process.env.MINDGAP_EFFORT || (TUTOR === 'agy' ? 'low' : undefined);
-const MODES = { teach: 'teacher.md', practice: 'practice.md', probe: 'prober.md', chapter: 'chapter.md', course: 'course.md' };
+const MODES = { teach: 'teacher.md', practice: 'practice.md', probe: 'prober.md', chapter: 'chapter.md', course: 'course.md', write: 'writer.md' };
 const BODY_LIMIT = 256 * 1024;
 const TUTOR_TIMEOUT_MS = 180_000;
+const CHAPTER_TIMEOUT_MS = 300_000;
 const LAB_CMD_MAX = 4000;
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -216,7 +218,7 @@ async function courseContext(c, map) {
   const lines = await readLines(propsPath(c));
   return {
     mode: 'course',
-    course: { slug: c.slug, title: c.title, layers: c.layers },
+    course: { slug: c.slug, title: c.title, layers: c.layers, generated: c.generated },
     learner: await readLearner(c),
     nodes: map.nodes.map((n) => ({
       id: n.id, title: n.title, layer: n.layer, prereqs: n.prereqs, truth: n.truth, status: n.status, evidence: n.evidence,
@@ -257,7 +259,7 @@ async function systemPrompt(c, mode) {
 }
 
 // Every tutor call runs in a fresh empty cwd (holds the turn schema, no repo access), removed afterwards.
-async function callTutor(c, meta, message) {
+async function callTutor(c, meta, message, timeoutMs = TUTOR_TIMEOUT_MS) {
   const schema = await readFile(schemaFor(meta.mode), 'utf8');
   const sys = await systemPrompt(c, meta.mode);
   const cwd = await mkdtemp(path.join(tmpdir(), 'mindgap-turn-'));
@@ -269,7 +271,7 @@ async function callTutor(c, meta, message) {
         systemPrompt: sys, schemaText: schema, message: msg, sessionId, model: MODEL, effort: EFFORT, schemaFile,
       });
       const r = await new Promise((resolve) => {
-        const child = execFile(bin, args, { cwd, timeout: TUTOR_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 },
+        const child = execFile(bin, args, { cwd, timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024 },
           (e, o, s) => resolve({ err: e, stdout: o, stderr: s }));
         // An early-exiting tutor makes the write to stdin fail with EPIPE; that must not crash the server.
         child.stdin.on('error', () => {});
@@ -301,13 +303,27 @@ async function advance(c, id, meta, message, record, labsTotal, event = null) {
   let accepted = false;
   if (meta.mode === 'course') {
     // The server keeps only what the acceptance rules allow; the reviewed turn is what gets stored and returned.
-    const r = reviewTurn({ meta, turn, map: await loadMap(c), event, sectionIds: await sectionIds(sourcesDir(c)) });
+    const map = await loadMap(c);
+    const ids = await sectionIds(sourcesDir(c));
+    const course = { generated: c.generated, layers: c.layers.map((l) => l.id) };
+    const r = reviewTurn({ meta, turn, map, event, sectionIds: ids, course });
     turn = r.turn;
     accepted = turn.approved;
     Object.assign(meta, r.meta);
     // Notes already sent in this message are spent; this turn's notes go out with the next one.
     meta.server_notes = r.notes;
+    // The plan was checked when presented; another session may have changed the map since.
+    const stale = accepted ? checkPlan(map, meta.pending_plan, ids, course) : null;
+    if (stale) {
+      accepted = false;
+      turn.approved = false;
+      turn.lesson_done = false;
+      meta.server_notes.push(`approval refused: the plan no longer fits the map (${stale}); present a fresh plan`);
+    }
   }
+  // Instruments the course does not have: sims are networking scenarios, labs need the course's lab block.
+  if (c.lab === null || c.lab === undefined) turn.lab = null;
+  if (c.generated) turn.sim = null;
 
   meta.tutor_session_id = sessionId || meta.tutor_session_id || null;
   meta.labs_sent = labsTotal;
@@ -316,10 +332,24 @@ async function advance(c, id, meta, message, record, labsTotal, event = null) {
     ? { goal: meta.goal.text, background: meta.goal.background, approved_at: ts }
     : null;
   if (accepted && !goal) throw new Error('approval accepted without a goal on record');
+  // New layers extend the course's own course.json (read fresh, every other key kept); built before any write.
+  const newLayers = accepted ? meta.pending_plan.new_layers ?? [] : [];
+  let courseJson = null;
+  if (newLayers.length) {
+    const cj = JSON.parse(await readFile(path.join(c.dir, 'course.json'), 'utf8'));
+    cj.layers = [...(cj.layers ?? []), ...newLayers.map(({ id, name }) => ({ id, name }))];
+    courseJson = JSON.stringify(cj, null, 2) + '\n';
+  }
+  // ponytail: map, then course.json, then goal.json are separate atomic writes; a crash between map and
+  // course.json leaves nodes on an unknown layer, which map.js tolerates. Journal them if that ever matters.
   await updateMap(c, (map) => {
     applyNodeUpdates(map, turn.node_updates ?? []);
-    if (accepted) Object.assign(map, applyPlan(map, meta.pending_plan.in_scope, meta.pending_plan.sources ?? []));
+    if (accepted) {
+      const { in_scope, sources, new_nodes } = meta.pending_plan;
+      Object.assign(map, applyPlan(map, in_scope, sources ?? [], new_nodes ?? []));
+    }
   });
+  if (courseJson) await writeAtomic(path.join(c.dir, 'course.json'), courseJson);
   if (goal) await writeAtomic(goalPath(c), JSON.stringify(goal, null, 2) + '\n');
 
   const props = turn.propositions ?? [];
@@ -334,8 +364,8 @@ async function advance(c, id, meta, message, record, labsTotal, event = null) {
 async function startLesson(body) {
   const c = await openCourse(body.course);
   const { mode } = body;
-  if (!Object.hasOwn(MODES, mode) || mode === 'chapter') {
-    throw new HttpError(400, `mode must be one of: ${Object.keys(MODES).filter((m) => m !== 'chapter').join(', ')}`);
+  if (!Object.hasOwn(MODES, mode) || mode === 'chapter' || mode === 'write') {
+    throw new HttpError(400, `mode must be one of: ${Object.keys(MODES).filter((m) => m !== 'chapter' && m !== 'write').join(', ')}`);
   }
   const map = await loadMap(c);
   if (mode === 'course') {
@@ -452,6 +482,61 @@ async function chapterLesson(body) {
   return { lesson_id, meta, events: [] };
 }
 
+// One tutor call writes one chapter: no session, nothing under sessions/. Invalid output is never stored.
+async function writeChapter(slug, id) {
+  if (!validId(id) || id === 'index') throw new HttpError(400, 'invalid node id');
+  const c = await openCourse(slug);
+  if (!c.generated) throw new HttpError(409, 'chapters are written only for generated courses');
+  const map = await loadMap(c);
+  const target = map.nodes.find((n) => n.id === id);
+  if (!target) throw new HttpError(404, `unknown node: ${id}`);
+  // One write per course at a time: index.json updates are read-modify-write and numbers come from it.
+  const key = `write:${c.slug}`;
+  if (busy.has(key)) throw new HttpError(409, 'a chapter is already being written for this course');
+  busy.add(key);
+  try {
+    // The index is the source of truth for "has a chapter"; a file without an entry is an orphan and gets overwritten.
+    // Parsed before anything is written, so a malformed index fails the request first.
+    const indexFile = path.join(c.dir, 'chapters', 'index.json');
+    const index = JSON.parse((await readOptional(indexFile)) ?? '[]');
+    if (!Array.isArray(index)) throw new Error('chapters/index.json is not an array');
+    if (index.includes(id)) throw new HttpError(409, `chapter already exists: ${id}`);
+    const byId = new Map(map.nodes.map((n) => [n.id, n]));
+    const prereqs = (target.prereqs ?? []).map((p) => byId.get(p)).filter(Boolean);
+    const inScope = new Set([target.id, ...prereqs.map((n) => n.id)]);
+    const layer = c.layers.find((l) => l.id === target.layer);
+    const excerpts = target.source_sections?.length ? await readSections(sourcesDir(c), target.source_sections) : [];
+    const ctx = {
+      mode: 'write',
+      course: { slug: c.slug, title: c.title },
+      learner: await readLearner(c),
+      target: { id: target.id, title: target.title, layer: target.layer, layer_name: layer?.name ?? target.layer, truth: target.truth, prereqs: target.prereqs ?? [] },
+      prereqs: prereqs.map((n) => ({ id: n.id, title: n.title, status: n.status, evidence: n.evidence })),
+      other_nodes: map.nodes.filter((n) => !inScope.has(n.id)).map((n) => ({ id: n.id, title: n.title })),
+      ...(excerpts.length ? { sources: excerpts } : {}),
+    };
+    const message = 'CONTEXT:\n' + JSON.stringify(ctx, null, 2);
+    const attempt = async (msg) => {
+      const { turn: raw } = await callTutor(c, { mode: 'write', tutor_session_id: null }, msg, CHAPTER_TIMEOUT_MS);
+      const ch = normalizeChapter(raw, { node: id, number: index.length + 1, kicker: layer?.name ?? target.layer });
+      return { ch, problem: checkChapter(ch) };
+    };
+    let { ch: chapter, problem } = await attempt(message);
+    // One fresh retry (no resume) that names what was refused.
+    if (problem) {
+      ({ ch: chapter, problem } = await attempt(`${message}\nSERVER:\n- your previous chapter was refused: ${problem}. Write the whole chapter again, following the output rules.`));
+    }
+    if (problem) throw new HttpError(502, `chapter refused: ${problem}`);
+    await mkdir(path.join(c.dir, 'chapters'), { recursive: true });
+    await writeAtomic(chapterPath(c, id), JSON.stringify(chapter, null, 2) + '\n');
+    index.push(id);
+    await writeAtomic(indexFile, JSON.stringify(index, null, 2) + '\n');
+    return { node: id };
+  } finally {
+    busy.delete(key);
+  }
+}
+
 async function getLesson(c, id) {
   const meta = await loadMeta(c, id);
   return { meta, events: await readEvents(c, id) };
@@ -468,12 +553,12 @@ async function courseInfo(slug) {
     // A malformed lab block must not take the course page down; the reason says what to fix.
     lab = { available: false, reason: err.message };
   }
-  return { ...course, chapters: index === null ? [] : JSON.parse(index), lab };
+  return { ...course, chapters: index === null ? [] : JSON.parse(index), lab, generated: c.generated };
 }
 
 async function getChapter(slug, id) {
   const c = await openCourse(slug);
-  const text = validId(id) ? await readOptional(chapterPath(c, id)) : null;
+  const text = validId(id) && id !== 'index' ? await readOptional(chapterPath(c, id)) : null;
   if (text === null) throw new HttpError(404, 'no such chapter');
   return JSON.parse(text);
 }
@@ -502,14 +587,24 @@ async function api(req, res, pathname) {
   const lessonM = pathname.match(/^\/api\/lesson\/([^/]+)$/);
   const mapM = pathname.match(/^\/api\/courses\/([^/]+)\/map$/);
   const chapterM = pathname.match(/^\/api\/courses\/([^/]+)\/chapters\/([^/]+)$/);
+  const writeM = pathname.match(/^\/api\/courses\/([^/]+)\/chapters\/([^/]+)\/write$/);
   const approvalM = pathname.match(/^\/api\/courses\/([^/]+)\/lab-approval$/);
   const sourcesM = pathname.match(/^\/api\/courses\/([^/]+)\/sources$/);
   const sourceM = pathname.match(/^\/api\/courses\/([^/]+)\/sources\/([^/]+)$/);
   const courseM = pathname.match(/^\/api\/courses\/([^/]+)$/);
   if (method === 'GET' && pathname === '/api/courses') return send(res, 200, await listCourses(COURSE_OPTS));
+  if (method === 'POST' && pathname === '/api/courses') {
+    try {
+      return send(res, 201, await createCourse(COURSE_OPTS, await readJson(req)));
+    } catch (err) {
+      if (err instanceof InvalidCourse) throw new HttpError(400, err.message);
+      throw err;
+    }
+  }
   if (method === 'GET' && courseM) return send(res, 200, await courseInfo(safeDecode(courseM[1])));
   if (method === 'GET' && mapM) return send(res, 200, await loadMap(await openCourse(safeDecode(mapM[1]))));
   if (method === 'GET' && chapterM) return send(res, 200, await getChapter(safeDecode(chapterM[1]), safeDecode(chapterM[2])));
+  if (method === 'POST' && writeM) return send(res, 201, await writeChapter(safeDecode(writeM[1]), safeDecode(writeM[2])));
   if (method === 'GET' && lessonM) {
     return send(res, 200, await getLesson(await openCourse(query.get('course')), safeDecode(lessonM[1])));
   }

@@ -35,6 +35,9 @@ export function pickNext(topo, byId, status) {
   return topo.find(ok) || topo.find((n) => !isOffGoal(n) && status(n) === 'gap') || null;
 }
 
+// Write chapter is offered only for generated courses, on nodes with no chapter yet.
+export const canWriteChapter = (generated, chapters, id) => generated === true && !chapters.includes(id);
+
 // "data:<mime>;base64,<payload>" -> "<payload>".
 export function dataUrlToBase64(dataUrl) {
   const i = String(dataUrl).indexOf(',');

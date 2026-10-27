@@ -3,7 +3,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdtemp, mkdir, writeFile, readFile, chmod, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, readdir, chmod, rm, copyFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
@@ -28,7 +28,7 @@ const CHAPTER = { node: 'switch-mac-table', title: 'Switch chapter' };
 
 // Fake claude: logs argv, returns canned structured_output. control file: ok | slow | error.
 const FAKE_CLAUDE = `
-import { appendFileSync, readFileSync, existsSync } from 'node:fs';
+import { appendFileSync, readFileSync, existsSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
 const dir = process.env.FAKE_DIR;
 const args = process.argv.slice(2);
@@ -44,7 +44,14 @@ const canned = message.startsWith('CONTEXT:')
       node_updates: [{ id: 'frames-mac', status: 'solid', note: 'answered correctly' }],
       propositions: [{ claim: 'Frames carry src and dst MAC', because: [], node: 'frames-mac' }] };
 const tf = path.join(dir, 'turn.json');
-const turn = existsSync(tf) ? JSON.parse(readFileSync(tf, 'utf8')) : canned;
+let turn = existsSync(tf) ? JSON.parse(readFileSync(tf, 'utf8')) : canned;
+// A write call (mode "write") gets the chapter fixture; FAKE_DIR/chapter-bad cuts it to one section.
+if (message.startsWith('CONTEXT:') && message.includes('"mode": "write"')) {
+  turn = JSON.parse(readFileSync(path.join(dir, 'chapter-raw.json'), 'utf8'));
+  if (existsSync(path.join(dir, 'chapter-bad'))) turn.sections = turn.sections.slice(0, 1);
+  // chapter-bad-once: the first write call is invalid, later ones are valid.
+  if (existsSync(path.join(dir, 'chapter-bad-once'))) { turn.sections = turn.sections.slice(0, 1); unlinkSync(path.join(dir, 'chapter-bad-once')); }
+}
 const reply = control === 'error'
   ? { type: 'result', is_error: true, result: 'rate limited boom', session_id: 'sess-err' }
   : { type: 'result', is_error: false, session_id: 'sess-abc', structured_output: turn, total_cost_usd: 0 };
@@ -722,6 +729,12 @@ test('course schema extends the turn schema: same seven fields, five more requir
   for (const key of Object.keys(turn.properties)) {
     assert.deepEqual(course.properties[key], turn.properties[key], key);
   }
+  const plan = course.properties.plan;
+  assert.deepEqual(plan.required, ['approach', 'in_scope', 'sources', 'new_layers', 'new_nodes']);
+  assert.deepEqual(Object.keys(plan.properties), plan.required);
+  assert.deepEqual(plan.properties.new_layers.items.required, ['id', 'name']);
+  assert.deepEqual(plan.properties.new_nodes.items.required, ['id', 'title', 'layer', 'prereqs', 'truth', 'status', 'evidence']);
+  for (const k of ['new_layers', 'new_nodes']) assert.equal(plan.properties[k].items.additionalProperties, false);
 });
 
 // Course-session tests. FAKE_CLAUDE answers with <dir>/turn.json while it exists.
@@ -861,6 +874,16 @@ test('networking course prompt no longer carries the learner background', async 
   const p = await readFile(path.join(HERE, '..', 'courses', 'networking', 'prompt.md'), 'utf8');
   assert.ok(!p.includes('is a cloud engineer'));
   assert.ok(p.includes('learner.background'));
+});
+
+test('shared mode prompts are subject-neutral; the networking specifics live in the course prompt', async () => {
+  for (const f of ['teacher.md', 'practice.md', 'prober.md', 'chapter.md']) {
+    const p = await readFile(path.join(PROMPTS, f), 'utf8');
+    assert.doesNotMatch(p, /[Nn]etwork|cloud engineer|AWS|Kubernetes|Cilium|Proxmox|netlab|VLAN|subnet|TCP|[Pp]acket|router|\bMAC\b/, f);
+  }
+  const net = await readFile(path.join(HERE, '..', 'courses', 'networking', 'prompt.md'), 'utf8');
+  for (const k of ['cloud twin', 'netlab', 'VLAN', 'ARP', 'tcpdump']) assert.ok(net.includes(k), k);
+  assert.doesNotMatch(net, /cloud engineer|[Ll]earners here/, 'no learner profile in the shipped prompt');
 });
 
 // A tutor turn with the course fields missing entirely (not null) must not break the session.
@@ -1065,3 +1088,265 @@ test('sources: approval tags nodes, teach lesson gets the excerpt; truncation at
   await call('POST', '/api/lesson', { course: 'net', node_id: 'frames-mac', mode: 'teach' });
   assert.ok(!('sources' in ctxOf(await lastMessage())));
 })));
+
+// Create a course, then grow its map by approval (f2 task 3).
+const NODE = (id, prereqs = []) => ({ id, title: id, layer: 'basics', prereqs, truth: `${id} truth`, status: 'untested', evidence: '' });
+
+async function drawSession(slug, plan) {
+  const callIn = (p, b) => call('POST', p, b);
+  await setTurn({ goal: GOAL, assessment: ASSESSMENT });
+  const id = (await callIn('/api/lesson', { course: slug, mode: 'course' })).json.lesson_id;
+  const say = () => callIn('/api/turn', { course: slug, lesson_id: id, event: { type: 'ask', text: 'ok' } });
+  await setTurn({ plan });
+  const shown = await say();
+  await setTurn({ approved: true, lesson_done: true });
+  return { shown, approved: await say() };
+}
+
+test('POST /api/courses creates the folder, files and goal background; the list shows it', async () => {
+  const r = await call('POST', '/api/courses', { title: ' Rust Basics ', background: 'knows C' });
+  assert.equal(r.status, 201, r.text);
+  assert.deepEqual(r.json, { slug: 'rust-basics' });
+  const cdir = path.join(dataDir, 'courses', 'rust-basics');
+  assert.deepEqual(JSON.parse(await readFile(path.join(cdir, 'course.json'), 'utf8')), { slug: 'rust-basics', title: 'Rust Basics', layers: [], lab: null });
+  assert.deepEqual(JSON.parse(await readFile(path.join(cdir, 'map.seed.json'), 'utf8')), { nodes: [] });
+  assert.deepEqual(JSON.parse(await readFile(path.join(cdir, 'chapters', 'index.json'), 'utf8')), []);
+  assert.deepEqual(JSON.parse(await readFile(path.join(cdir, 'state', 'goal.json'), 'utf8')), { goal: null, background: 'knows C' });
+  assert.ok((await call('GET', '/api/courses')).json.some((c) => c.slug === 'rust-basics' && c.title === 'Rust Basics'));
+  assert.deepEqual((await call('GET', '/api/courses/rust-basics/map')).json, { nodes: [] });
+  assert.equal((await call('GET', '/api/courses/rust-basics')).json.generated, true);
+  assert.equal((await call('GET', '/api/courses/net')).json.generated, false);
+});
+
+test('POST /api/courses: same title gets -2, a shipped slug is skipped, bad input is 400', async () => {
+  assert.equal((await call('POST', '/api/courses', { title: 'Rust Basics' })).json.slug, 'rust-basics-2');
+  const shipped = await call('POST', '/api/courses', { title: 'Net' });
+  assert.equal(shipped.json.slug, 'net-2');
+  assert.ok(!existsSync(path.join(dataDir, 'courses', 'net', 'course.json')));
+  assert.ok(!existsSync(path.join(dataDir, 'courses', 'rust-basics-2', 'state')));
+  for (const body of [{}, { title: '   ' }, { title: 'x'.repeat(81) }, { title: 5 }, { title: 'ok', background: 'y'.repeat(2001) }, { title: 'ok', background: 7 }]) {
+    assert.equal((await call('POST', '/api/courses', body)).status, 400, JSON.stringify(body).slice(0, 60));
+  }
+});
+
+test('approval on a generated course adds nodes and the layer, writes no chapters; a second session keeps the first', async () => {
+  const slug = (await call('POST', '/api/courses', { title: 'Grow Me' })).json.slug;
+  const cdir = path.join(dataDir, 'courses', slug);
+  const plan1 = { approach: 'draw', in_scope: ['a', 'b', 'c'], new_layers: [{ id: 'basics', name: 'Basics' }], new_nodes: [NODE('a'), NODE('b', ['a']), NODE('c', ['b'])] };
+  const one = await drawSession(slug, plan1);
+  assert.equal(one.shown.json.turn.plan.in_scope.length, 3, one.shown.text);
+  assert.equal(one.approved.json.turn.approved, true, one.approved.text);
+  const map1 = (await call('GET', `/api/courses/${slug}/map`)).json;
+  assert.deepEqual(map1.nodes.map((n) => [n.id, n.status, n.evidence]), [['a', 'untested', ''], ['b', 'untested', ''], ['c', 'untested', '']]);
+  const cj = JSON.parse(await readFile(path.join(cdir, 'course.json'), 'utf8'));
+  assert.deepEqual(cj.layers, [{ id: 'basics', name: 'Basics' }]);
+  assert.equal(cj.title, 'Grow Me');
+  assert.deepEqual(await readdir(path.join(cdir, 'chapters')), ['index.json']);
+  assert.deepEqual(JSON.parse(await readFile(path.join(cdir, 'state', 'goal.json'), 'utf8')).goal, GOAL.text);
+
+  // Learner evidence on an existing node survives a later growth.
+  map1.nodes[0].status = 'shaky';
+  map1.nodes[0].evidence = 'mixed up';
+  await writeFile(path.join(cdir, 'state', 'map.json'), JSON.stringify(map1));
+  const two = await drawSession(slug, { approach: 'more', in_scope: ['a', 'b', 'c', 'd'], new_layers: [], new_nodes: [{ ...NODE('d', ['c']), status: 'gap', evidence: 'confused X with Y' }] });
+  assert.equal(two.approved.json.turn.approved, true, two.approved.text);
+  const map2 = (await call('GET', `/api/courses/${slug}/map`)).json;
+  assert.deepEqual(map2.nodes.slice(0, 3), map1.nodes);
+  assert.deepEqual(map2.nodes[3], { ...NODE('d', ['c']), status: 'gap', evidence: 'confused X with Y' });
+  assert.deepEqual(JSON.parse(await readFile(path.join(cdir, 'course.json'), 'utf8')).layers, [{ id: 'basics', name: 'Basics' }]);
+  assert.deepEqual(await readdir(path.join(cdir, 'chapters')), ['index.json']);
+});
+
+test('a shipped course session with new_nodes is refused and its map is untouched', () => withCourseState(async (mapBefore) => {
+  const { shown } = await drawSession('net', { approach: 'x', in_scope: ['frames-mac', 'zz'], new_layers: [{ id: 'basics', name: 'B' }], new_nodes: [NODE('zz')] });
+  assert.equal(shown.json.turn.plan, null);
+  assert.deepEqual((await call('GET', '/api/courses/net/map')).json, mapBefore);
+  assert.equal(JSON.parse(await readFile(path.join(dir, 'courses', 'net', 'course.json'), 'utf8')).layers.length, 1);
+}));
+
+// --- write a chapter on demand (generated courses only) ---
+async function writableCourse(title) {
+  await copyFile(path.join(HERE, 'fixtures', 'chapter-raw.json'), path.join(dir, 'chapter-raw.json'));
+  const slug = (await call('POST', '/api/courses', { title, background: 'bakes bread' })).json.slug;
+  const cdir = path.join(dataDir, 'courses', slug);
+  await call('GET', `/api/courses/${slug}/map`); // seeds state
+  const node = (id, layer, prereqs, sections) => ({ id, title: `T ${id}`, layer, prereqs, truth: `truth ${id}`, status: 'untested', evidence: '', ...(sections ? { source_sections: sections } : {}) });
+  await writeFile(path.join(cdir, 'state', 'map.json'), JSON.stringify({ nodes: [node('alpha', 'basics', []), node('beta', 'basics', ['alpha'], ['s1-1', 's1-2']), node('gamma', 'basics', [])] }));
+  await writeFile(path.join(cdir, 'course.json'), JSON.stringify({ slug, title, layers: [{ id: 'basics', name: 'Basics' }], lab: null }));
+  await mkdir(path.join(cdir, 'sources'), { recursive: true });
+  await writeFile(path.join(cdir, 'sources', 's1.json'), JSON.stringify({ id: 's1', title: 'Src', origin: { kind: 'file', value: 'a.txt' }, added: '2026-01-01T00:00:00Z', truncated: false, sections: [{ id: 's1-1', heading: 'Heading One', text: 'EXCERPT-ONE' }, { id: 's1-2', heading: 'Heading Two', text: 'EXCERPT-TWO' }] }));
+  return { slug, cdir };
+}
+
+test('write: 201 stores the chapter with number and kicker, indexes it, serves it, sends tagged excerpts', async () => {
+  const { slug, cdir } = await writableCourse('Write One');
+  const before = (await readCalls()).length;
+  const r = await call('POST', `/api/courses/${slug}/chapters/beta/write`, {});
+  assert.equal(r.status, 201, r.text);
+  assert.deepEqual(r.json, { node: 'beta' });
+  const ch = (await call('GET', `/api/courses/${slug}/chapters/beta`)).json;
+  assert.equal(ch.node, 'beta');
+  assert.equal(ch.number, '1');
+  assert.equal(ch.kicker, 'Basics');
+  assert.ok(ch.sections.every((s) => s.blocks.every((b) => Object.keys(b).length === 1)));
+  assert.deepEqual(JSON.parse(await readFile(path.join(cdir, 'chapters', 'index.json'), 'utf8')), ['beta']);
+  const calls = await readCalls();
+  assert.equal(calls.length, before + 1);
+  const argv = calls.at(-1);
+  assert.ok(!argv.includes('--resume'));
+  assert.ok(argv[argv.indexOf('--system-prompt') + 1].startsWith(await readFile(path.join(PROMPTS, 'writer.md'), 'utf8')));
+  const ctx = JSON.parse(argv.at(-1).slice(CONTEXT_PREFIX.length));
+  assert.equal(ctx.mode, 'write');
+  assert.deepEqual(ctx.course, { slug, title: 'Write One' });
+  assert.deepEqual(ctx.learner, { goal: null, background: 'bakes bread' });
+  assert.equal(ctx.target.layer_name, 'Basics');
+  assert.deepEqual(ctx.prereqs, [{ id: 'alpha', title: 'T alpha', status: 'untested', evidence: '' }]);
+  assert.deepEqual(ctx.other_nodes, [{ id: 'gamma', title: 'T gamma' }]);
+  assert.deepEqual(ctx.sources.map((s) => s.text), ['EXCERPT-ONE', 'EXCERPT-TWO']);
+  // Nothing under sessions/, and the second node numbers 2.
+  assert.deepEqual(await readdir(path.join(cdir, 'state', 'sessions')), []);
+  assert.equal((await call('POST', `/api/courses/${slug}/chapters/gamma/write`, {})).status, 201);
+  assert.equal((await call('GET', `/api/courses/${slug}/chapters/gamma`)).json.number, '2');
+  assert.ok(!('sources' in JSON.parse((await readCalls()).at(-1).at(-1).slice(CONTEXT_PREFIX.length))));
+});
+
+test('write: an invalid chapter is 502 and nothing is written; then a valid retry works', async () => {
+  const { slug, cdir } = await writableCourse('Write Bad');
+  await writeFile(path.join(dir, 'chapter-bad'), '');
+  const r = await call('POST', `/api/courses/${slug}/chapters/alpha/write`, {});
+  await rm(path.join(dir, 'chapter-bad'));
+  assert.equal(r.status, 502, r.text);
+  assert.match(r.json.error, /^chapter refused: /);
+  assert.deepEqual(await readdir(path.join(cdir, 'chapters')), ['index.json']);
+  assert.deepEqual(JSON.parse(await readFile(path.join(cdir, 'chapters', 'index.json'), 'utf8')), []);
+  assert.equal((await call('POST', `/api/courses/${slug}/chapters/alpha/write`, {})).status, 201);
+});
+
+test('write: tutor failure is 502; a second write of the same node, a shipped course, bad ids are refused', async () => {
+  const { slug, cdir } = await writableCourse('Write Guards');
+  await setControl('error');
+  const failed = await call('POST', `/api/courses/${slug}/chapters/alpha/write`, {});
+  await setControl('ok');
+  assert.equal(failed.status, 502, failed.text);
+  assert.deepEqual(await readdir(path.join(cdir, 'chapters')), ['index.json']);
+  assert.equal((await call('POST', `/api/courses/${slug}/chapters/alpha/write`, {})).status, 201);
+  assert.equal((await call('POST', `/api/courses/${slug}/chapters/alpha/write`, {})).status, 409);
+  const shipped = await call('POST', '/api/courses/net/chapters/vlan-basics/write', {});
+  assert.equal(shipped.status, 409, shipped.text);
+  assert.ok(!existsSync(path.join(dir, 'courses', 'net', 'chapters', 'vlan-basics.json')));
+  assert.equal((await call('POST', `/api/courses/${slug}/chapters/..%2f..%2fx/write`, {})).status, 400);
+  assert.equal((await call('POST', `/api/courses/${slug}/chapters/..%2findex/write`, {})).status, 400);
+  assert.equal((await call('POST', `/api/courses/${slug}/chapters/nope/write`, {})).status, 404);
+  assert.deepEqual((await readdir(path.join(cdir, 'chapters'))).sort(), ['alpha.json', 'index.json']);
+});
+
+test('write: a concurrent write of the same node is 409, and /api/lesson refuses mode write', async () => {
+  const { slug } = await writableCourse('Write Busy');
+  await setControl('slow');
+  const first = call('POST', `/api/courses/${slug}/chapters/alpha/write`, {});
+  await new Promise((r) => setTimeout(r, 300));
+  const second = await call('POST', `/api/courses/${slug}/chapters/alpha/write`, {});
+  const done = await first;
+  await setControl('ok');
+  assert.equal(second.status, 409, second.text);
+  assert.equal(done.status, 201, done.text);
+  assert.equal((await call('POST', '/api/lesson', { course: slug, node_id: 'alpha', mode: 'write' })).status, 400);
+});
+
+test('write: an orphan chapter file (no index entry) is overwritten; id index is refused; a malformed index writes nothing', async () => {
+  const { slug, cdir } = await writableCourse('Write Orphan');
+  await writeFile(path.join(cdir, 'chapters', 'alpha.json'), '{"orphan":true}');
+  assert.equal((await call('POST', `/api/courses/${slug}/chapters/alpha/write`, {})).status, 201);
+  assert.equal(JSON.parse(await readFile(path.join(cdir, 'chapters', 'alpha.json'), 'utf8')).node, 'alpha');
+  assert.deepEqual(JSON.parse(await readFile(path.join(cdir, 'chapters', 'index.json'), 'utf8')), ['alpha']);
+  assert.equal((await call('POST', `/api/courses/${slug}/chapters/index/write`, {})).status, 400);
+  assert.equal((await call('GET', `/api/courses/${slug}/chapters/index`)).status, 404);
+  await writeFile(path.join(cdir, 'chapters', 'index.json'), '{not json');
+  const before = (await readCalls()).length;
+  assert.equal((await call('POST', `/api/courses/${slug}/chapters/gamma/write`, {})).status, 500);
+  assert.equal((await readCalls()).length, before);
+  assert.ok(!existsSync(path.join(cdir, 'chapters', 'gamma.json')));
+});
+
+test('write calls use CHAPTER_TIMEOUT_MS = 300 s, passed to callTutor', async () => {
+  // ponytail: a source check, not a behavioural one; the server is a script, so importing it would start it.
+  const src = await readFile(SERVER, 'utf8');
+  assert.match(src, /const CHAPTER_TIMEOUT_MS = 300_000;/);
+  assert.match(src, /callTutor\(c, \{ mode: 'write', tutor_session_id: null \}, .*, CHAPTER_TIMEOUT_MS\)/);
+  assert.match(src, /timeout: timeoutMs,/);
+});
+
+test('write: a refused chapter is retried once with a SERVER line; refused twice is 502 and nothing is written', async () => {
+  const { slug, cdir } = await writableCourse('Write Retry');
+  await writeFile(path.join(dir, 'chapter-bad-once'), '');
+  const before = (await readCalls()).length;
+  const r = await call('POST', `/api/courses/${slug}/chapters/alpha/write`, {});
+  assert.equal(r.status, 201, r.text);
+  const calls = (await readCalls()).slice(before);
+  assert.equal(calls.length, 2);
+  assert.ok(!calls[1].includes('--resume'));
+  assert.ok(calls[0].at(-1).startsWith(CONTEXT_PREFIX) && !calls[0].at(-1).includes('SERVER:'));
+  assert.ok(calls[1].at(-1).startsWith(calls[0].at(-1)));
+  assert.match(calls[1].at(-1), /\nSERVER:\n- your previous chapter was refused: .+\. Write the whole chapter again, following the output rules\.$/);
+
+  await writeFile(path.join(dir, 'chapter-bad'), '');
+  const n = (await readCalls()).length;
+  const bad = await call('POST', `/api/courses/${slug}/chapters/gamma/write`, {});
+  await rm(path.join(dir, 'chapter-bad'));
+  assert.equal(bad.status, 502, bad.text);
+  assert.equal((await readCalls()).length, n + 2);
+  assert.deepEqual(JSON.parse(await readFile(path.join(cdir, 'chapters', 'index.json'), 'utf8')), ['alpha']);
+  assert.ok(!existsSync(path.join(cdir, 'chapters', 'gamma.json')));
+});
+
+test('stale approval: a plan that no longer fits the map is refused with a note and applies nothing', async () => {
+  const slug = (await call('POST', '/api/courses', { title: 'Stale Plan' })).json.slug;
+  const cdir = path.join(dataDir, 'courses', slug);
+  const plan = { approach: 'x', in_scope: ['x'], new_layers: [{ id: 'basics', name: 'Basics' }], new_nodes: [NODE('x')] };
+  const open = async () => {
+    await setTurn({ goal: GOAL, assessment: ASSESSMENT });
+    const id = (await call('POST', '/api/lesson', { course: slug, mode: 'course' })).json.lesson_id;
+    const say = () => call('POST', '/api/turn', { course: slug, lesson_id: id, event: { type: 'ask', text: 'ok' } });
+    await setTurn({ plan });
+    assert.ok((await say()).json.turn.plan, 'plan presented');
+    return { id, say };
+  };
+  const A = await open();
+  const B = await open();
+  await setTurn({ approved: true, lesson_done: true });
+  assert.equal((await B.say()).json.turn.approved, true);
+  const refused = await A.say();
+  assert.equal(refused.json.turn.approved, false);
+  assert.equal(refused.json.turn.lesson_done, false);
+  const map = (await call('GET', `/api/courses/${slug}/map`)).json;
+  assert.equal(map.nodes.filter((n) => n.id === 'x').length, 1);
+  assert.deepEqual(JSON.parse(await readFile(path.join(cdir, 'course.json'), 'utf8')).layers, [{ id: 'basics', name: 'Basics' }]);
+  await setTurn({});
+  await A.say();
+  assert.match((await lastMessage()).split('EVENT:')[0], /approval refused: the plan no longer fits the map \(new layer id collides with an existing layer: basics\); present a fresh plan/);
+  await rm(path.join(dir, 'turn.json'), { force: true });
+});
+
+test('instruments: a generated course (lab null) never returns a sim or lab; a shipped course with a lab keeps both', async () => {
+  const slug = (await call('POST', '/api/courses', { title: 'No Instruments' })).json.slug;
+  const cdir = path.join(dataDir, 'courses', slug);
+  await call('GET', `/api/courses/${slug}/map`);
+  await writeFile(path.join(cdir, 'state', 'map.json'), JSON.stringify({ nodes: [{ id: 'alpha', title: 'A', layer: 'basics', prereqs: [], truth: 't', status: 'untested', evidence: '' }] }));
+  await writeFile(path.join(cdir, 'course.json'), JSON.stringify({ slug, title: 'No Instruments', layers: [{ id: 'basics', name: 'Basics' }], lab: null }));
+  const instruments = { sim: { name: 'switch-learning' }, lab: { cmd: 'ls' } };
+  await setTurn(instruments);
+  const r = await call('POST', '/api/lesson', { course: slug, node_id: 'alpha', mode: 'teach' });
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.json.turn.sim, null);
+  assert.equal(r.json.turn.lab, null);
+  const stored = (await call('GET', `/api/lesson/${r.json.lesson_id}?course=${slug}`)).json.events.filter((e) => e.role === 'tutor');
+  assert.ok(stored.every((e) => e.data.sim === null && e.data.lab === null));
+  const t = await call('POST', '/api/turn', { course: slug, lesson_id: r.json.lesson_id, event: { type: 'ask', text: 'hi' } });
+  assert.equal(t.json.turn.sim, null);
+  assert.equal(t.json.turn.lab, null);
+
+  const net = await call('POST', '/api/lesson', { course: 'net', node_id: 'frames-mac', mode: 'teach' });
+  assert.deepEqual(net.json.turn.sim, instruments.sim);
+  assert.deepEqual(net.json.turn.lab, instruments.lab);
+  await rm(path.join(dir, 'turn.json'), { force: true });
+});
