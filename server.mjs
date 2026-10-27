@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { listCourses, loadCourse, ensureState, CourseNotFound } from './lib/courses.mjs';
 import { getTutor, TUTORS } from './lib/tutors/index.mjs';
 import { reviewTurn, applyPlan } from './lib/course-session.mjs';
-import { SourceError, UPLOAD_MAX, validId, listSources, importSource, removeSource } from './lib/sources.mjs';
+import { SourceError, UPLOAD_MAX, validId, listSources, importSource, removeSource, sectionIds, readSections } from './lib/sources.mjs';
 import { labStatus, labRequest, isApproved, approve, runLab, ApprovalMismatch } from './lib/labs.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -223,6 +223,7 @@ async function courseContext(c, map) {
       ...(n.in_scope === false ? { in_scope: false } : {}),
     })),
     propositions: lines.slice(-200),
+    sources: (await listSources(sourcesDir(c))).map((s) => ({ id: s.id, title: s.title, sections: s.sections })),
   };
 }
 
@@ -232,6 +233,8 @@ async function baseContext(c, map, nodeId, mode) {
   const prereqs = (target.prereqs ?? []).map((id) => byId.get(id)).filter(Boolean);
   const inScope = new Set([target.id, ...prereqs.map((n) => n.id)]);
   const propositions = (await readLines(propsPath(c))).filter((p) => inScope.has(p.node));
+  // Lessons get the sections their node is tagged with (dangling ids skipped), up to the excerpt cap.
+  const excerpts = target.sources?.length ? await readSections(sourcesDir(c), target.sources) : [];
   return {
     mode,
     learner: await readLearner(c),
@@ -241,6 +244,7 @@ async function baseContext(c, map, nodeId, mode) {
       .filter((n) => !inScope.has(n.id))
       .map((n) => ({ id: n.id, title: n.title, status: n.status, ...(n.in_scope === false ? { in_scope: false } : {}) })),
     propositions,
+    ...(excerpts.length ? { sources: excerpts } : {}),
   };
 }
 
@@ -296,7 +300,7 @@ async function advance(c, id, meta, message, record, labsTotal, event = null) {
   let accepted = false;
   if (meta.mode === 'course') {
     // The server keeps only what the acceptance rules allow; the reviewed turn is what gets stored and returned.
-    const r = reviewTurn({ meta, turn, map: await loadMap(c), event });
+    const r = reviewTurn({ meta, turn, map: await loadMap(c), event, sectionIds: await sectionIds(sourcesDir(c)) });
     turn = r.turn;
     accepted = turn.approved;
     Object.assign(meta, r.meta);
@@ -313,7 +317,7 @@ async function advance(c, id, meta, message, record, labsTotal, event = null) {
   if (accepted && !goal) throw new Error('approval accepted without a goal on record');
   await updateMap(c, (map) => {
     applyNodeUpdates(map, turn.node_updates ?? []);
-    if (accepted) Object.assign(map, applyPlan(map, meta.pending_plan.in_scope));
+    if (accepted) Object.assign(map, applyPlan(map, meta.pending_plan.in_scope, meta.pending_plan.sources ?? []));
   });
   if (goal) await writeAtomic(goalPath(c), JSON.stringify(goal, null, 2) + '\n');
 
@@ -375,6 +379,11 @@ async function turn(body) {
     const pending = labs.slice(meta.labs_sent ?? 0).map((e) => e.data);
     let message = 'EVENT:\n' + JSON.stringify(event, null, 2);
     // Notes from reviewing the previous turn go first; advance() clears them once this turn persists.
+    // Sections the tutor asked for last turn; advance() replaces pending_reads, so they are sent once.
+    if (meta.mode === 'course' && meta.pending_reads?.length) {
+      const sections = await readSections(sourcesDir(c), meta.pending_reads);
+      message = 'SOURCES:\n' + JSON.stringify(sections, null, 2) + '\n' + message;
+    }
     if (meta.server_notes?.length) message = 'SERVER:\n' + meta.server_notes.map((n) => `- ${n}\n`).join('') + message;
     if (pending.length) message += '\nLAB_OUTPUT:\n' + JSON.stringify(pending, null, 2);
     // Chapter lessons start without a tutor call, so their first event carries the context.

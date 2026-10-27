@@ -16,7 +16,7 @@ prompts/practice.md        # system prompt, mode=practice
 prompts/prober.md          # system prompt, mode=probe
 prompts/chapter.md         # system prompt, mode=chapter
 prompts/course.md          # system prompt, mode=course
-prompts/course-schema.json # course-session output schema (turn schema + goal, assessment, plan, approved)
+prompts/course-schema.json # course-session output schema (turn schema + goal, assessment, plan, approved, read_sections)
 lib/labs.mjs               # lab runner: one Docker container per course, approval, runLab/labStatus
 lib/tutors/                # tutor CLI adapters (claude, agy), chosen by MINDGAP_TUTOR
 scripts/                   # migrate-learner-v1.mjs (old layout), tutor-gate.mjs, lab-parity.mjs
@@ -48,6 +48,7 @@ courses/<slug>/chapters/<node_id>.json  # chapter content, see Chapters below
   "sources": ["https://..."],
   "status": "gap",                     // untested | gap | shaky | solid
   "in_scope": false,                   // optional; only ever false, set by an approved course plan
+  "sources": ["<sourceId>-<n>"],       // optional; section ids the node rests on, written only by an approved plan (`plan.sources`)
   "evidence": "Placement 2026-10-24: said a switch maps IP→MAC."
 } ] }
 ```
@@ -64,7 +65,7 @@ The schema is per mode: `schemaFor(mode)` in `server.mjs` picks `prompts/course-
 
 First message: `CONTEXT:` + JSON `{mode:"course", course:{slug,title,layers}, learner:{goal,background}|null, nodes:[{id,title,layer,prereqs,truth,status,evidence,in_scope?}], propositions}` (the last 200 lines of propositions.jsonl; `in_scope` appears only as `false`).
 
-When the review refuses a field, it becomes a note in `meta.server_notes`. The next message starts with `SERVER:\n- <note>\n- <note>\n` immediately followed by the usual `EVENT:` text; the notes are cleared when that turn is stored (notes from reviewing it go to the message after).
+When the review refuses a field, it becomes a note in `meta.server_notes`. The next message starts with `SERVER:\n- <note>\n- <note>\n` then, if the previous turn's `read_sections` was accepted and non-empty, `SOURCES:\n<JSON of [{id, source, heading, text}]>\n` (see below), then the usual `EVENT:` text; the notes are cleared when that turn is stored (notes from reviewing it go to the message after).
 
 | Field | Kept only when |
 |---|---|
@@ -76,7 +77,11 @@ When the review refuses a field, it becomes a note in `meta.server_notes`. The n
 | `approved` | previous turn presented an accepted plan, this turn carries no plan field (even a refused one), the event it answers is `ask` or `answer` (never the first turn), and a goal is on record |
 | `lesson_done` | only with accepted approval |
 
-On accepted approval the server sets `in_scope: false` on every node outside the plan (in-scope nodes carry no `in_scope` key; nothing else in the map changes) and writes `<stateDir>/goal.json` = `{goal, background, approved_at}`. An abandoned session changes neither. `goal.json` may hold `goal: null` (background only); readers tolerate null. Node-level modes get `learner:{goal,background}|null` from it and list off-goal nodes in `other_nodes` with `in_scope: false`.
+Sources (course mode). `courseContext` always carries `sources: [{id, title, sections: [{id, heading, chars}]}]` (the TOC, no text, `[]` when none). The course schema has required `read_sections: string[]`: `reviewTurn` keeps it only when it is an array of at most `READ_MAX` (5) ids that all exist in this course's index, else it refuses with a `SERVER:` note naming the problem and keeps `[]`. The kept list is stored as `meta.pending_reads` every course turn (an empty list too), and the next message gets a `SOURCES:` block holding `readSections(...)` of it (capped at `EXCERPT_MAX` chars; unknown ids skipped); that turn's own `read_sections` replaces it, so each block is sent once. Source text is untrusted reference material, only ever inside JSON. `plan.sources` is required: `[{node, sections}]`; `checkPlan` refuses a node not in `in_scope`, a node listed twice, or an id not in the index (absent counts as `[]`).
+
+Node-level modes (teach/practice/probe/chapter): `baseContext` adds `sources: [{id, source, heading, text}]` for the target node's `sources` tags, in tag order up to `EXCERPT_MAX` chars total, dangling ids skipped; the key is absent when the node has no tags or none resolve.
+
+On accepted approval the server sets `in_scope: false` on every node outside the plan (in-scope nodes carry no `in_scope` key). In-scope nodes get `sources` = the ids `plan.sources` lists for them, or lose the key; off-scope nodes keep their `sources`. Nothing else in the map changes and writes `<stateDir>/goal.json` = `{goal, background, approved_at}`. An abandoned session changes neither. `goal.json` may hold `goal: null` (background only); readers tolerate null. Node-level modes get `learner:{goal,background}|null` from it and list off-goal nodes in `other_nodes` with `in_scope: false`.
 
 ## How the server calls the tutor (adapters in `lib/tutors/`)
 `MINDGAP_TUTOR` picks one adapter: `claude` (default) or `agy`. Each adapter exports `buildCall({systemPrompt, schemaText, message, sessionId, model, schemaFile}) -> {bin, args}` and `parseOutput(stdout) -> {turn, sessionId, error}`. Binaries come from `CLAUDE_BIN` / `AGY_BIN`.

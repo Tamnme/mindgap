@@ -715,10 +715,10 @@ test('a non-string lab.hostname is reported on the course page as unavailable, n
   assert.match(info.json.lab.reason, /lab\.hostname/);
 });
 
-test('course schema extends the turn schema: same seven fields, four more required', async () => {
+test('course schema extends the turn schema: same seven fields, five more required', async () => {
   const turn = JSON.parse(await readFile(path.join(PROMPTS, 'turn-schema.json'), 'utf8'));
   const course = JSON.parse(await readFile(path.join(PROMPTS, 'course-schema.json'), 'utf8'));
-  assert.deepEqual(course.required, [...turn.required, 'goal', 'assessment', 'plan', 'approved']);
+  assert.deepEqual(course.required, [...turn.required, 'goal', 'assessment', 'plan', 'approved', 'read_sections']);
   for (const key of Object.keys(turn.properties)) {
     assert.deepEqual(course.properties[key], turn.properties[key], key);
   }
@@ -727,7 +727,7 @@ test('course schema extends the turn schema: same seven fields, four more requir
 // Course-session tests. FAKE_CLAUDE answers with <dir>/turn.json while it exists.
 const courseTurn = (o = {}) => ({
   say: 'ok', question: null, sim: null, lab: null, node_updates: [], propositions: [], lesson_done: false,
-  goal: null, assessment: null, plan: null, approved: false, ...o,
+  goal: null, assessment: null, plan: null, approved: false, read_sections: [], ...o,
 });
 const GOAL = { text: 'Debug a VLAN outage', background: 'runs a home lab' };
 const ASSESSMENT = { strands: [{ strand: 'L2', assessment: 'knows frames' }], summary: 'enter at switching' };
@@ -783,7 +783,7 @@ test('course session happy path: plan approved, map scoped, goal saved, lab appr
   assert.equal(map.nodes.find((n) => n.id === 'vlan-basics').in_scope, false);
   assert.ok(!('in_scope' in map.nodes.find((n) => n.id === 'frames-mac')));
   assert.ok(!('in_scope' in map.nodes.find((n) => n.id === 'switch-mac-table')));
-  assert.deepEqual(map.nodes.map(({ in_scope, ...n }) => n), mapBefore.nodes);
+  assert.deepEqual(map.nodes.map(({ in_scope, sources, ...n }) => n), mapBefore.nodes.map(({ sources, ...n }) => n));
   const goal = JSON.parse(await readFile(goalPath(), 'utf8'));
   assert.equal(goal.goal, GOAL.text);
   assert.equal(goal.background, GOAL.background);
@@ -976,3 +976,80 @@ test('sources: the 413 message names the real limit', async () => {
     srv.kill();
   }
 });
+
+// Slice f1: sources reach the tutor. Sources are written straight into learner data, as importSource would.
+const srcDir = () => path.join(dataDir, 'courses', 'net', 'sources');
+async function putSource(id, title, texts) {
+  await mkdir(srcDir(), { recursive: true });
+  const sections = texts.map((text, i) => ({ id: `${id}-${i + 1}`, heading: `H${i + 1}`, text }));
+  await writeFile(path.join(srcDir(), `${id}.json`), JSON.stringify({ id, title, origin: { kind: 'file', value: 'x.txt' }, added: '2026-01-01T00:00:00.000Z', truncated: false, sections }));
+}
+async function withSources(fn) {
+  try { await fn(); } finally { await rm(srcDir(), { recursive: true, force: true }); }
+}
+const ctxOf = (msg) => JSON.parse(msg.slice(msg.indexOf(CONTEXT_PREFIX) + CONTEXT_PREFIX.length));
+
+test('sources: course context carries the TOC without text; read_sections brings SOURCES: next turn only', () => withCourseState(() => withSources(async () => {
+  await putSource('sa', 'Book', ['alpha text', 'beta text']);
+  await setTurn({ say: 'hello' });
+  const id = (await startCourse()).json.lesson_id;
+  const ctx = ctxOf(await lastMessage());
+  assert.deepEqual(ctx.sources, [{ id: 'sa', title: 'Book', sections: [{ id: 'sa-1', heading: 'H1', chars: 10 }, { id: 'sa-2', heading: 'H2', chars: 9 }] }]);
+  assert.ok(!(await lastMessage()).includes('alpha text'));
+  await setTurn({ read_sections: ['sa-2'] });
+  await say(id);
+  assert.ok(!(await lastMessage()).includes('SOURCES:'));
+  await setTurn({});
+  await say(id);
+  const m = await lastMessage();
+  assert.ok(m.startsWith('SOURCES:\n'), m);
+  assert.deepEqual(JSON.parse(m.slice('SOURCES:\n'.length, m.indexOf('\nEVENT:'))), [{ id: 'sa-2', source: 'sa', heading: 'H2', text: 'beta text' }]);
+  await say(id);
+  assert.ok(!(await lastMessage()).includes('SOURCES:'));
+})));
+
+test('sources: an unknown read_sections id is refused with a SERVER note and nothing is read', () => withCourseState(() => withSources(async () => {
+  await putSource('sa', 'Book', ['alpha text']);
+  await setTurn({});
+  const id = (await startCourse()).json.lesson_id;
+  await setTurn({ read_sections: ['sa-1', 'sz-9'] });
+  await say(id);
+  await setTurn({});
+  await say(id);
+  const m = await lastMessage();
+  assert.ok(m.startsWith('SERVER:\n- read_sections refused'), m);
+  assert.match(m, /sz-9/);
+  assert.ok(!m.includes('SOURCES:'));
+  assert.ok(!m.includes('alpha text'));
+})));
+
+test('sources: approval tags nodes, teach lesson gets the excerpt; truncation at EXCERPT_MAX; deleted source skipped', () => withCourseState(() => withSources(async () => {
+  await putSource('sa', 'Book', ['a'.repeat(12000), 'b'.repeat(12000), 'tiny']);
+  await setTurn({ goal: GOAL, assessment: ASSESSMENT });
+  const id = (await startCourse()).json.lesson_id;
+  const sources = [{ node: 'switch-mac-table', sections: ['sa-1', 'sa-2'] }, { node: 'frames-mac', sections: ['sa-3', 'sgone-1'] }];
+  await setTurn({ plan: { approach: 'x', in_scope: ['frames-mac', 'switch-mac-table'], sources } });
+  const refused = await say(id);
+  assert.equal(refused.json.turn.plan, null);
+  await setTurn({ plan: { approach: 'x', in_scope: ['frames-mac', 'switch-mac-table'], sources: [sources[0], { node: 'frames-mac', sections: ['sa-3'] }] } });
+  await say(id);
+  await setTurn({ approved: true });
+  await say(id);
+  const map = (await call('GET', '/api/courses/net/map')).json;
+  assert.deepEqual(map.nodes.find((n) => n.id === 'switch-mac-table').sources, ['sa-1', 'sa-2']);
+  assert.deepEqual(map.nodes.find((n) => n.id === 'frames-mac').sources, ['sa-3']);
+  assert.ok(!('sources' in map.nodes.find((n) => n.id === 'vlan-basics')) || map.nodes.find((n) => n.id === 'vlan-basics').sources.length === 0);
+
+  await rm(path.join(dir, 'turn.json'));
+  await call('POST', '/api/lesson', { course: 'net', node_id: 'switch-mac-table', mode: 'teach' });
+  const t = ctxOf(await lastMessage());
+  assert.deepEqual(t.sources.map((x) => x.id), ['sa-1']);
+  assert.equal(t.sources[0].text.length, 12000);
+
+  await call('POST', '/api/lesson', { course: 'net', node_id: 'frames-mac', mode: 'practice' });
+  assert.deepEqual(ctxOf(await lastMessage()).sources, [{ id: 'sa-3', source: 'sa', heading: 'H3', text: 'tiny' }]);
+
+  await rm(srcDir(), { recursive: true, force: true });
+  await call('POST', '/api/lesson', { course: 'net', node_id: 'frames-mac', mode: 'teach' });
+  assert.ok(!('sources' in ctxOf(await lastMessage())));
+})));

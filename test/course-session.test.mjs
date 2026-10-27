@@ -25,6 +25,7 @@ function turn(overrides = {}) {
     assessment: null,
     plan: null,
     approved: false,
+    read_sections: [],
     ...overrides,
   };
 }
@@ -245,4 +246,57 @@ test('approval only answers a learner reply (ask/answer)', () => {
   }
   const ask = reviewTurn({ meta: presented(), turn: turn({ approved: true }), map, event: { type: 'ask' } });
   assert.equal(ask.turn.approved, true);
+});
+
+// Slice f1: sources.
+const IDS = new Set(['s1-1', 's1-2', 's1-3']);
+const SPLAN = (sources) => ({ approach: 'x', in_scope: ['a', 'b'], sources });
+
+test('read_sections: unknown id is refused and named; six ids refused; known ids kept in pending_reads', () => {
+  const bad = reviewTurn({ meta: meta(), turn: turn({ read_sections: ['s1-1', 'zz-9'] }), map, sectionIds: IDS });
+  assert.deepEqual(bad.meta.pending_reads, []);
+  assert.deepEqual(bad.turn.read_sections, []);
+  assert.match(bad.notes.join('\n'), /read_sections refused.*zz-9/);
+  const six = reviewTurn({ meta: meta(), turn: turn({ read_sections: ['s1-1', 's1-1', 's1-1', 's1-1', 's1-1', 's1-1'] }), map, sectionIds: IDS });
+  assert.deepEqual(six.meta.pending_reads, []);
+  assert.match(six.notes.join('\n'), /read_sections refused/);
+  const ok = reviewTurn({ meta: meta({ pending_reads: ['s1-3'] }), turn: turn({ read_sections: ['s1-2', 's1-1'] }), map, sectionIds: IDS });
+  assert.deepEqual(ok.meta.pending_reads, ['s1-2', 's1-1']);
+  assert.deepEqual(ok.notes, []);
+  const none = reviewTurn({ meta: meta({ pending_reads: ['s1-3'] }), turn: turn({}), map, sectionIds: IDS });
+  assert.deepEqual(none.meta.pending_reads, []);
+  const absent = turn(); delete absent.read_sections;
+  assert.deepEqual(reviewTurn({ meta: meta(), turn: absent, map, sectionIds: IDS }).meta.pending_reads, []);
+});
+
+test('plan.sources: node outside in_scope, duplicate node, unknown section, non-array are refused', () => {
+  assert.equal(checkPlan(map, SPLAN([{ node: 'a', sections: ['s1-1'] }]), IDS), null);
+  assert.equal(checkPlan(map, PLAN(['a', 'b']), IDS), null);
+  assert.match(checkPlan(map, SPLAN([{ node: 'c', sections: ['s1-1'] }]), IDS), /c/);
+  assert.match(checkPlan(map, SPLAN([{ node: 'a', sections: [] }, { node: 'a', sections: [] }]), IDS), /twice/);
+  assert.match(checkPlan(map, SPLAN([{ node: 'a', sections: ['nope'] }]), IDS), /nope/);
+  assert.ok(checkPlan(map, SPLAN('x'), IDS));
+  assert.ok(checkPlan(map, SPLAN([{ node: 'a' }]), IDS));
+  const r = reviewTurn({ meta: assessedMeta(), turn: turn({ plan: SPLAN([{ node: 'a', sections: ['nope'] }]) }), map, sectionIds: IDS });
+  assert.equal(r.turn.plan, null);
+  assert.match(r.notes.join('\n'), /nope/);
+});
+
+test('applyPlan tags listed in-scope nodes, clears unlisted in-scope tags, keeps off-scope tags, changes nothing else', () => {
+  const tagged = structuredClone(map);
+  tagged.nodes[0].sources = ['old-1'];
+  tagged.nodes[1].sources = ['old-2'];
+  tagged.nodes[2].sources = ['keep-3'];
+  const before = structuredClone(tagged);
+  const out = applyPlan(tagged, ['a', 'b'], [{ node: 'a', sections: ['s1-1', 's1-2'] }]);
+  assert.deepEqual(tagged, before);
+  const by = Object.fromEntries(out.nodes.map((n) => [n.id, n]));
+  assert.deepEqual(by.a.sources, ['s1-1', 's1-2']);
+  assert.equal('sources' in by.b, false);
+  assert.deepEqual(by.c.sources, ['keep-3']);
+  for (const n of out.nodes) {
+    const { in_scope, sources, ...rest } = n;
+    const { in_scope: i2, sources: s2, ...orig } = before.nodes.find((x) => x.id === n.id);
+    assert.deepEqual(rest, orig);
+  }
 });
