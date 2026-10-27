@@ -34,3 +34,19 @@ test('pickNext treats off-goal prereqs as met and skips off-goal nodes', () => {
   const byId = new Map(ns.map((n) => [n.id, n]));
   assert.equal(pickNext(ns, byId, (n) => n.status).id, 'n');
 });
+
+import { dataUrlToBase64, sourceErrorMessage } from '../public/map-logic.js';
+
+test('dataUrlToBase64 strips the prefix', () => {
+  assert.equal(dataUrlToBase64('data:application/pdf;base64,QUJD'), 'QUJD');
+  assert.equal(dataUrlToBase64('nope'), '');
+});
+
+test('sourceErrorMessage: 503 with install names markitdown', () => {
+  assert.equal(
+    sourceErrorMessage(503, { error: 'markitdown is not installed', install: "pip install 'markitdown[all]'" }),
+    "Sources need markitdown: run `pip install 'markitdown[all]'`, then restart mindgap.",
+  );
+  assert.equal(sourceErrorMessage(422, { error: 'bad' }), 'bad');
+  assert.equal(sourceErrorMessage(500, null), 'HTTP 500');
+});

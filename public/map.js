@@ -1,7 +1,7 @@
 // Map home: renders learner/map.json as an SVG graph and drives lesson starts.
 // All map text comes from model-written files, so it is only ever set via textContent.
 
-import { visibleNodes, offGoalCount, isOffGoal, pickNext } from './map-logic.js';
+import { visibleNodes, offGoalCount, isOffGoal, pickNext, dataUrlToBase64, sourceErrorMessage } from './map-logic.js';
 
 const STATUSES = ['untested', 'gap', 'shaky', 'solid'];
 // Roadmap layout: one yellow topic per layer on a curved spine, its nodes in a column on each side.
@@ -333,6 +333,8 @@ function refreshToolbar() {
   const debug = state.byId.get('debug-method');
   btnDebug.disabled = !debug;
   btnDebug.onclick = () => debug && startLesson('debug-method', 'practice');
+
+  $('btn-sources').onclick = openSources;
 }
 
 function setBusy(on, text) {
@@ -356,6 +358,91 @@ async function errorText(res) {
   } catch {
     return `HTTP ${res.status}`;
   }
+}
+
+// Sources panel (replaces the side panel until a node is selected). Source text is untrusted: text only.
+async function sourcesRequest(path, init) {
+  const res = await fetch(courseApi(`/sources${path}`), init);
+  if (!res.ok) {
+    let body = null;
+    try { body = await res.json(); } catch { /* no JSON body */ }
+    throw new Error(sourceErrorMessage(res.status, body));
+  }
+  return res.status === 204 ? null : res.json();
+}
+
+async function openSources() {
+  showError('');
+  try {
+    renderSources(await sourcesRequest(''));
+  } catch (err) {
+    showError(`Could not load sources: ${err.message}`);
+  }
+}
+
+function renderSources(list) {
+  const side = $('side');
+  side.replaceChildren(el('h2', { text: 'Sources' }));
+  if (!list.length) side.append(el('p', { class: 'muted', text: 'No sources yet. Add a URL or a file below.' }));
+  const ul = el('ul');
+  for (const s of list) {
+    const v = String((s.origin && s.origin.value) || '');
+    const origin = s.origin && s.origin.kind === 'url' && /^https?:\/\//.test(v)
+      ? el('a', { href: v, target: '_blank', rel: 'noopener noreferrer', text: v })
+      : el('span', { text: v });
+    const n = (s.sections || []).length;
+    ul.append(el('li', {}, [
+      el('strong', { text: s.title || s.id }), ' ', origin,
+      el('span', { class: 'muted small', text: ` · ${n} section${n === 1 ? '' : 's'}${s.truncated ? ' (truncated)' : ''} ` }),
+      el('button', {
+        text: 'Remove',
+        onclick: async () => {
+          if (!confirm(`Remove source "${s.title || s.id}"?`)) return;
+          showError('');
+          try {
+            await sourcesRequest(`/${encodeURIComponent(s.id)}`, { method: 'DELETE' });
+            renderSources(await sourcesRequest(''));
+          } catch (err) {
+            showError(`Could not remove source: ${err.message}`);
+          }
+        },
+      }),
+    ]));
+  }
+  side.append(ul);
+
+  const url = el('input', { type: 'url', placeholder: 'https://…', 'aria-label': 'Source URL' });
+  const file = el('input', { type: 'file', accept: '.pdf,.docx,.pptx,.xlsx,.html,.htm,.md,.txt,.epub', 'aria-label': 'Source file' });
+  const add = el('button', { text: 'Add' });
+  const importSource = async (body) => {
+    showError('');
+    setBusy(true, 'Importing source… this can take a minute.');
+    add.disabled = true;
+    file.disabled = true;
+    let ok = false;
+    try {
+      await sourcesRequest('', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      ok = true;
+    } catch (err) {
+      showError(`Could not add source: ${err.message}`);
+    }
+    setBusy(false);
+    try { renderSources(await sourcesRequest('')); } catch (err) { showError(`Could not load sources: ${err.message}`); }
+    return ok;
+  };
+  add.onclick = () => { if (url.value.trim()) importSource({ url: url.value.trim() }); };
+  file.onchange = () => {
+    const f = file.files[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = () => importSource({ filename: f.name, data_base64: dataUrlToBase64(reader.result) });
+    reader.onerror = () => showError('Could not read that file.');
+    reader.readAsDataURL(f);
+  };
+  side.append(
+    el('div', { class: 'actions' }, [url, add]),
+    el('div', { class: 'actions' }, [file]),
+  );
 }
 
 async function startLesson(nodeId, mode) {
