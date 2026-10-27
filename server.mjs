@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { listCourses, loadCourse, ensureState, CourseNotFound } from './lib/courses.mjs';
+import { listCourses, loadCourse, ensureState, createCourse, CourseNotFound, InvalidCourse } from './lib/courses.mjs';
 import { getTutor, TUTORS } from './lib/tutors/index.mjs';
 import { reviewTurn, applyPlan } from './lib/course-session.mjs';
 import { SourceError, UPLOAD_MAX, validId, listSources, importSource, removeSource, sectionIds, readSections } from './lib/sources.mjs';
@@ -216,7 +216,7 @@ async function courseContext(c, map) {
   const lines = await readLines(propsPath(c));
   return {
     mode: 'course',
-    course: { slug: c.slug, title: c.title, layers: c.layers },
+    course: { slug: c.slug, title: c.title, layers: c.layers, generated: c.generated },
     learner: await readLearner(c),
     nodes: map.nodes.map((n) => ({
       id: n.id, title: n.title, layer: n.layer, prereqs: n.prereqs, truth: n.truth, status: n.status, evidence: n.evidence,
@@ -301,7 +301,10 @@ async function advance(c, id, meta, message, record, labsTotal, event = null) {
   let accepted = false;
   if (meta.mode === 'course') {
     // The server keeps only what the acceptance rules allow; the reviewed turn is what gets stored and returned.
-    const r = reviewTurn({ meta, turn, map: await loadMap(c), event, sectionIds: await sectionIds(sourcesDir(c)) });
+    const r = reviewTurn({
+      meta, turn, map: await loadMap(c), event, sectionIds: await sectionIds(sourcesDir(c)),
+      course: { generated: c.generated, layers: c.layers.map((l) => l.id) },
+    });
     turn = r.turn;
     accepted = turn.approved;
     Object.assign(meta, r.meta);
@@ -316,10 +319,22 @@ async function advance(c, id, meta, message, record, labsTotal, event = null) {
     ? { goal: meta.goal.text, background: meta.goal.background, approved_at: ts }
     : null;
   if (accepted && !goal) throw new Error('approval accepted without a goal on record');
+  // New layers extend the course's own course.json (read fresh, every other key kept); built before any write.
+  const newLayers = accepted ? meta.pending_plan.new_layers ?? [] : [];
+  let courseJson = null;
+  if (newLayers.length) {
+    const cj = JSON.parse(await readFile(path.join(c.dir, 'course.json'), 'utf8'));
+    cj.layers = [...(cj.layers ?? []), ...newLayers.map(({ id, name }) => ({ id, name }))];
+    courseJson = JSON.stringify(cj, null, 2) + '\n';
+  }
   await updateMap(c, (map) => {
     applyNodeUpdates(map, turn.node_updates ?? []);
-    if (accepted) Object.assign(map, applyPlan(map, meta.pending_plan.in_scope, meta.pending_plan.sources ?? []));
+    if (accepted) {
+      const { in_scope, sources, new_nodes } = meta.pending_plan;
+      Object.assign(map, applyPlan(map, in_scope, sources ?? [], new_nodes ?? []));
+    }
   });
+  if (courseJson) await writeAtomic(path.join(c.dir, 'course.json'), courseJson);
   if (goal) await writeAtomic(goalPath(c), JSON.stringify(goal, null, 2) + '\n');
 
   const props = turn.propositions ?? [];
@@ -507,6 +522,14 @@ async function api(req, res, pathname) {
   const sourceM = pathname.match(/^\/api\/courses\/([^/]+)\/sources\/([^/]+)$/);
   const courseM = pathname.match(/^\/api\/courses\/([^/]+)$/);
   if (method === 'GET' && pathname === '/api/courses') return send(res, 200, await listCourses(COURSE_OPTS));
+  if (method === 'POST' && pathname === '/api/courses') {
+    try {
+      return send(res, 201, await createCourse(COURSE_OPTS, await readJson(req)));
+    } catch (err) {
+      if (err instanceof InvalidCourse) throw new HttpError(400, err.message);
+      throw err;
+    }
+  }
   if (method === 'GET' && courseM) return send(res, 200, await courseInfo(safeDecode(courseM[1])));
   if (method === 'GET' && mapM) return send(res, 200, await loadMap(await openCourse(safeDecode(mapM[1]))));
   if (method === 'GET' && chapterM) return send(res, 200, await getChapter(safeDecode(chapterM[1]), safeDecode(chapterM[2])));

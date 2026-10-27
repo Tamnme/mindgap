@@ -95,11 +95,15 @@ On accepted approval the server sets `in_scope: false` on every node outside the
 - `--safe-mode` keeps the user's CLAUDE.md/plugins/hooks out of the tutor. Auth still uses the subscription. Do NOT use `--bare` (it needs an API key).
 - First message of a lesson = a JSON block containing: the mode, the target node, its prereqs with their statuses, every other node's id/title/status (`in_scope: false` when off-goal), the learner's goal and background (or null), and all propositions for those nodes. Later messages = the learner event as JSON.
 
+## Generated courses
+A course whose folder is under `<data>/courses/` is generated (`loadCourse().generated`); only those may draw. On approval of a plan, the server (in this order) appends `plan.new_nodes` to `state/map.json` (`status: "untested"`, `evidence: ""`, existing nodes untouched apart from `in_scope` / `source_sections`), appends `plan.new_layers` (`{id, name}` only) to `layers` in `<data>/courses/<slug>/course.json` (other keys kept), then writes `state/goal.json`. No chapter files are written by creating a course or approving a plan. The course CONTEXT carries `course.generated`.
+
 ## HTTP API
 Binds 127.0.0.1 only. Unknown or invalid course slugs → 404. A malformed `course.json` → 500 (message logged).
 | Method | Path | Body → Response |
 |---|---|---|
 | GET | `/api/courses` | → `[{slug, title}]` |
+| POST | `/api/courses` | `{title, background?}` → 201 `{slug}`. `title` 1-80 chars after trimming, `background` text up to 2000 chars (blank = none), else 400. Creates a generated course in `<data>/courses/<slug>/`: `course.json` `{slug, title, layers: [], lab: null}`, `map.seed.json` `{nodes: []}`, `chapters/index.json` `[]`, and `state/goal.json` `{goal: null, background}` only when a background is given. Slug = lowercase title with runs of non-`[a-z0-9]` as `-`, max 48 chars (`course` if empty); `-2`, `-3`, ... if a shipped or data course already has it. |
 | GET | `/api/courses/:slug` | → `{...course.json, chapters: string[], lab}` (`chapters` = `chapters/index.json`, `[]` if absent; `lab` = `{available, reason?, request:{caps, network}, approved}`, `reason` set when Docker is unavailable) |
 | GET | `/api/courses/:slug/map` | → state map.json (seeded on first access) |
 | GET | `/api/courses/:slug/chapters/:id` | → chapter JSON, 404 if absent |

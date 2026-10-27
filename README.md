@@ -48,6 +48,10 @@ On first access to a course, the server copies `courses/<slug>/map.seed.json` to
 | `MARKITDOWN_BIN` | `markitdown` | Converter for course sources (URLs and uploaded files) |
 | `PORT` | `4810` | |
 
+## Creating a course
+
+Give a title (and optionally some background about you) to start an empty course; it is created in `<data>/courses/<slug>/`. Open it, optionally add sources, and click **New goal**. When you approve the plan, the tutor draws the course's map: its nodes and layers are added to the course. Nothing is written for the shipped networking course's map.
+
 ## Upgrading from netbench/underlay
 
 Stop the server, back up `learner/`, then run `node scripts/migrate-learner-v1.mjs` (with `MINDGAP_DATA_DIR` set if your data is elsewhere). It moves your old files into `courses/networking/state/` and converts your map to the current format. Start the server again afterwards.

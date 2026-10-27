@@ -3,7 +3,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdtemp, mkdir, writeFile, readFile, chmod, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, readdir, chmod, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
@@ -1071,3 +1071,76 @@ test('sources: approval tags nodes, teach lesson gets the excerpt; truncation at
   await call('POST', '/api/lesson', { course: 'net', node_id: 'frames-mac', mode: 'teach' });
   assert.ok(!('sources' in ctxOf(await lastMessage())));
 })));
+
+// Create a course, then grow its map by approval (f2 task 3).
+const NODE = (id, prereqs = []) => ({ id, title: id, layer: 'basics', prereqs, truth: `${id} truth` });
+
+async function drawSession(slug, plan) {
+  const callIn = (p, b) => call('POST', p, b);
+  await setTurn({ goal: GOAL, assessment: ASSESSMENT });
+  const id = (await callIn('/api/lesson', { course: slug, mode: 'course' })).json.lesson_id;
+  const say = () => callIn('/api/turn', { course: slug, lesson_id: id, event: { type: 'ask', text: 'ok' } });
+  await setTurn({ plan });
+  const shown = await say();
+  await setTurn({ approved: true, lesson_done: true });
+  return { shown, approved: await say() };
+}
+
+test('POST /api/courses creates the folder, files and goal background; the list shows it', async () => {
+  const r = await call('POST', '/api/courses', { title: ' Rust Basics ', background: 'knows C' });
+  assert.equal(r.status, 201, r.text);
+  assert.deepEqual(r.json, { slug: 'rust-basics' });
+  const cdir = path.join(dataDir, 'courses', 'rust-basics');
+  assert.deepEqual(JSON.parse(await readFile(path.join(cdir, 'course.json'), 'utf8')), { slug: 'rust-basics', title: 'Rust Basics', layers: [], lab: null });
+  assert.deepEqual(JSON.parse(await readFile(path.join(cdir, 'map.seed.json'), 'utf8')), { nodes: [] });
+  assert.deepEqual(JSON.parse(await readFile(path.join(cdir, 'chapters', 'index.json'), 'utf8')), []);
+  assert.deepEqual(JSON.parse(await readFile(path.join(cdir, 'state', 'goal.json'), 'utf8')), { goal: null, background: 'knows C' });
+  assert.ok((await call('GET', '/api/courses')).json.some((c) => c.slug === 'rust-basics' && c.title === 'Rust Basics'));
+  assert.deepEqual((await call('GET', '/api/courses/rust-basics/map')).json, { nodes: [] });
+});
+
+test('POST /api/courses: same title gets -2, a shipped slug is skipped, bad input is 400', async () => {
+  assert.equal((await call('POST', '/api/courses', { title: 'Rust Basics' })).json.slug, 'rust-basics-2');
+  const shipped = await call('POST', '/api/courses', { title: 'Net' });
+  assert.equal(shipped.json.slug, 'net-2');
+  assert.ok(!existsSync(path.join(dataDir, 'courses', 'net', 'course.json')));
+  assert.ok(!existsSync(path.join(dataDir, 'courses', 'rust-basics-2', 'state')));
+  for (const body of [{}, { title: '   ' }, { title: 'x'.repeat(81) }, { title: 5 }, { title: 'ok', background: 'y'.repeat(2001) }, { title: 'ok', background: 7 }]) {
+    assert.equal((await call('POST', '/api/courses', body)).status, 400, JSON.stringify(body).slice(0, 60));
+  }
+});
+
+test('approval on a generated course adds nodes and the layer, writes no chapters; a second session keeps the first', async () => {
+  const slug = (await call('POST', '/api/courses', { title: 'Grow Me' })).json.slug;
+  const cdir = path.join(dataDir, 'courses', slug);
+  const plan1 = { approach: 'draw', in_scope: ['a', 'b', 'c'], new_layers: [{ id: 'basics', name: 'Basics' }], new_nodes: [NODE('a'), NODE('b', ['a']), NODE('c', ['b'])] };
+  const one = await drawSession(slug, plan1);
+  assert.equal(one.shown.json.turn.plan.in_scope.length, 3, one.shown.text);
+  assert.equal(one.approved.json.turn.approved, true, one.approved.text);
+  const map1 = (await call('GET', `/api/courses/${slug}/map`)).json;
+  assert.deepEqual(map1.nodes.map((n) => [n.id, n.status, n.evidence]), [['a', 'untested', ''], ['b', 'untested', ''], ['c', 'untested', '']]);
+  const cj = JSON.parse(await readFile(path.join(cdir, 'course.json'), 'utf8'));
+  assert.deepEqual(cj.layers, [{ id: 'basics', name: 'Basics' }]);
+  assert.equal(cj.title, 'Grow Me');
+  assert.deepEqual(await readdir(path.join(cdir, 'chapters')), ['index.json']);
+  assert.deepEqual(JSON.parse(await readFile(path.join(cdir, 'state', 'goal.json'), 'utf8')).goal, GOAL.text);
+
+  // Learner evidence on an existing node survives a later growth.
+  map1.nodes[0].status = 'shaky';
+  map1.nodes[0].evidence = 'mixed up';
+  await writeFile(path.join(cdir, 'state', 'map.json'), JSON.stringify(map1));
+  const two = await drawSession(slug, { approach: 'more', in_scope: ['a', 'b', 'c', 'd'], new_layers: [], new_nodes: [NODE('d', ['c'])] });
+  assert.equal(two.approved.json.turn.approved, true, two.approved.text);
+  const map2 = (await call('GET', `/api/courses/${slug}/map`)).json;
+  assert.deepEqual(map2.nodes.slice(0, 3), map1.nodes);
+  assert.deepEqual(map2.nodes[3], { ...NODE('d', ['c']), status: 'untested', evidence: '' });
+  assert.deepEqual(JSON.parse(await readFile(path.join(cdir, 'course.json'), 'utf8')).layers, [{ id: 'basics', name: 'Basics' }]);
+  assert.deepEqual(await readdir(path.join(cdir, 'chapters')), ['index.json']);
+});
+
+test('a shipped course session with new_nodes is refused and its map is untouched', () => withCourseState(async (mapBefore) => {
+  const { shown } = await drawSession('net', { approach: 'x', in_scope: ['frames-mac', 'zz'], new_layers: [{ id: 'basics', name: 'B' }], new_nodes: [NODE('zz')] });
+  assert.equal(shown.json.turn.plan, null);
+  assert.deepEqual((await call('GET', '/api/courses/net/map')).json, mapBefore);
+  assert.equal(JSON.parse(await readFile(path.join(dir, 'courses', 'net', 'course.json'), 'utf8')).layers.length, 1);
+}));
