@@ -48,7 +48,7 @@ courses/<slug>/chapters/<node_id>.json  # chapter content, see Chapters below
   "sources": ["https://..."],
   "status": "gap",                     // untested | gap | shaky | solid
   "in_scope": false,                   // optional; only ever false, set by an approved course plan
-  "sources": ["<sourceId>-<n>"],       // optional; section ids the node rests on, written only by an approved plan (`plan.sources`)
+  "source_sections": ["<sourceId>-<n>"], // optional; section ids the node rests on, written only by an approved plan (`plan.sources`); distinct from `sources` above
   "evidence": "Placement 2026-10-24: said a switch maps IP→MAC."
 } ] }
 ```
@@ -79,9 +79,9 @@ When the review refuses a field, it becomes a note in `meta.server_notes`. The n
 
 Sources (course mode). `courseContext` always carries `sources: [{id, title, sections: [{id, heading, chars}]}]` (the TOC, no text, `[]` when none). The course schema has required `read_sections: string[]`: `reviewTurn` keeps it only when it is an array of at most `READ_MAX` (5) ids that all exist in this course's index, else it refuses with a `SERVER:` note naming the problem and keeps `[]`. The kept list is stored as `meta.pending_reads` every course turn (an empty list too), and the next message gets a `SOURCES:` block holding `readSections(...)` of it (capped at `EXCERPT_MAX` chars; unknown ids skipped); that turn's own `read_sections` replaces it, so each block is sent once. Source text is untrusted reference material, only ever inside JSON. `plan.sources` is required: `[{node, sections}]`; `checkPlan` refuses a node not in `in_scope`, a node listed twice, or an id not in the index (absent counts as `[]`).
 
-Node-level modes (teach/practice/probe/chapter): `baseContext` adds `sources: [{id, source, heading, text}]` for the target node's `sources` tags, in tag order up to `EXCERPT_MAX` chars total, dangling ids skipped; the key is absent when the node has no tags or none resolve.
+Node-level modes (teach/practice/probe/chapter): `baseContext` adds `sources: [{id, source, heading, text}]` for the target node's `source_sections` tags, in tag order up to `EXCERPT_MAX` chars total, dangling ids skipped; the key is absent when the node has no tags or none resolve.
 
-On accepted approval the server sets `in_scope: false` on every node outside the plan (in-scope nodes carry no `in_scope` key). In-scope nodes get `sources` = the ids `plan.sources` lists for them, or lose the key; off-scope nodes keep their `sources`. Nothing else in the map changes and writes `<stateDir>/goal.json` = `{goal, background, approved_at}`. An abandoned session changes neither. `goal.json` may hold `goal: null` (background only); readers tolerate null. Node-level modes get `learner:{goal,background}|null` from it and list off-goal nodes in `other_nodes` with `in_scope: false`.
+On accepted approval the server sets `in_scope: false` on every node outside the plan (in-scope nodes carry no `in_scope` key). In-scope nodes get `source_sections` = the ids `plan.sources` lists for them, or lose the key; off-scope nodes keep their `source_sections`. The URL list `sources` is never touched. Nothing else in the map changes. It also writes `<stateDir>/goal.json` = `{goal, background, approved_at}`. An abandoned session changes neither. `goal.json` may hold `goal: null` (background only); readers tolerate null. Node-level modes get `learner:{goal,background}|null` from it and list off-goal nodes in `other_nodes` with `in_scope: false`.
 
 ## How the server calls the tutor (adapters in `lib/tutors/`)
 `MINDGAP_TUTOR` picks one adapter: `claude` (default) or `agy`. Each adapter exports `buildCall({systemPrompt, schemaText, message, sessionId, model, schemaFile}) -> {bin, args}` and `parseOutput(stdout) -> {turn, sessionId, error}`. Binaries come from `CLAUDE_BIN` / `AGY_BIN`.

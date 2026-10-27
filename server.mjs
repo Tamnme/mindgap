@@ -234,7 +234,7 @@ async function baseContext(c, map, nodeId, mode) {
   const inScope = new Set([target.id, ...prereqs.map((n) => n.id)]);
   const propositions = (await readLines(propsPath(c))).filter((p) => inScope.has(p.node));
   // Lessons get the sections their node is tagged with (dangling ids skipped), up to the excerpt cap.
-  const excerpts = target.sources?.length ? await readSections(sourcesDir(c), target.sources) : [];
+  const excerpts = target.source_sections?.length ? await readSections(sourcesDir(c), target.source_sections) : [];
   return {
     mode,
     learner: await readLearner(c),

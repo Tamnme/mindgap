@@ -284,19 +284,21 @@ test('plan.sources: node outside in_scope, duplicate node, unknown section, non-
 
 test('applyPlan tags listed in-scope nodes, clears unlisted in-scope tags, keeps off-scope tags, changes nothing else', () => {
   const tagged = structuredClone(map);
-  tagged.nodes[0].sources = ['old-1'];
-  tagged.nodes[1].sources = ['old-2'];
-  tagged.nodes[2].sources = ['keep-3'];
+  tagged.nodes[0].source_sections = ['old-1'];
+  tagged.nodes[1].source_sections = ['old-2'];
+  tagged.nodes[2].source_sections = ['keep-3'];
+  for (const n of tagged.nodes) n.sources = ['https://example.com/' + n.id];
   const before = structuredClone(tagged);
   const out = applyPlan(tagged, ['a', 'b'], [{ node: 'a', sections: ['s1-1', 's1-2'] }]);
   assert.deepEqual(tagged, before);
   const by = Object.fromEntries(out.nodes.map((n) => [n.id, n]));
-  assert.deepEqual(by.a.sources, ['s1-1', 's1-2']);
-  assert.equal('sources' in by.b, false);
-  assert.deepEqual(by.c.sources, ['keep-3']);
+  assert.deepEqual(by.a.source_sections, ['s1-1', 's1-2']);
+  assert.equal('source_sections' in by.b, false);
+  assert.deepEqual(by.c.source_sections, ['keep-3']);
+  for (const n of out.nodes) assert.deepEqual(n.sources, ['https://example.com/' + n.id]);
   for (const n of out.nodes) {
-    const { in_scope, sources, ...rest } = n;
-    const { in_scope: i2, sources: s2, ...orig } = before.nodes.find((x) => x.id === n.id);
+    const { in_scope, source_sections, ...rest } = n;
+    const { in_scope: i2, source_sections: s2, ...orig } = before.nodes.find((x) => x.id === n.id);
     assert.deepEqual(rest, orig);
   }
 });

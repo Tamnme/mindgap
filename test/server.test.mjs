@@ -18,7 +18,7 @@ const CONTEXT_PREFIX = 'CONTEXT:\n';
 
 const MAP = {
   nodes: [
-    { id: 'frames-mac', title: 'Frames carry MAC', layer: 'L2', prereqs: [], truth: 't', twins: {}, lab: '', sim: null, sources: [], status: 'gap', evidence: '' },
+    { id: 'frames-mac', title: 'Frames carry MAC', layer: 'L2', prereqs: [], truth: 't', twins: {}, lab: '', sim: null, sources: ['https://example.com/x'], status: 'gap', evidence: '' },
     { id: 'switch-mac-table', title: 'Switch: MAC to port', layer: 'L2', prereqs: ['frames-mac'], truth: 't', twins: {}, lab: '', sim: 'switch-learning', sources: [], status: 'untested', evidence: '' },
     { id: 'vlan-basics', title: 'VLANs', layer: 'L2', prereqs: [], truth: 't', twins: {}, lab: '', sim: null, sources: [], status: 'untested', evidence: '' },
   ],
@@ -783,7 +783,8 @@ test('course session happy path: plan approved, map scoped, goal saved, lab appr
   assert.equal(map.nodes.find((n) => n.id === 'vlan-basics').in_scope, false);
   assert.ok(!('in_scope' in map.nodes.find((n) => n.id === 'frames-mac')));
   assert.ok(!('in_scope' in map.nodes.find((n) => n.id === 'switch-mac-table')));
-  assert.deepEqual(map.nodes.map(({ in_scope, sources, ...n }) => n), mapBefore.nodes.map(({ sources, ...n }) => n));
+  assert.deepEqual(map.nodes.map(({ in_scope, source_sections, ...n }) => n), mapBefore.nodes);
+  assert.deepEqual(map.nodes.find((n) => n.id === 'frames-mac').sources, ['https://example.com/x']);
   const goal = JSON.parse(await readFile(goalPath(), 'utf8'));
   assert.equal(goal.goal, GOAL.text);
   assert.equal(goal.background, GOAL.background);
@@ -1036,9 +1037,10 @@ test('sources: approval tags nodes, teach lesson gets the excerpt; truncation at
   await setTurn({ approved: true });
   await say(id);
   const map = (await call('GET', '/api/courses/net/map')).json;
-  assert.deepEqual(map.nodes.find((n) => n.id === 'switch-mac-table').sources, ['sa-1', 'sa-2']);
-  assert.deepEqual(map.nodes.find((n) => n.id === 'frames-mac').sources, ['sa-3']);
-  assert.ok(!('sources' in map.nodes.find((n) => n.id === 'vlan-basics')) || map.nodes.find((n) => n.id === 'vlan-basics').sources.length === 0);
+  assert.deepEqual(map.nodes.find((n) => n.id === 'switch-mac-table').source_sections, ['sa-1', 'sa-2']);
+  assert.deepEqual(map.nodes.find((n) => n.id === 'frames-mac').source_sections, ['sa-3']);
+  assert.deepEqual(map.nodes.find((n) => n.id === 'frames-mac').sources, ['https://example.com/x']);
+  assert.ok(!('source_sections' in map.nodes.find((n) => n.id === 'vlan-basics')));
 
   await rm(path.join(dir, 'turn.json'));
   await call('POST', '/api/lesson', { course: 'net', node_id: 'switch-mac-table', mode: 'teach' });
