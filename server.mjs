@@ -30,6 +30,8 @@ if (!TUTORS.includes(TUTOR)) {
 }
 const tutor = getTutor(TUTOR);
 const MODEL = process.env.MINDGAP_MODEL || (TUTOR === 'claude' ? 'opus' : undefined);
+// agy's default effort runs a teach turn past TUTOR_TIMEOUT_MS and medium took 168s; low took 12s. Claude ignores it.
+const EFFORT = process.env.MINDGAP_EFFORT || (TUTOR === 'agy' ? 'low' : undefined);
 const MODES = { teach: 'teacher.md', practice: 'practice.md', probe: 'prober.md', chapter: 'chapter.md', course: 'course.md' };
 const BODY_LIMIT = 256 * 1024;
 const TUTOR_TIMEOUT_MS = 180_000;
@@ -259,18 +261,23 @@ async function callTutor(c, meta, message) {
   try {
     const schemaFile = path.join(cwd, 'turn-schema.json');
     await writeFile(schemaFile, schema);
-    const { bin, args } = tutor.buildCall({
-      systemPrompt: sys, schemaText: schema, message, sessionId: meta.tutor_session_id, model: MODEL, schemaFile,
-    });
-    const { err, stdout, stderr } = await new Promise((resolve) => {
-      const child = execFile(bin, args, { cwd, timeout: TUTOR_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 },
-        (e, o, s) => resolve({ err: e, stdout: o, stderr: s }));
-      // An early-exiting tutor makes the write to stdin fail with EPIPE; that must not crash the server.
-      child.stdin.on('error', () => {});
-      child.stdin.end();
-    });
-    if (err && err.code === 'ENOENT') throw new HttpError(502, `${TUTOR} not found on PATH`);
-    const parsed = tutor.parseOutput(stdout ?? '');
+    const run = async (msg, sessionId) => {
+      const { bin, args } = tutor.buildCall({
+        systemPrompt: sys, schemaText: schema, message: msg, sessionId, model: MODEL, effort: EFFORT, schemaFile,
+      });
+      const r = await new Promise((resolve) => {
+        const child = execFile(bin, args, { cwd, timeout: TUTOR_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 },
+          (e, o, s) => resolve({ err: e, stdout: o, stderr: s }));
+        // An early-exiting tutor makes the write to stdin fail with EPIPE; that must not crash the server.
+        child.stdin.on('error', () => {});
+        child.stdin.end();
+      });
+      if (r.err && r.err.code === 'ENOENT') throw new HttpError(502, `${TUTOR} not found on PATH`);
+      return { ...r, parsed: tutor.parseOutput(r.stdout ?? '') };
+    };
+    let { err, stderr, parsed } = await run(message, meta.tutor_session_id);
+    // The adapter asks for one resume when a refused tool call ate the turn (agy).
+    if (parsed.retry) ({ err, stderr, parsed } = await run(parsed.retry, parsed.sessionId));
     if (parsed.error) {
       const detail = (stderr || (err && err.message) || '').trim().slice(0, 500);
       throw new HttpError(502, detail ? `${parsed.error}: ${detail}` : parsed.error);

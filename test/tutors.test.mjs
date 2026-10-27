@@ -84,7 +84,8 @@ test('agy first turn: system prompt folded into -p, which is last', () => {
     '--output-format', 'json', '--json-schema', SCHEMA, '--model', 'pro',
   ]);
   assert.equal(args.at(-2), '-p');
-  assert.equal(args.at(-1), 'SYSTEM INSTRUCTIONS:\n' + SYS + '\n\n' + MSG);
+  assert.ok(args.at(-1).startsWith('SYSTEM INSTRUCTIONS:\n'));
+  assert.ok(args.at(-1).endsWith(SYS + '\n\n' + MSG));
 });
 
 test('agy resume: --conversation present, no system prompt in message', () => {
@@ -104,6 +105,11 @@ test('agy omits --model when model is falsy', () => {
   assert.equal(args.at(-2), '-p');
 });
 
+test('agy passes --effort when given', () => {
+  const { args } = agy.buildCall({ systemPrompt: SYS, schemaText: SCHEMA, message: MSG, sessionId: null, effort: 'medium' });
+  assert.equal(args[args.indexOf('--effort') + 1], 'medium');
+});
+
 test('agy bin comes from AGY_BIN at call time', () => {
   process.env.AGY_BIN = '/fake/agy';
   try {
@@ -121,6 +127,18 @@ test('agy parseOutput: no structured_output (refused tool call)', () => {
   assert.equal(r.turn, null);
   assert.equal(r.sessionId, 'c1');
   assert.equal(r.error, 'agy returned no structured_output (a tool call was probably refused)');
+});
+
+test('agy parseOutput: a denied action with a conversation asks for one retry', () => {
+  const r = agy.parseOutput('{"conversation_id":"c1","status":"SUCCESS","denied_actions":[{"action":"command"}]}');
+  assert.equal(r.turn, null);
+  assert.equal(r.sessionId, 'c1');
+  assert.equal(r.retry, agy.RETRY);
+});
+
+test('agy first turn tells the model it has no tools', () => {
+  const { args } = agy.buildCall({ systemPrompt: SYS, schemaText: SCHEMA, message: MSG, sessionId: null, model: 'pro' });
+  assert.match(args.at(-1), /^SYSTEM INSTRUCTIONS:\nYou have no tools\./);
 });
 
 test('agy parseOutput: non-JSON stdout', () => {
