@@ -1,0 +1,248 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "say",
+    "question",
+    "sim",
+    "lab",
+    "node_updates",
+    "propositions",
+    "lesson_done",
+    "goal",
+    "assessment",
+    "plan",
+    "approved"
+  ],
+  "properties": {
+    "say": {
+      "type": "string",
+      "description": "Markdown shown as the tutor bubble."
+    },
+    "question": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "prompt",
+        "options",
+        "wants_confidence"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "choice",
+            "free"
+          ]
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Empty when kind=free."
+        },
+        "wants_confidence": {
+          "type": "boolean"
+        }
+      }
+    },
+    "sim": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "required": [
+        "scenario"
+      ],
+      "properties": {
+        "scenario": {
+          "enum": [
+            "switch-learning",
+            "switch-flood",
+            "vlan-broadcast",
+            "vlan-trunk"
+          ]
+        }
+      }
+    },
+    "lab": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "required": [
+        "cmd",
+        "explain"
+      ],
+      "properties": {
+        "cmd": {
+          "type": "string",
+          "description": "Bash run inside the course's lab container only after the learner clicks Run."
+        },
+        "explain": {
+          "type": "string"
+        }
+      }
+    },
+    "node_updates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "status",
+          "note"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "untested",
+              "gap",
+              "shaky",
+              "solid"
+            ]
+          },
+          "note": {
+            "type": "string",
+            "description": "Evidence for the status, in one sentence."
+          }
+        }
+      }
+    },
+    "propositions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "claim",
+          "because",
+          "node"
+        ],
+        "properties": {
+          "claim": {
+            "type": "string"
+          },
+          "because": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Premise claims this follows from."
+          },
+          "node": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "lesson_done": {
+      "type": "boolean"
+    },
+    "goal": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "required": [
+        "text",
+        "background"
+      ],
+      "description": "The goal as it now stands, once it is concrete; null while it is not.",
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "background": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "assessment": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "required": [
+        "strands",
+        "summary"
+      ],
+      "properties": {
+        "strands": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "strand",
+              "assessment"
+            ],
+            "properties": {
+              "strand": {
+                "type": "string",
+                "description": "a name the plan can hang a node on"
+              },
+              "assessment": {
+                "type": "string",
+                "description": "floor, ceiling, misconceptions found, and what the lesson should build from, written from the evidence"
+              }
+            }
+          }
+        },
+        "summary": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "their goal and where the teaching should enter"
+        }
+      }
+    },
+    "plan": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "required": [
+        "approach",
+        "in_scope"
+      ],
+      "properties": {
+        "approach": {
+          "type": "string",
+          "description": "a few sentences: what, in what order, why, what is skipped because they hold it"
+        },
+        "in_scope": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "node ids on the path to the goal"
+        }
+      }
+    },
+    "approved": {
+      "type": "boolean"
+    }
+  }
+}

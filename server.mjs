@@ -9,12 +9,14 @@ import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { listCourses, loadCourse, ensureState, CourseNotFound } from './lib/courses.mjs';
 import { getTutor, TUTORS } from './lib/tutors/index.mjs';
+import { reviewTurn, applyPlan } from './lib/course-session.mjs';
 import { labStatus, labRequest, isApproved, approve, runLab, ApprovalMismatch } from './lib/labs.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(HERE, 'public');
 const PROMPTS_DIR = path.join(HERE, 'prompts');
-const SCHEMA_PATH = path.join(PROMPTS_DIR, 'turn-schema.json');
+const SCHEMAS = { course: 'course-schema.json' };
+const schemaFor = (mode) => path.join(PROMPTS_DIR, SCHEMAS[mode] ?? 'turn-schema.json');
 const DATA_DIR = path.resolve(process.env.MINDGAP_DATA_DIR || path.join(HERE, 'learner'));
 const COURSE_OPTS = {
   coursesDir: path.resolve(process.env.MINDGAP_COURSES_DIR || path.join(HERE, 'courses')),
@@ -28,7 +30,7 @@ if (!TUTORS.includes(TUTOR)) {
 }
 const tutor = getTutor(TUTOR);
 const MODEL = process.env.MINDGAP_MODEL || (TUTOR === 'claude' ? 'opus' : undefined);
-const MODES = { teach: 'teacher.md', practice: 'practice.md', probe: 'prober.md', chapter: 'chapter.md' };
+const MODES = { teach: 'teacher.md', practice: 'practice.md', probe: 'prober.md', chapter: 'chapter.md', course: 'course.md' };
 const BODY_LIMIT = 256 * 1024;
 const TUTOR_TIMEOUT_MS = 180_000;
 const LAB_CMD_MAX = 4000;
@@ -133,6 +135,7 @@ async function openCourse(slug) {
 }
 
 const mapPath = (c) => path.join(c.stateDir, 'map.json');
+const goalPath = (c) => path.join(c.stateDir, 'goal.json');
 const propsPath = (c) => path.join(c.stateDir, 'propositions.jsonl');
 const sessDir = (c) => path.join(c.stateDir, 'sessions');
 const metaPath = (c, id) => path.join(sessDir(c), `${id}.meta.json`);
@@ -193,6 +196,36 @@ async function contextFor(c, map, nodeId, mode) {
   return ctx;
 }
 
+// {goal, background} from goal.json, either may be null; null when the learner has no goal file.
+async function readLearner(c) {
+  const text = await readOptional(goalPath(c));
+  if (text === null) return null;
+  let g;
+  try {
+    g = JSON.parse(text);
+  } catch (e) {
+    console.warn(`goal.json is not valid JSON, ignoring it: ${e.message}`);
+    return null;
+  }
+  if (!g || typeof g !== 'object') return null;
+  return { goal: g.goal ?? null, background: g.background ?? null };
+}
+
+// First message of a course session: the whole map, the learner so far, recent propositions.
+async function courseContext(c, map) {
+  const lines = await readLines(propsPath(c));
+  return {
+    mode: 'course',
+    course: { slug: c.slug, title: c.title, layers: c.layers },
+    learner: await readLearner(c),
+    nodes: map.nodes.map((n) => ({
+      id: n.id, title: n.title, layer: n.layer, prereqs: n.prereqs, truth: n.truth, status: n.status, evidence: n.evidence,
+      ...(n.in_scope === false ? { in_scope: false } : {}),
+    })),
+    propositions: lines.slice(-200),
+  };
+}
+
 async function baseContext(c, map, nodeId, mode) {
   const byId = new Map(map.nodes.map((n) => [n.id, n]));
   const target = byId.get(nodeId);
@@ -201,11 +234,12 @@ async function baseContext(c, map, nodeId, mode) {
   const propositions = (await readLines(propsPath(c))).filter((p) => inScope.has(p.node));
   return {
     mode,
+    learner: await readLearner(c),
     target,
     prereqs: prereqs.map((n) => ({ id: n.id, title: n.title, status: n.status })),
     other_nodes: map.nodes
       .filter((n) => !inScope.has(n.id))
-      .map((n) => ({ id: n.id, title: n.title, status: n.status })),
+      .map((n) => ({ id: n.id, title: n.title, status: n.status, ...(n.in_scope === false ? { in_scope: false } : {}) })),
     propositions,
   };
 }
@@ -219,7 +253,7 @@ async function systemPrompt(c, mode) {
 
 // Every tutor call runs in a fresh empty cwd (holds the turn schema, no repo access), removed afterwards.
 async function callTutor(c, meta, message) {
-  const schema = await readFile(SCHEMA_PATH, 'utf8');
+  const schema = await readFile(schemaFor(meta.mode), 'utf8');
   const sys = await systemPrompt(c, meta.mode);
   const cwd = await mkdtemp(path.join(tmpdir(), 'mindgap-turn-'));
   try {
@@ -248,13 +282,35 @@ async function callTutor(c, meta, message) {
 }
 
 // Calls the tutor, then persists everything. labsTotal = lab events the message has seen.
-async function advance(c, id, meta, message, record, labsTotal) {
-  const { turn, sessionId } = await callTutor(c, meta, message);
+// event: the learner event this turn answers, null for the first turn.
+async function advance(c, id, meta, message, record, labsTotal, event = null) {
+  const called = await callTutor(c, meta, message);
+  const { sessionId } = called;
+  let turn = called.turn;
   const ts = new Date().toISOString();
+  let accepted = false;
+  if (meta.mode === 'course') {
+    // The server keeps only what the acceptance rules allow; the reviewed turn is what gets stored and returned.
+    const r = reviewTurn({ meta, turn, map: await loadMap(c), event });
+    turn = r.turn;
+    accepted = turn.approved;
+    Object.assign(meta, r.meta);
+    // Notes already sent in this message are spent; this turn's notes go out with the next one.
+    meta.server_notes = r.notes;
+  }
 
   meta.tutor_session_id = sessionId || meta.tutor_session_id || null;
   meta.labs_sent = labsTotal;
-  await updateMap(c, (map) => applyNodeUpdates(map, turn.node_updates ?? []));
+  // Build goal.json before touching the map, so nothing can throw after the trim is written.
+  const goal = accepted && meta.goal
+    ? { goal: meta.goal.text, background: meta.goal.background, approved_at: ts }
+    : null;
+  if (accepted && !goal) throw new Error('approval accepted without a goal on record');
+  await updateMap(c, (map) => {
+    applyNodeUpdates(map, turn.node_updates ?? []);
+    if (accepted) Object.assign(map, applyPlan(map, meta.pending_plan.in_scope));
+  });
+  if (goal) await writeAtomic(goalPath(c), JSON.stringify(goal, null, 2) + '\n');
 
   const props = turn.propositions ?? [];
   if (props.length) {
@@ -267,12 +323,22 @@ async function advance(c, id, meta, message, record, labsTotal) {
 
 async function startLesson(body) {
   const c = await openCourse(body.course);
-  const { node_id, mode } = body;
-  if (!validId(node_id)) throw new HttpError(400, 'node_id is required');
+  const { mode } = body;
   if (!Object.hasOwn(MODES, mode) || mode === 'chapter') {
-    throw new HttpError(400, `mode must be one of: ${Object.keys(MODES).join(', ')}`);
+    throw new HttpError(400, `mode must be one of: ${Object.keys(MODES).filter((m) => m !== 'chapter').join(', ')}`);
   }
   const map = await loadMap(c);
+  if (mode === 'course') {
+    // A course session spans the whole map, so any node_id is ignored.
+    const lesson_id = `course-${Date.now()}`;
+    const meta = { course: c.slug, tutor: TUTOR, tutor_session_id: null, node_id: null, mode, started: new Date().toISOString(), labs_sent: 0 };
+    await writeAtomic(metaPath(c, lesson_id), JSON.stringify(meta, null, 2));
+    const message = 'CONTEXT:\n' + JSON.stringify(await courseContext(c, map), null, 2);
+    const turn = await advance(c, lesson_id, meta, message, { role: 'system', data: { type: 'start', node_id: null, mode } }, 0);
+    return { lesson_id, turn };
+  }
+  const { node_id } = body;
+  if (!validId(node_id)) throw new HttpError(400, 'node_id is required');
   if (!map.nodes.some((n) => n.id === node_id)) throw new HttpError(404, `unknown node: ${node_id}`);
 
   const lesson_id = `${node_id}-${Date.now()}`;
@@ -303,6 +369,8 @@ async function turn(body) {
     const labs = (await readEvents(c, lesson_id)).filter((e) => e.role === 'lab');
     const pending = labs.slice(meta.labs_sent ?? 0).map((e) => e.data);
     let message = 'EVENT:\n' + JSON.stringify(event, null, 2);
+    // Notes from reviewing the previous turn go first; advance() clears them once this turn persists.
+    if (meta.server_notes?.length) message = 'SERVER:\n' + meta.server_notes.map((n) => `- ${n}\n`).join('') + message;
     if (pending.length) message += '\nLAB_OUTPUT:\n' + JSON.stringify(pending, null, 2);
     // Chapter lessons start without a tutor call, so their first event carries the context.
     if (!meta.tutor_session_id && meta.mode === 'chapter') {
@@ -312,7 +380,7 @@ async function turn(body) {
     const record = { role: 'learner', data: event };
     // A checkpoint answer is the learner's evidence: keep it even if the tutor call fails.
     if (meta.mode === 'chapter') await appendRecords(c, lesson_id, [record]);
-    const t = await advance(c, lesson_id, meta, message, meta.mode === 'chapter' ? null : record, labs.length);
+    const t = await advance(c, lesson_id, meta, message, meta.mode === 'chapter' ? null : record, labs.length, event);
     return { turn: t };
   } finally {
     busy.delete(lesson_id);

@@ -15,6 +15,8 @@ prompts/teacher.md         # system prompt, mode=teach
 prompts/practice.md        # system prompt, mode=practice
 prompts/prober.md          # system prompt, mode=probe
 prompts/chapter.md         # system prompt, mode=chapter
+prompts/course.md          # system prompt, mode=course
+prompts/course-schema.json # course-session output schema (turn schema + goal, assessment, plan, approved)
 lib/labs.mjs               # lab runner: one Docker container per course, approval, runLab/labStatus
 lib/tutors/                # tutor CLI adapters (claude, agy), chosen by MINDGAP_TUTOR
 scripts/                   # migrate-learner-v1.mjs (old layout), tutor-gate.mjs, lab-parity.mjs
@@ -25,6 +27,7 @@ courses/<slug>/prompt.md             # course-specific text appended to every mo
 courses/<slug>/chapters/index.json   # ["<node_id>", ...] chapter ids (optional)
 courses/<slug>/chapters/<node_id>.json  # chapter content, see Chapters below
 <data>/courses/<slug>/state/map.json              # your map; copied from map.seed.json on first access
+<data>/courses/<slug>/state/goal.json                {goal, background, approved_at}, written when a course session's plan is approved
 <data>/courses/<slug>/state/propositions.jsonl    # one proposition per line, appended by server
 <data>/courses/<slug>/state/sessions/<lesson_id>.jsonl      # transcript, one event per line
 <data>/courses/<slug>/state/sessions/<lesson_id>.meta.json  # {course, tutor, tutor_session_id, node_id, mode, started, labs_sent}
@@ -44,6 +47,7 @@ courses/<slug>/chapters/<node_id>.json  # chapter content, see Chapters below
   "sim": "switch-learning",           // scenario name or null
   "sources": ["https://..."],
   "status": "gap",                     // untested | gap | shaky | solid
+  "in_scope": false,                   // optional; only ever false, set by an approved course plan
   "evidence": "Placement 2026-10-24: said a switch maps IP→MAC."
 } ] }
 ```
@@ -53,6 +57,27 @@ Fields: `say`, `question{kind,prompt,options,wants_confidence}|null`, `sim{scena
 `lab{cmd,explain}|null`, `node_updates[{id,status,note}]`, `propositions[{claim,because,node}]`, `lesson_done`.
 Sim scenarios: `switch-learning | switch-flood | vlan-broadcast | vlan-trunk`.
 
+## Course session
+
+The schema is per mode: `schemaFor(mode)` in `server.mjs` picks `prompts/course-schema.json` for `course`, else `turn-schema.json`.
+`POST /api/lesson {course, mode:"course"}` starts a course-level probe → plan session. `node_id` is ignored. The lesson id is `course-<timestamp>` and its meta has `node_id: null` and, for course lessons, `goal, assessment, pending_plan, plan_presented, server_notes`. Every course-mode tutor turn (including the first) is reviewed by `reviewTurn` (`lib/course-session.mjs`) before node updates are applied and before anything is stored, so the transcript and the response hold the reviewed turn.
+
+First message: `CONTEXT:` + JSON `{mode:"course", course:{slug,title,layers}, learner:{goal,background}|null, nodes:[{id,title,layer,prereqs,truth,status,evidence,in_scope?}], propositions}` (the last 200 lines of propositions.jsonl; `in_scope` appears only as `false`).
+
+When the review refuses a field, it becomes a note in `meta.server_notes`. The next message starts with `SERVER:\n- <note>\n- <note>\n` immediately followed by the usual `EVENT:` text; the notes are cleared when that turn is stored (notes from reviewing it go to the message after).
+
+| Field | Kept only when |
+|---|---|
+| `propositions` | never (always `[]`) |
+| `sim`, `lab` | never (always `null` in course mode) |
+| `goal` | a plain object with non-empty string `text` and `background` string or null; a goal change in the turn that approves is refused |
+| `assessment` | no question open, none accepted before, goal set |
+| `plan` | assessment accepted, no question open, `checkPlan` passes (known ids, no duplicates, prereqs in scope, non-empty) |
+| `approved` | previous turn presented an accepted plan, this turn carries no plan field (even a refused one), the event it answers is `ask` or `answer` (never the first turn), and a goal is on record |
+| `lesson_done` | only with accepted approval |
+
+On accepted approval the server sets `in_scope: false` on every node outside the plan (in-scope nodes carry no `in_scope` key; nothing else in the map changes) and writes `<stateDir>/goal.json` = `{goal, background, approved_at}`. An abandoned session changes neither. `goal.json` may hold `goal: null` (background only); readers tolerate null. Node-level modes get `learner:{goal,background}|null` from it and list off-goal nodes in `other_nodes` with `in_scope: false`.
+
 ## How the server calls the tutor (adapters in `lib/tutors/`)
 `MINDGAP_TUTOR` picks one adapter: `claude` (default) or `agy`. Each adapter exports `buildCall({systemPrompt, schemaText, message, sessionId, model, schemaFile}) -> {bin, args}` and `parseOutput(stdout) -> {turn, sessionId, error}`. Binaries come from `CLAUDE_BIN` / `AGY_BIN`.
 - Every call runs with cwd = a fresh `mindgap-turn-*` temp dir (holds `turn-schema.json`), stdin closed, and the dir is removed afterwards. The tutor gets no tools.
@@ -61,7 +86,7 @@ Sim scenarios: `switch-learning | switch-flood | vlan-broadcast | vlan-trunk`.
 - Timeout 180 s, stdout cap 16 MB. A parse or tutor error is HTTP 502 with the adapter's error, plus `: <first 500 chars of stderr>` when stderr is present. A missing binary is 502 `<tutor> not found on PATH`.
 - A lesson is bound to the tutor it started with (`meta.tutor`); a turn under a different `MINDGAP_TUTOR` is 409. Lessons with no `tutor` field count as `claude`.
 - `--safe-mode` keeps the user's CLAUDE.md/plugins/hooks out of the tutor. Auth still uses the subscription. Do NOT use `--bare` (it needs an API key).
-- First message of a lesson = a JSON block containing: the mode, the target node, its prereqs with their statuses, every other node's id/title/status, and all propositions for those nodes. Later messages = the learner event as JSON.
+- First message of a lesson = a JSON block containing: the mode, the target node, its prereqs with their statuses, every other node's id/title/status (`in_scope: false` when off-goal), the learner's goal and background (or null), and all propositions for those nodes. Later messages = the learner event as JSON.
 
 ## HTTP API
 Binds 127.0.0.1 only. Unknown or invalid course slugs → 404. A malformed `course.json` → 500 (message logged).
@@ -71,14 +96,14 @@ Binds 127.0.0.1 only. Unknown or invalid course slugs → 404. A malformed `cour
 | GET | `/api/courses/:slug` | → `{...course.json, chapters: string[], lab}` (`chapters` = `chapters/index.json`, `[]` if absent; `lab` = `{available, reason?, request:{caps, network}, approved}`, `reason` set when Docker is unavailable) |
 | GET | `/api/courses/:slug/map` | → state map.json (seeded on first access) |
 | GET | `/api/courses/:slug/chapters/:id` | → chapter JSON, 404 if absent |
-| POST | `/api/lesson` | `{course, node_id, mode}` → `{lesson_id, turn}` (starts a tutor session, first turn) |
+| POST | `/api/lesson` | `{course, node_id, mode}` → `{lesson_id, turn}` (starts a tutor session, first turn); `mode: "course"` needs no `node_id` |
 | POST | `/api/turn` | `{course, lesson_id, event}` → `{turn}` |
 | POST | `/api/courses/:slug/lab-approval` | `{caps, network}` (must equal the course's `lab.request` exactly) → 204, or 400 on mismatch. Writes `<stateDir>/lab-approval.json`. |
 | POST | `/api/lab` | `{course, lesson_id, cmd}` → `{stdout, stderr, code}`. Also appended to the transcript as a `lab` event. The next `/api/turn` should include it. 503 `{error: reason}` when Docker is unavailable; 428 `{error: 'lab needs approval', request}` until the course's request is approved. |
 | POST | `/api/chapter` | `{course, node_id}` → `{lesson_id, meta, events[]}`. Reuses the node's latest `chapter`-mode lesson or creates one **without** a tutor call; 404 when `courses/<course>/chapters/<node_id>.json` doesn't exist. `/api/lesson` refuses mode `chapter`. |
 | GET | `/api/lesson/:id?course=<slug>` | → `{meta, events[]}` (for reload). Missing or unknown course → 404. |
 
-Lesson meta gains `course`, `tutor` and `tutor_session_id`. Lesson ids are `<node_id>-<timestamp>`.
+Lesson meta gains `course`, `tutor` and `tutor_session_id`. Lesson ids are `<node_id>-<timestamp>` (`course-<timestamp>` for course sessions).
 
 Learner `event` shapes:
 - `{type:"answer", choice?:string, text?:string, confidence?:1..5, reasoning?:string}`

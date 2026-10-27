@@ -1,6 +1,8 @@
 // Map home: renders learner/map.json as an SVG graph and drives lesson starts.
 // All map text comes from model-written files, so it is only ever set via textContent.
 
+import { visibleNodes, offGoalCount, isOffGoal, pickNext } from './map-logic.js';
+
 const STATUSES = ['untested', 'gap', 'shaky', 'solid'];
 // Roadmap layout: one yellow topic per layer on a curved spine, its nodes in a column on each side.
 const W = 1000;
@@ -24,6 +26,7 @@ const state = {
   topo: [],
   selected: null,
   chapters: [],
+  showOff: false,     // draw off-goal nodes (faded)
 };
 
 const $ = (id) => document.getElementById(id);
@@ -97,9 +100,10 @@ function wrapTitle(text, max = TITLE_CHARS) {
 }
 
 function layoutFor(nodes) {
+  const ids = new Set(nodes.map((n) => n.id));
   const layers = [...state.layers];
   for (const n of nodes) if (!layers.includes(n.layer)) layers.push(n.layer);
-  const groups = layers.map((l) => state.topo.filter((n) => n.layer === l)).map((g, i) => ({ layer: layers[i], nodes: g }))
+  const groups = layers.map((l) => state.topo.filter((n) => n.layer === l && ids.has(n.id))).map((g, i) => ({ layer: layers[i], nodes: g }))
     .filter((g) => g.nodes.length);
   const pos = new Map();
   const topics = [];
@@ -140,7 +144,7 @@ const BADGE = { solid: '✓', shaky: '~', gap: '!' };
 function renderMap() {
   const svg = $('map');
   svg.replaceChildren();
-  const { topics, pos, width, height } = layoutFor(state.nodes);
+  const { topics, pos, width, height } = layoutFor(visibleNodes(state.nodes, state.showOff));
   svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
   // Scale to the container, but never below 80% so labels stay legible (narrow screens scroll the container).
   svg.setAttribute('width', '100%');
@@ -198,6 +202,7 @@ function renderMap() {
     if (state.selected === n.id) cls.push('selected');
     if (related.has(n.id)) cls.push('related');
     if (state.chapters.includes(n.id)) cls.push('has-chapter');
+    if (isOffGoal(n)) cls.push('off-goal');
     const g = svgEl('g', {
       class: cls.join(' '),
       role: 'button',
@@ -300,9 +305,7 @@ function renderSide() {
 }
 
 function nextLesson() {
-  const ok = (n) => (n.status === 'gap' || n.status === 'untested') &&
-    (n.prereqs || []).every(p => state.byId.has(p) && isGood(statusOf(state.byId.get(p))));
-  return state.topo.find(ok) || state.topo.find(n => statusOf(n) === 'gap') || null;
+  return pickNext(state.topo, state.byId, statusOf);
 }
 
 function refreshToolbar() {
@@ -312,17 +315,19 @@ function refreshToolbar() {
   btnNext.disabled = !next;
   btnNext.onclick = () => next && startLesson(next.id, 'teach');
 
-  const shaky = state.topo.filter(n => statusOf(n) === 'shaky');
+  const shaky = state.topo.filter(n => !isOffGoal(n) && statusOf(n) === 'shaky');
   const btnPractice = $('btn-practice');
   btnPractice.textContent = `Practice shaky (${shaky.length})`;
   btnPractice.disabled = shaky.length === 0;
   btnPractice.onclick = () => shaky.length && startLesson(shaky[0].id, 'practice');
 
-  const untested = state.topo.filter(n => statusOf(n) === 'untested');
-  const btnProbe = $('btn-probe');
-  btnProbe.textContent = `Placement check (${untested.length} untested)`;
-  btnProbe.disabled = untested.length === 0;
-  btnProbe.onclick = () => untested.length && startLesson(untested[0].id, 'probe');
+  $('btn-goal').disabled = false;
+  $('btn-goal').onclick = () => startLesson(null, 'course');
+
+  const off = offGoalCount(state.nodes);
+  $('off-goal-row').classList.toggle('hidden', off === 0);
+  $('show-off-text').textContent = `Show off-goal topics (${off})`;
+  $('show-off').checked = state.showOff;
 
   const btnDebug = $('btn-debug');
   const debug = state.byId.get('debug-method');
@@ -334,6 +339,7 @@ function setBusy(on, text) {
   $('busy').classList.toggle('hidden', !on);
   if (text) $('busy-text').textContent = text;
   document.querySelectorAll('button').forEach(b => { b.disabled = on; });
+  $('show-off').disabled = on;
   if (!on) refreshToolbar();
 }
 
@@ -364,7 +370,7 @@ async function startLesson(nodeId, mode) {
     const res = await fetch('/api/lesson', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ course: state.course, node_id: nodeId, mode }),
+      body: JSON.stringify(mode === 'course' ? { course: state.course, mode } : { course: state.course, node_id: nodeId, mode }),
     });
     if (!res.ok) throw new Error(await errorText(res));
     const data = await res.json();
@@ -395,6 +401,12 @@ async function load() {
     state.nodes = Array.isArray(data.nodes) ? data.nodes : [];
     state.byId = new Map(state.nodes.map(n => [n.id, n]));
     state.topo = topoSort(state.nodes);
+    $('show-off').addEventListener('change', (e) => {
+      state.showOff = e.target.checked;
+      if (!state.showOff && isOffGoal(state.byId.get(state.selected) || {})) state.selected = null;
+      renderMap();
+      renderSide();
+    });
     renderMap();
     renderSide();
     refreshToolbar();
