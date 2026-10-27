@@ -4,7 +4,7 @@ How to write a mindgap chapter. The reference chapter is `courses/networking/cha
 
 ## Who is reading
 
-The learner is a cloud engineer: strong on AWS, Kubernetes, Cilium and Proxmox, and learning the networking underneath. They debug real systems, so they want *mechanisms* they can reason from, not definitions. Use "you". Use they/them if a third person is needed. A tutor reads the learner's checkpoint answers in a side drawer, so the chapter does not need to anticipate every confusion.
+The learner's background (from `learner.background`) decides which cloud twins to use; when it names cloud work, the twins below apply. They debug real systems, so they want *mechanisms* they can reason from, not definitions. Use "you". Use they/them if a third person is needed. A tutor reads the learner's checkpoint answers in a side drawer, so the chapter does not need to anticipate every confusion.
 
 Each map node in `courses/networking/map.seed.json` (your copy is `<data>/courses/networking/state/map.json`) has a `truth` (the one idea the chapter must lock in), `links` (a list of `{label, text}` for the AWS, Kubernetes and Proxmox angles), a `lab` idea, `prereqs`, and sometimes `evidence` from the placement test. A node with status `gap` and evidence that names a wrong belief: build a checkpoint whose distractor is exactly that belief.
 

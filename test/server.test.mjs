@@ -882,7 +882,8 @@ test('shared mode prompts are subject-neutral; the networking specifics live in 
     assert.doesNotMatch(p, /[Nn]etwork|cloud engineer|AWS|Kubernetes|Cilium|Proxmox|netlab|VLAN|subnet|TCP|[Pp]acket|router|\bMAC\b/, f);
   }
   const net = await readFile(path.join(HERE, '..', 'courses', 'networking', 'prompt.md'), 'utf8');
-  for (const k of ['cloud engineer', 'netlab', 'VLAN', 'ARP', 'tcpdump']) assert.ok(net.includes(k), k);
+  for (const k of ['cloud twin', 'netlab', 'VLAN', 'ARP', 'tcpdump']) assert.ok(net.includes(k), k);
+  assert.doesNotMatch(net, /cloud engineer|[Ll]earners here/, 'no learner profile in the shipped prompt');
 });
 
 // A tutor turn with the course fields missing entirely (not null) must not break the session.
