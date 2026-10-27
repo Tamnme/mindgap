@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { normalizeChapter, checkChapter } from '../lib/chapters.mjs';
 
-const meta = { node: 'n1', number: 3, kicker: 'Layer 1' };
+const meta = { node: 'n1', number: '3', kicker: 'Layer 1' };
 const cp = (id, over = {}) => ({ checkpoint: { id, prompt: 'Which?', options: ['a', 'b', 'c'], key: 1, why: 'because', ...over } });
 function good() {
   return {
@@ -44,7 +44,7 @@ test('invalid chapters get a problem naming it', () => {
   bad((c) => { c.sections[0].blocks[1].checkpoint.prompt = ''; }, /prompt/);
   bad((c) => { c.sections[0].blocks.push({ lab: { id: 'x' } }); }, /lab/);
   bad((c) => { c.sections[0].blocks.push({ widget: 'w' }); }, /widget/);
-  bad((c) => { c.number = 0; }, /number/);
+  bad((c) => { c.number = 3; }, /number/);
   bad((c) => { delete c.node; }, /node/);
   bad((c) => { c.kicker = 1; }, /kicker/);
 });
@@ -70,7 +70,8 @@ test('normalizeChapter maps nullable blocks to the stored shape and adds metadat
   assert.deepEqual(Object.keys(out.sections[0].blocks[1]), ['checkpoint']);
   assert.equal(out.sections[0].blocks.length, 3); // empty block dropped
   assert.equal(Object.keys(out.sections[0].blocks[2]).length, 2); // both kept for checkChapter
-  assert.equal(out.number, 3);
+  assert.equal(normalizeChapter({}, { ...meta, number: 3 }).number, '3');
+  assert.equal(out.number, '3');
 });
 
 test('a real model output normalises to a valid chapter', () => {
@@ -81,8 +82,7 @@ test('a real model output normalises to a valid chapter', () => {
 test('shipped networking chapters fail only for lab/widget blocks', () => {
   const dir = new URL('../courses/networking/chapters/', import.meta.url);
   for (const f of readdirSync(dir).filter((f) => f.endsWith('.json') && f !== 'index.json')) {
-    // shipped numbers are strings like "2.8"; generated ones are integers, so only that rule is waived here
-    const ch = { ...JSON.parse(readFileSync(new URL(f, dir), 'utf8')), number: 1 };
+    const ch = JSON.parse(readFileSync(new URL(f, dir), 'utf8'));
     const extra = (b) => Object.keys(b).some((k) => k === 'lab' || k === 'widget');
     const has = ch.sections.some((s) => s.blocks.some(extra));
     const problem = checkChapter(ch);
