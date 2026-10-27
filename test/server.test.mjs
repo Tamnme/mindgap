@@ -3,7 +3,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdtemp, mkdir, writeFile, readFile, readdir, chmod, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, readdir, chmod, rm, copyFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
@@ -44,7 +44,12 @@ const canned = message.startsWith('CONTEXT:')
       node_updates: [{ id: 'frames-mac', status: 'solid', note: 'answered correctly' }],
       propositions: [{ claim: 'Frames carry src and dst MAC', because: [], node: 'frames-mac' }] };
 const tf = path.join(dir, 'turn.json');
-const turn = existsSync(tf) ? JSON.parse(readFileSync(tf, 'utf8')) : canned;
+let turn = existsSync(tf) ? JSON.parse(readFileSync(tf, 'utf8')) : canned;
+// A write call (mode "write") gets the chapter fixture; FAKE_DIR/chapter-bad cuts it to one section.
+if (message.startsWith('CONTEXT:') && message.includes('"mode": "write"')) {
+  turn = JSON.parse(readFileSync(path.join(dir, 'chapter-raw.json'), 'utf8'));
+  if (existsSync(path.join(dir, 'chapter-bad'))) turn.sections = turn.sections.slice(0, 1);
+}
 const reply = control === 'error'
   ? { type: 'result', is_error: true, result: 'rate limited boom', session_id: 'sess-err' }
   : { type: 'result', is_error: false, session_id: 'sess-abc', structured_output: turn, total_cost_usd: 0 };
@@ -1144,3 +1149,100 @@ test('a shipped course session with new_nodes is refused and its map is untouche
   assert.deepEqual((await call('GET', '/api/courses/net/map')).json, mapBefore);
   assert.equal(JSON.parse(await readFile(path.join(dir, 'courses', 'net', 'course.json'), 'utf8')).layers.length, 1);
 }));
+
+// --- write a chapter on demand (generated courses only) ---
+async function writableCourse(title) {
+  await copyFile(path.join(HERE, 'fixtures', 'chapter-raw.json'), path.join(dir, 'chapter-raw.json'));
+  const slug = (await call('POST', '/api/courses', { title, background: 'bakes bread' })).json.slug;
+  const cdir = path.join(dataDir, 'courses', slug);
+  await call('GET', `/api/courses/${slug}/map`); // seeds state
+  const node = (id, layer, prereqs, sections) => ({ id, title: `T ${id}`, layer, prereqs, truth: `truth ${id}`, status: 'untested', evidence: '', ...(sections ? { source_sections: sections } : {}) });
+  await writeFile(path.join(cdir, 'state', 'map.json'), JSON.stringify({ nodes: [node('alpha', 'basics', []), node('beta', 'basics', ['alpha'], ['s1-1', 's1-2']), node('gamma', 'basics', [])] }));
+  await writeFile(path.join(cdir, 'course.json'), JSON.stringify({ slug, title, layers: [{ id: 'basics', name: 'Basics' }], lab: null }));
+  await mkdir(path.join(cdir, 'sources'), { recursive: true });
+  await writeFile(path.join(cdir, 'sources', 's1.json'), JSON.stringify({ id: 's1', title: 'Src', origin: { kind: 'file', value: 'a.txt' }, added: '2026-01-01T00:00:00Z', truncated: false, sections: [{ id: 's1-1', heading: 'Heading One', text: 'EXCERPT-ONE' }, { id: 's1-2', heading: 'Heading Two', text: 'EXCERPT-TWO' }] }));
+  return { slug, cdir };
+}
+
+test('write: 201 stores the chapter with number and kicker, indexes it, serves it, sends tagged excerpts', async () => {
+  const { slug, cdir } = await writableCourse('Write One');
+  const before = (await readCalls()).length;
+  const r = await call('POST', `/api/courses/${slug}/chapters/beta/write`, {});
+  assert.equal(r.status, 201, r.text);
+  assert.deepEqual(r.json, { node: 'beta' });
+  const ch = (await call('GET', `/api/courses/${slug}/chapters/beta`)).json;
+  assert.equal(ch.node, 'beta');
+  assert.equal(ch.number, '1');
+  assert.equal(ch.kicker, 'Basics');
+  assert.ok(ch.sections.every((s) => s.blocks.every((b) => Object.keys(b).length === 1)));
+  assert.deepEqual(JSON.parse(await readFile(path.join(cdir, 'chapters', 'index.json'), 'utf8')), ['beta']);
+  const calls = await readCalls();
+  assert.equal(calls.length, before + 1);
+  const argv = calls.at(-1);
+  assert.ok(!argv.includes('--resume'));
+  assert.ok(argv[argv.indexOf('--system-prompt') + 1].startsWith(await readFile(path.join(PROMPTS, 'writer.md'), 'utf8')));
+  const ctx = JSON.parse(argv.at(-1).slice(CONTEXT_PREFIX.length));
+  assert.equal(ctx.mode, 'write');
+  assert.deepEqual(ctx.course, { slug, title: 'Write One' });
+  assert.deepEqual(ctx.learner, { goal: null, background: 'bakes bread' });
+  assert.equal(ctx.target.layer_name, 'Basics');
+  assert.deepEqual(ctx.prereqs, [{ id: 'alpha', title: 'T alpha', status: 'untested' }]);
+  assert.deepEqual(ctx.other_nodes, [{ id: 'gamma', title: 'T gamma' }]);
+  assert.deepEqual(ctx.sources.map((s) => s.text), ['EXCERPT-ONE', 'EXCERPT-TWO']);
+  // Nothing under sessions/, and the second node numbers 2.
+  assert.deepEqual(await readdir(path.join(cdir, 'state', 'sessions')), []);
+  assert.equal((await call('POST', `/api/courses/${slug}/chapters/gamma/write`, {})).status, 201);
+  assert.equal((await call('GET', `/api/courses/${slug}/chapters/gamma`)).json.number, '2');
+  assert.ok(!('sources' in JSON.parse((await readCalls()).at(-1).at(-1).slice(CONTEXT_PREFIX.length))));
+});
+
+test('write: an invalid chapter is 502 and nothing is written; then a valid retry works', async () => {
+  const { slug, cdir } = await writableCourse('Write Bad');
+  await writeFile(path.join(dir, 'chapter-bad'), '');
+  const r = await call('POST', `/api/courses/${slug}/chapters/alpha/write`, {});
+  await rm(path.join(dir, 'chapter-bad'));
+  assert.equal(r.status, 502, r.text);
+  assert.match(r.json.error, /^chapter refused: /);
+  assert.deepEqual(await readdir(path.join(cdir, 'chapters')), ['index.json']);
+  assert.deepEqual(JSON.parse(await readFile(path.join(cdir, 'chapters', 'index.json'), 'utf8')), []);
+  assert.equal((await call('POST', `/api/courses/${slug}/chapters/alpha/write`, {})).status, 201);
+});
+
+test('write: tutor failure is 502; a second write of the same node, a shipped course, bad ids are refused', async () => {
+  const { slug, cdir } = await writableCourse('Write Guards');
+  await setControl('error');
+  const failed = await call('POST', `/api/courses/${slug}/chapters/alpha/write`, {});
+  await setControl('ok');
+  assert.equal(failed.status, 502, failed.text);
+  assert.deepEqual(await readdir(path.join(cdir, 'chapters')), ['index.json']);
+  assert.equal((await call('POST', `/api/courses/${slug}/chapters/alpha/write`, {})).status, 201);
+  assert.equal((await call('POST', `/api/courses/${slug}/chapters/alpha/write`, {})).status, 409);
+  const shipped = await call('POST', '/api/courses/net/chapters/vlan-basics/write', {});
+  assert.equal(shipped.status, 409, shipped.text);
+  assert.ok(!existsSync(path.join(dir, 'courses', 'net', 'chapters', 'vlan-basics.json')));
+  assert.equal((await call('POST', `/api/courses/${slug}/chapters/..%2f..%2fx/write`, {})).status, 400);
+  assert.equal((await call('POST', `/api/courses/${slug}/chapters/..%2findex/write`, {})).status, 400);
+  assert.equal((await call('POST', `/api/courses/${slug}/chapters/nope/write`, {})).status, 404);
+  assert.deepEqual((await readdir(path.join(cdir, 'chapters'))).sort(), ['alpha.json', 'index.json']);
+});
+
+test('write: a concurrent write of the same node is 409, and /api/lesson refuses mode write', async () => {
+  const { slug } = await writableCourse('Write Busy');
+  await setControl('slow');
+  const first = call('POST', `/api/courses/${slug}/chapters/alpha/write`, {});
+  await new Promise((r) => setTimeout(r, 300));
+  const second = await call('POST', `/api/courses/${slug}/chapters/alpha/write`, {});
+  const done = await first;
+  await setControl('ok');
+  assert.equal(second.status, 409, second.text);
+  assert.equal(done.status, 201, done.text);
+  assert.equal((await call('POST', '/api/lesson', { course: slug, node_id: 'alpha', mode: 'write' })).status, 400);
+});
+
+test('write calls use CHAPTER_TIMEOUT_MS = 300 s, passed to callTutor', async () => {
+  // ponytail: a source check, not a behavioural one; the server is a script, so importing it would start it.
+  const src = await readFile(SERVER, 'utf8');
+  assert.match(src, /export const CHAPTER_TIMEOUT_MS = 300_000;/);
+  assert.match(src, /callTutor\(c, \{ mode: 'write', tutor_session_id: null \}, .*, CHAPTER_TIMEOUT_MS\)/);
+  assert.match(src, /timeout: timeoutMs,/);
+});
