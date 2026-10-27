@@ -11,7 +11,7 @@ The tutor's teaching method comes from [learnharness](https://github.com/amosblo
 ## How it works
 
 1. **Map.** 33 topics from L1 to DNS, each with its prerequisites. Every topic starts as `untested`.
-2. **Placement check.** The tutor asks prediction questions and marks each topic `gap`, `shaky` or `solid`, with a note recording what you said.
+2. **New goal.** You say what you want to be able to do; the tutor asks prediction questions and marks each topic `gap`, `shaky` or `solid`, with a note recording what you said.
 3. **Chapters.** Each topic has a written chapter. Checkpoints ask you to commit to a prediction (with a confidence) before the page reveals the answer. Wrong options are beliefs a smart person could hold, so a miss tells the tutor something.
 4. **Labs.** Chapters include commands that run in a real Linux container (`ip`, `tcpdump`, `bridge`, `conntrack`, ...). You predict the output, then run it.
 5. **Tutor.** Claude reads your answers in a side drawer, teaches into the gap it finds, and updates the map. You can also run teach, practice and debug-drill sessions from the map.
@@ -35,7 +35,7 @@ node server.mjs
 
 Labs need Docker. The first lab run builds the lab image (a minute or two) and asks for your approval. The image is built once. After a Dockerfile change, run `docker rm -f mindgap-networking` and `docker rmi -f mindgap-networking`; the next lab run rebuilds it.
 
-Open http://localhost:4810 and start with **Placement check**.
+Open http://localhost:4810 and start with **New goal**.
 
 On first access to a course, the server copies `courses/<slug>/map.seed.json` to `<data>/courses/<slug>/state/map.json`. Your progress lives in `learner/` and is gitignored.
 
@@ -83,6 +83,6 @@ node --test test/
 
 ## Credits and license
 
-mindgap is built on [learnharness](https://github.com/amosblomqvist/learnharness) by [@amosblomqvist](https://github.com/amosblomqvist). The tutor prompts `prompts/teacher.md`, `prompts/practice.md` and `prompts/prober.md` are adapted from it. That includes their teaching method: measure what the learner holds first, establish foundations they can accept as-is, then derive everything else one motivated step at a time. mindgap adds the networking course, chapters, labs, simulator and web workbench around them.
+mindgap is built on [learnharness](https://github.com/amosblomqvist/learnharness) by [@amosblomqvist](https://github.com/amosblomqvist). The tutor prompts `prompts/teacher.md`, `prompts/practice.md`, `prompts/prober.md`, `prompts/course.md` and `prompts/writer.md` are adapted from it. That includes their teaching method: measure what the learner holds first, establish foundations they can accept as-is, then derive everything else one motivated step at a time. mindgap adds the networking course, chapters, labs, simulator and web workbench around them.
 
 learnharness is licensed AGPL-3.0, and mindgap is released under the same license: see [LICENSE](LICENSE).
