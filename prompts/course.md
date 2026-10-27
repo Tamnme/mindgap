@@ -32,7 +32,7 @@ Emit `goal` (`{text, background}`) in the turn where the goal becomes concrete, 
 
 The goal fixes what you measure. Your instrument is the graded `question`; your product is `node_updates` with evidence notes. Do not use `sim` or `lab` in this session (always `null`).
 
-**Read their persistent map first.** The context block's node statuses and evidence show what they hold from earlier sessions. On an empty generated course there are no nodes or statuses yet: bracket from the goal's strands alone, not from map evidence, and record no `node_updates` (there is no id to record against). A strand held `solid` with fresh evidence needs no re-probing; thin or old `solid` evidence gets one confirming question. Statuses and notes are earlier claims, not facts: one fresh question outranks a stale note.
+**Read their persistent map first.** The context block's node statuses and evidence show what they hold from earlier sessions. On an empty generated course there are no nodes or statuses yet: bracket from the goal's strands alone, not from map evidence; the map you will draw is bounded by what the goal needs, so probe only the strands the goal rests on, and record no `node_updates` (there is no id to record against). A strand held `solid` with fresh evidence needs no re-probing; thin or old `solid` evidence gets one confirming question. Statuses and notes are earlier claims, not facts: one fresh question outranks a stale note.
 
 **Reason out the strands.** From the goal, what must the course depend on? Where would the teaching start, and what must it build on? Each dependency is a strand — bound by relevance, nothing more. In practice strands are the nodes on the way to the goal, grouped by the idea they share, plus the unconditional truth at the top. If one node's `truth` hides several separable ideas, split it in your head into strands.
 
@@ -71,7 +71,7 @@ The plan is the **minimal tree** from what they hold to the goal. What you may d
   - **Ids** are kebab-case: lowercase letters, digits and hyphens, starting with a letter or digit, at most 48 chars (`^[a-z0-9][a-z0-9-]{0,47}$`). `index` is reserved and must not be used as a node id. No id may repeat within the plan or collide with an existing node or layer id.
   - **Layers** are a few ordered strands, `{id, name}`, at most 8 new per plan (ids follow the same pattern; `name` non-empty). Each new node's `layer` is an existing layer id or one in `new_layers`.
   - **Prereqs** are the true dependency edges, naming existing or new nodes; no cycles. At most 40 new nodes per plan: draw the minimal tree, not the field.
-  - **`in_scope` includes every new node on the path to the goal**, plus whatever existing nodes it needs.
+  - **`in_scope` lists the nodes on the path to the goal and every prereq of each**, new or existing.
   - **Tag with sources** (`plan.sources`) each node that rests on a source section.
 
 - Nothing they already hold is re-taught; nothing off the path to the goal is included however interesting; the derivation to the goal is as short as the subject allows.

@@ -341,6 +341,7 @@ test('bad drawn plans are refused with a note, never thrown', () => {
   bad([nn('p')], /duplicate.*q/, { new_layers: [{ id: 'q', name: 'x' }, { id: 'q', name: 'y' }] });
   bad(Array.from({ length: 41 }, (_, i) => nn(`n${i}`)), /at most 40/);
   bad([nn('p')], /at most 8/, { new_layers: Array.from({ length: 9 }, (_, i) => ({ id: `l${i}`, name: 'x' })) });
+  bad([nn('index')], /index.*reserved/);
   bad([nn('Bad_Id')], /invalid id/);
   bad([nn('p')], /invalid id/, { new_layers: [{ id: '-x', name: 'x' }] });
   bad([nn('x'.repeat(49))], /invalid id/);
