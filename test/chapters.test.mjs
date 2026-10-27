@@ -74,6 +74,24 @@ test('normalizeChapter maps nullable blocks to the stored shape and adds metadat
   assert.equal(out.number, '3');
 });
 
+test('normalizeChapter never throws on malformed output; checkChapter reports it', () => {
+  for (const raw of [null, 'x', 42, [], { sections: 'x' }, { sections: [null] }, { sections: [{ id: 'a', title: 't', blocks: 'x' }] },
+    { sections: [{ id: 'a', title: 't', blocks: [null, 'x'] }] }]) {
+    let out;
+    assert.doesNotThrow(() => { out = normalizeChapter(raw, meta); });
+    assert.equal(typeof checkChapter(out), 'string', JSON.stringify(raw));
+  }
+});
+
+test('checkChapter returns a problem, never throws, on hostile input', () => {
+  const nan = good(); nan.sections[0].blocks[1].checkpoint.key = NaN;
+  const opt = good(); opt.sections[0].blocks[1].checkpoint.options = ['a', 1, 'c'];
+  const nul = good(); nul.sections[0].blocks.push(null);
+  for (const x of [null, [], 'x', 7, { sections: {} }, nan, opt, nul]) {
+    assert.equal(typeof checkChapter(x), 'string', JSON.stringify(x));
+  }
+});
+
 test('a real model output normalises to a valid chapter', () => {
   const raw = JSON.parse(readFileSync(new URL('./fixtures/chapter-raw.json', import.meta.url), 'utf8'));
   assert.equal(checkChapter(normalizeChapter(raw, meta)), null);
@@ -81,13 +99,17 @@ test('a real model output normalises to a valid chapter', () => {
 
 test('shipped networking chapters fail only for lab/widget blocks', () => {
   const dir = new URL('../courses/networking/chapters/', import.meta.url);
+  let checked = 0, withExtra = 0;
   for (const f of readdirSync(dir).filter((f) => f.endsWith('.json') && f !== 'index.json')) {
     const ch = JSON.parse(readFileSync(new URL(f, dir), 'utf8'));
     const extra = (b) => Object.keys(b).some((k) => k === 'lab' || k === 'widget');
     const has = ch.sections.some((s) => s.blocks.some(extra));
     const problem = checkChapter(ch);
+    checked++; if (has) withExtra++;
     if (has) assert.match(problem, /lab|widget/, f); else assert.equal(problem, null, f);
     const stripped = { ...ch, sections: ch.sections.map((s) => ({ ...s, blocks: s.blocks.filter((b) => !extra(b)) })) };
     assert.equal(checkChapter(stripped), null, f);
   }
+  assert.ok(checked >= 30, `only ${checked} chapters checked`);
+  assert.ok(withExtra >= 1, 'no shipped chapter had lab/widget blocks');
 });
