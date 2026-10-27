@@ -340,7 +340,8 @@ function refreshToolbar() {
 function setBusy(on, text) {
   $('busy').classList.toggle('hidden', !on);
   if (text) $('busy-text').textContent = text;
-  document.querySelectorAll('button').forEach(b => { b.disabled = on; });
+  // Side-panel buttons and inputs (Sources panel) are restored here too; toolbar ones by refreshToolbar.
+  document.querySelectorAll('button, #side input').forEach(b => { b.disabled = on; });
   $('show-off').disabled = on;
   if (!on) refreshToolbar();
 }
@@ -417,8 +418,6 @@ function renderSources(list) {
   const importSource = async (body) => {
     showError('');
     setBusy(true, 'Importing source… this can take a minute.');
-    add.disabled = true;
-    file.disabled = true;
     let ok = false;
     try {
       await sourcesRequest('', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
