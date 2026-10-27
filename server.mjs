@@ -37,7 +37,7 @@ const EFFORT = process.env.MINDGAP_EFFORT || (TUTOR === 'agy' ? 'low' : undefine
 const MODES = { teach: 'teacher.md', practice: 'practice.md', probe: 'prober.md', chapter: 'chapter.md', course: 'course.md', write: 'writer.md' };
 const BODY_LIMIT = 256 * 1024;
 const TUTOR_TIMEOUT_MS = 180_000;
-export const CHAPTER_TIMEOUT_MS = 300_000;
+const CHAPTER_TIMEOUT_MS = 300_000;
 const LAB_CMD_MAX = 4000;
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -471,17 +471,23 @@ async function chapterLesson(body) {
 
 // One tutor call writes one chapter: no session, nothing under sessions/. Invalid output is never stored.
 async function writeChapter(slug, id) {
-  if (!validId(id)) throw new HttpError(400, 'invalid node id');
+  if (!validId(id) || id === 'index') throw new HttpError(400, 'invalid node id');
   const c = await openCourse(slug);
   if (!c.generated) throw new HttpError(409, 'chapters are written only for generated courses');
   const map = await loadMap(c);
   const target = map.nodes.find((n) => n.id === id);
   if (!target) throw new HttpError(404, `unknown node: ${id}`);
-  if ((await readOptional(chapterPath(c, id))) !== null) throw new HttpError(409, `chapter already exists: ${id}`);
-  const key = `write:${c.slug}:${id}`;
-  if (busy.has(key)) throw new HttpError(409, 'a chapter is already being written for this node');
+  // One write per course at a time: index.json updates are read-modify-write and numbers come from it.
+  const key = `write:${c.slug}`;
+  if (busy.has(key)) throw new HttpError(409, 'a chapter is already being written for this course');
   busy.add(key);
   try {
+    // The index is the source of truth for "has a chapter"; a file without an entry is an orphan and gets overwritten.
+    // Parsed before anything is written, so a malformed index fails the request first.
+    const indexFile = path.join(c.dir, 'chapters', 'index.json');
+    const index = JSON.parse((await readOptional(indexFile)) ?? '[]');
+    if (!Array.isArray(index)) throw new Error('chapters/index.json is not an array');
+    if (index.includes(id)) throw new HttpError(409, `chapter already exists: ${id}`);
     const byId = new Map(map.nodes.map((n) => [n.id, n]));
     const prereqs = (target.prereqs ?? []).map((p) => byId.get(p)).filter(Boolean);
     const inScope = new Set([target.id, ...prereqs.map((n) => n.id)]);
@@ -491,21 +497,18 @@ async function writeChapter(slug, id) {
       mode: 'write',
       course: { slug: c.slug, title: c.title },
       learner: await readLearner(c),
-      target: { id: target.id, title: target.title, layer: target.layer, layer_name: layer?.name ?? target.layer, truth: target.truth, prereqs: target.prereqs },
-      prereqs: prereqs.map((n) => ({ id: n.id, title: n.title, status: n.status })),
+      target: { id: target.id, title: target.title, layer: target.layer, layer_name: layer?.name ?? target.layer, truth: target.truth, prereqs: target.prereqs ?? [] },
+      prereqs: prereqs.map((n) => ({ id: n.id, title: n.title, status: n.status, evidence: n.evidence })),
       other_nodes: map.nodes.filter((n) => !inScope.has(n.id)).map((n) => ({ id: n.id, title: n.title })),
       ...(excerpts.length ? { sources: excerpts } : {}),
     };
     const { turn: raw } = await callTutor(c, { mode: 'write', tutor_session_id: null }, 'CONTEXT:\n' + JSON.stringify(ctx, null, 2), CHAPTER_TIMEOUT_MS);
-    const indexFile = path.join(c.dir, 'chapters', 'index.json');
-    const readIndex = async () => JSON.parse((await readOptional(indexFile)) ?? '[]');
-    const chapter = normalizeChapter(raw, { node: id, number: (await readIndex()).length + 1, kicker: layer?.name ?? target.layer });
+    const chapter = normalizeChapter(raw, { node: id, number: index.length + 1, kicker: layer?.name ?? target.layer });
     const problem = checkChapter(chapter);
     if (problem) throw new HttpError(502, `chapter refused: ${problem}`);
     await mkdir(path.join(c.dir, 'chapters'), { recursive: true });
     await writeAtomic(chapterPath(c, id), JSON.stringify(chapter, null, 2) + '\n');
-    const index = await readIndex();
-    if (!index.includes(id)) index.push(id);
+    index.push(id);
     await writeAtomic(indexFile, JSON.stringify(index, null, 2) + '\n');
     return { node: id };
   } finally {
@@ -534,7 +537,7 @@ async function courseInfo(slug) {
 
 async function getChapter(slug, id) {
   const c = await openCourse(slug);
-  const text = validId(id) ? await readOptional(chapterPath(c, id)) : null;
+  const text = validId(id) && id !== 'index' ? await readOptional(chapterPath(c, id)) : null;
   if (text === null) throw new HttpError(404, 'no such chapter');
   return JSON.parse(text);
 }

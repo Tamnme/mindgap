@@ -1186,7 +1186,7 @@ test('write: 201 stores the chapter with number and kicker, indexes it, serves i
   assert.deepEqual(ctx.course, { slug, title: 'Write One' });
   assert.deepEqual(ctx.learner, { goal: null, background: 'bakes bread' });
   assert.equal(ctx.target.layer_name, 'Basics');
-  assert.deepEqual(ctx.prereqs, [{ id: 'alpha', title: 'T alpha', status: 'untested' }]);
+  assert.deepEqual(ctx.prereqs, [{ id: 'alpha', title: 'T alpha', status: 'untested', evidence: '' }]);
   assert.deepEqual(ctx.other_nodes, [{ id: 'gamma', title: 'T gamma' }]);
   assert.deepEqual(ctx.sources.map((s) => s.text), ['EXCERPT-ONE', 'EXCERPT-TWO']);
   // Nothing under sessions/, and the second node numbers 2.
@@ -1239,10 +1239,25 @@ test('write: a concurrent write of the same node is 409, and /api/lesson refuses
   assert.equal((await call('POST', '/api/lesson', { course: slug, node_id: 'alpha', mode: 'write' })).status, 400);
 });
 
+test('write: an orphan chapter file (no index entry) is overwritten; id index is refused; a malformed index writes nothing', async () => {
+  const { slug, cdir } = await writableCourse('Write Orphan');
+  await writeFile(path.join(cdir, 'chapters', 'alpha.json'), '{"orphan":true}');
+  assert.equal((await call('POST', `/api/courses/${slug}/chapters/alpha/write`, {})).status, 201);
+  assert.equal(JSON.parse(await readFile(path.join(cdir, 'chapters', 'alpha.json'), 'utf8')).node, 'alpha');
+  assert.deepEqual(JSON.parse(await readFile(path.join(cdir, 'chapters', 'index.json'), 'utf8')), ['alpha']);
+  assert.equal((await call('POST', `/api/courses/${slug}/chapters/index/write`, {})).status, 400);
+  assert.equal((await call('GET', `/api/courses/${slug}/chapters/index`)).status, 404);
+  await writeFile(path.join(cdir, 'chapters', 'index.json'), '{not json');
+  const before = (await readCalls()).length;
+  assert.equal((await call('POST', `/api/courses/${slug}/chapters/gamma/write`, {})).status, 500);
+  assert.equal((await readCalls()).length, before);
+  assert.ok(!existsSync(path.join(cdir, 'chapters', 'gamma.json')));
+});
+
 test('write calls use CHAPTER_TIMEOUT_MS = 300 s, passed to callTutor', async () => {
   // ponytail: a source check, not a behavioural one; the server is a script, so importing it would start it.
   const src = await readFile(SERVER, 'utf8');
-  assert.match(src, /export const CHAPTER_TIMEOUT_MS = 300_000;/);
+  assert.match(src, /const CHAPTER_TIMEOUT_MS = 300_000;/);
   assert.match(src, /callTutor\(c, \{ mode: 'write', tutor_session_id: null \}, .*, CHAPTER_TIMEOUT_MS\)/);
   assert.match(src, /timeout: timeoutMs,/);
 });
