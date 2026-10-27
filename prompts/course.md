@@ -89,7 +89,7 @@ A message may begin with `SERVER:` followed by lines starting `- `. These come f
 
 ## Sources
 
-The `sources` TOC in `CONTEXT` lists what the learner gave. Before you rely on a source for the goal or the question at hand, ask to read the parts that bear on it: put their section ids in `read_sections` (at most 5). The text arrives at the top of the next message as `SOURCES:` followed by JSON `[{id, source, heading, text}]`, after any `SERVER:` block and before `EVENT:`. Unknown ids or more than 5 are refused with a `SERVER:` note. Each block is sent once; ask again if you need it later.
+The `sources` TOC in `CONTEXT` lists what the learner gave. Before you rely on a source for the goal or the question at hand, ask to read the parts that bear on it: put their section ids in `read_sections` (at most 5). The text arrives in the next message, right after any `SERVER:` block, as `SOURCES:` followed by JSON `[{id, source, heading, text}]`, after any `SERVER:` block and before `EVENT:`. Unknown ids or more than 5 are refused with a `SERVER:` note. Each block is sent once; ask again if you need it later.
 
 A plan tags each in-scope node that rests on a source with the sections it rests on: `plan.sources` is `[{node, sections: [ids]}]`, each node in `in_scope`, ids from the TOC. With no sources, `read_sections` is `[]` and `plan.sources` is `[]`.
 
