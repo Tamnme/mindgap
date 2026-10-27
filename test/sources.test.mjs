@@ -182,3 +182,12 @@ test('the conversion temp dir is removed after success and after failure', async
   await fails(importSource(dir, { filename: 'a.pdf', data: Buffer.from('x') }), 422);
   await assert.rejects(stat(await readFile(cwdFile, 'utf8')), { code: 'ENOENT' });
 });
+
+test('title prefers the first # heading outside fences; loadAll skips malformed files', async (t) => {
+  const { dir } = await setup(t);
+  const s = await importSource(dir, { filename: 'a.md', data: Buffer.from('## Contents\nx\n```\n# fake\n```\n# IEEE 802.1Q ##\ny') });
+  assert.equal(s.title, 'IEEE 802.1Q');
+  await writeFile(join(dir, 'sbad.json'), '{}');
+  assert.deepEqual((await listSources(dir)).map((x) => x.id), [s.id]);
+  assert.equal((await sectionIds(dir)).size, 2);
+});

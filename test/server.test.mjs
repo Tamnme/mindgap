@@ -767,6 +767,16 @@ test('course mode starts without a node_id: schema, context, lesson id', () => w
   assert.equal(meta.node_id, null);
 }));
 
+test('course context carries existing source_sections on a node', () => withCourseState(async (map) => {
+  map.nodes[0].source_sections = ['sx-1'];
+  await writeFile(path.join(stateDir(), 'map.json'), JSON.stringify(map));
+  await setTurn({ say: 'hi' });
+  assert.equal((await startCourse()).status, 200);
+  const ctx = JSON.parse((await lastMessage()).slice(CONTEXT_PREFIX.length));
+  assert.deepEqual(ctx.nodes[0].source_sections, ['sx-1']);
+  assert.ok(!('source_sections' in ctx.nodes[1]));
+}));
+
 test('course session happy path: plan approved, map scoped, goal saved, lab approval untouched', () => withCourseState(async (mapBefore) => {
   await setTurn({ goal: GOAL, assessment: ASSESSMENT });
   const r = await startCourse();

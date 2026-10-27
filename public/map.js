@@ -383,7 +383,7 @@ async function openSources() {
 
 function renderSources(list) {
   const side = $('side');
-  side.replaceChildren(el('h2', { text: 'Sources' }));
+  side.replaceChildren(el('h2', { text: 'Sources' }), el('p', { class: 'muted', text: 'Sources are read when you start a new goal.' }));
   if (!list.length) side.append(el('p', { class: 'muted', text: 'No sources yet. Add a URL or a file below.' }));
   const ul = el('ul');
   for (const s of list) {
@@ -433,6 +433,7 @@ function renderSources(list) {
   file.onchange = () => {
     const f = file.files[0];
     if (!f) return;
+    if (f.size > 20 * 1024 * 1024) { showError('Files must be 20 MB or smaller.'); file.value = ''; return; }
     const reader = new FileReader();
     reader.onload = () => importSource({ filename: f.name, data_base64: dataUrlToBase64(reader.result) });
     reader.onerror = () => showError('Could not read that file.');

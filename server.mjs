@@ -221,6 +221,7 @@ async function courseContext(c, map) {
     nodes: map.nodes.map((n) => ({
       id: n.id, title: n.title, layer: n.layer, prereqs: n.prereqs, truth: n.truth, status: n.status, evidence: n.evidence,
       ...(n.in_scope === false ? { in_scope: false } : {}),
+      ...(n.source_sections?.length ? { source_sections: n.source_sections } : {}),
     })),
     propositions: lines.slice(-200),
     sources: (await listSources(sourcesDir(c))).map((s) => ({ id: s.id, title: s.title, sections: s.sections })),
