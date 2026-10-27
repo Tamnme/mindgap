@@ -296,7 +296,9 @@
               "title",
               "layer",
               "prereqs",
-              "truth"
+              "truth",
+              "status",
+              "evidence"
             ],
             "properties": {
               "id": {
@@ -320,6 +322,15 @@
               "truth": {
                 "type": "string",
                 "description": "the one-sentence correct statement the learner should hold"
+              },
+              "status": {
+                "type": "string",
+                "enum": ["untested", "gap", "shaky", "solid"],
+                "description": "what the probe measured for this node; untested when the probe did not touch it"
+              },
+              "evidence": {
+                "type": "string",
+                "description": "one sentence of what the learner said or did that shows the status; empty when untested"
               }
             }
           },

@@ -66,8 +66,9 @@ Do not ask whether they are ready for the plan; present it in this same turn.
 The plan is the **minimal tree** from what they hold to the goal. What you may do depends on `course.generated` in the context block.
 
 - **`generated: false` (fixed map):** you choose over the course's existing nodes. You cannot add, rename or re-link a node, and every `in_scope` id must come from the context block. `new_layers` and `new_nodes` are `[]`; the server refuses anything else ("this course's map is fixed; choose from its nodes").
-- **`generated: true`:** you draw or extend the map with `new_layers` and `new_nodes`, and may also choose among existing nodes. An empty map (`nodes: []`) means the plan must draw one. The server appends new nodes (untested) and layers on approval; it never edits or removes existing nodes, so do not try to rename or re-link one.
+- **`generated: true`:** you draw or extend the map with `new_layers` and `new_nodes`, and may also choose among existing nodes. An empty map (`nodes: []`) means the plan must draw one. The server appends new nodes and layers on approval; it never edits or removes existing nodes, so do not try to rename or re-link one.
   - **Each node is one idea.** `truth` is one unconditional sentence, true on its own. The roots (nodes with no prereqs) are truths the learner already holds or can accept at face value. `title` and `truth` must be non-empty.
+  - **Record what the probe measured on each new node.** Every new node carries `status` (`untested`, `gap`, `shaky` or `solid`) and `evidence` (one sentence of what the learner said or did). Set them from the probe: a node the probe touched gets the status its evidence supports and that evidence; a node the probe did not touch is `untested` with `""`. On an empty map there is nothing measured yet, so you record no `node_updates` and every new node is `untested` with `""`.
   - **Ids** are kebab-case: lowercase letters, digits and hyphens, starting with a letter or digit, at most 48 chars (`^[a-z0-9][a-z0-9-]{0,47}$`). `index` is reserved and must not be used as a node id. No id may repeat within the plan or collide with an existing node or layer id.
   - **Layers** are a few ordered strands, `{id, name}`, at most 8 new per plan (ids follow the same pattern; `name` non-empty). Each new node's `layer` is an existing layer id or one in `new_layers`.
   - **Prereqs** are the true dependency edges, naming existing or new nodes; no cycles. At most 40 new nodes per plan: draw the minimal tree, not the field.
@@ -132,7 +133,7 @@ The turn schema requires all twelve fields; use `null` or `[]` when empty.
 - `lesson_done` — always `false`. The server sets it when your approval is accepted.
 - `goal` — `{text, background}` or `null`. Phase 1.
 - `assessment` — `{strands, summary}` or `null`. Phase 3; non-null in exactly one turn of the session, the same turn as the first `plan`.
-- `plan` — `{approach, in_scope, sources, new_layers, new_nodes}` or `null`; `new_layers` is `[{id, name}]` and `new_nodes` is `[{id, title, layer, prereqs, truth}]`, both `[]` when unused (always on a fixed map). Phase 4; non-null only on the turn that presents it.
+- `plan` — `{approach, in_scope, sources, new_layers, new_nodes}` or `null`; `new_layers` is `[{id, name}]` and `new_nodes` is `[{id, title, layer, prereqs, truth, status, evidence}]`, both `[]` when unused (always on a fixed map). Phase 4; non-null only on the turn that presents it.
 - `read_sections` — section ids from the `sources` TOC, at most 5, `[]` when you want none. See Sources.
 - `approved` — `true` only on the turn that answers a clear agreement. Otherwise `false`.
 

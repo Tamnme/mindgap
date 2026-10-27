@@ -9,7 +9,7 @@ import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { listCourses, loadCourse, ensureState, createCourse, CourseNotFound, InvalidCourse } from './lib/courses.mjs';
 import { getTutor, TUTORS } from './lib/tutors/index.mjs';
-import { reviewTurn, applyPlan } from './lib/course-session.mjs';
+import { reviewTurn, applyPlan, checkPlan } from './lib/course-session.mjs';
 import { SourceError, UPLOAD_MAX, validId, listSources, importSource, removeSource, sectionIds, readSections } from './lib/sources.mjs';
 import { normalizeChapter, checkChapter } from './lib/chapters.mjs';
 import { labStatus, labRequest, isApproved, approve, runLab, ApprovalMismatch } from './lib/labs.mjs';
@@ -303,16 +303,27 @@ async function advance(c, id, meta, message, record, labsTotal, event = null) {
   let accepted = false;
   if (meta.mode === 'course') {
     // The server keeps only what the acceptance rules allow; the reviewed turn is what gets stored and returned.
-    const r = reviewTurn({
-      meta, turn, map: await loadMap(c), event, sectionIds: await sectionIds(sourcesDir(c)),
-      course: { generated: c.generated, layers: c.layers.map((l) => l.id) },
-    });
+    const map = await loadMap(c);
+    const ids = await sectionIds(sourcesDir(c));
+    const course = { generated: c.generated, layers: c.layers.map((l) => l.id) };
+    const r = reviewTurn({ meta, turn, map, event, sectionIds: ids, course });
     turn = r.turn;
     accepted = turn.approved;
     Object.assign(meta, r.meta);
     // Notes already sent in this message are spent; this turn's notes go out with the next one.
     meta.server_notes = r.notes;
+    // The plan was checked when presented; another session may have changed the map since.
+    const stale = accepted ? checkPlan(map, meta.pending_plan, ids, course) : null;
+    if (stale) {
+      accepted = false;
+      turn.approved = false;
+      turn.lesson_done = false;
+      meta.server_notes.push(`approval refused: the plan no longer fits the map (${stale}); present a fresh plan`);
+    }
   }
+  // Instruments the course does not have: sims are networking scenarios, labs need the course's lab block.
+  if (c.lab === null || c.lab === undefined) turn.lab = null;
+  if (c.generated) turn.sim = null;
 
   meta.tutor_session_id = sessionId || meta.tutor_session_id || null;
   meta.labs_sent = labsTotal;
@@ -329,6 +340,8 @@ async function advance(c, id, meta, message, record, labsTotal, event = null) {
     cj.layers = [...(cj.layers ?? []), ...newLayers.map(({ id, name }) => ({ id, name }))];
     courseJson = JSON.stringify(cj, null, 2) + '\n';
   }
+  // ponytail: map, then course.json, then goal.json are separate atomic writes; a crash between map and
+  // course.json leaves nodes on an unknown layer, which map.js tolerates. Journal them if that ever matters.
   await updateMap(c, (map) => {
     applyNodeUpdates(map, turn.node_updates ?? []);
     if (accepted) {
@@ -502,9 +515,17 @@ async function writeChapter(slug, id) {
       other_nodes: map.nodes.filter((n) => !inScope.has(n.id)).map((n) => ({ id: n.id, title: n.title })),
       ...(excerpts.length ? { sources: excerpts } : {}),
     };
-    const { turn: raw } = await callTutor(c, { mode: 'write', tutor_session_id: null }, 'CONTEXT:\n' + JSON.stringify(ctx, null, 2), CHAPTER_TIMEOUT_MS);
-    const chapter = normalizeChapter(raw, { node: id, number: index.length + 1, kicker: layer?.name ?? target.layer });
-    const problem = checkChapter(chapter);
+    const message = 'CONTEXT:\n' + JSON.stringify(ctx, null, 2);
+    const attempt = async (msg) => {
+      const { turn: raw } = await callTutor(c, { mode: 'write', tutor_session_id: null }, msg, CHAPTER_TIMEOUT_MS);
+      const ch = normalizeChapter(raw, { node: id, number: index.length + 1, kicker: layer?.name ?? target.layer });
+      return { ch, problem: checkChapter(ch) };
+    };
+    let { ch: chapter, problem } = await attempt(message);
+    // One fresh retry (no resume) that names what was refused.
+    if (problem) {
+      ({ ch: chapter, problem } = await attempt(`${message}\nSERVER:\n- your previous chapter was refused: ${problem}. Write the whole chapter again, following the output rules.`));
+    }
     if (problem) throw new HttpError(502, `chapter refused: ${problem}`);
     await mkdir(path.join(c.dir, 'chapters'), { recursive: true });
     await writeAtomic(chapterPath(c, id), JSON.stringify(chapter, null, 2) + '\n');

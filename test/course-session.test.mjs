@@ -305,7 +305,7 @@ test('applyPlan tags listed in-scope nodes, clears unlisted in-scope tags, keeps
 
 // --- drawn plans (new_layers / new_nodes) ---
 const GEN = { generated: true, layers: ['L1'] };
-const nn = (id, o = {}) => ({ id, title: id.toUpperCase(), layer: 'L1', prereqs: [], truth: `${id} is true`, ...o });
+const nn = (id, o = {}) => ({ id, title: id.toUpperCase(), layer: 'L1', prereqs: [], truth: `${id} is true`, status: 'untested', evidence: '', ...o });
 const drawn = (new_nodes, o = {}) => ({ approach: 'x', in_scope: new_nodes.map((n) => n.id), sources: [], new_layers: [], new_nodes, ...o });
 const EMPTY = { nodes: [] };
 
@@ -341,6 +341,9 @@ test('bad drawn plans are refused with a note, never thrown', () => {
   bad([nn('p')], /duplicate.*q/, { new_layers: [{ id: 'q', name: 'x' }, { id: 'q', name: 'y' }] });
   bad(Array.from({ length: 41 }, (_, i) => nn(`n${i}`)), /at most 40/);
   bad([nn('p')], /at most 8/, { new_layers: Array.from({ length: 9 }, (_, i) => ({ id: `l${i}`, name: 'x' })) });
+  bad([nn('p', { status: 'great' })], /status must be one of/);
+  bad([nn('p', { status: undefined })], /status must be one of/);
+  bad([nn('p', { evidence: 3 })], /evidence must be text/);
   bad([nn('index')], /index.*reserved/);
   bad([nn('Bad_Id')], /invalid id/);
   bad([nn('p')], /invalid id/, { new_layers: [{ id: '-x', name: 'x' }] });
@@ -351,7 +354,7 @@ test('bad drawn plans are refused with a note, never thrown', () => {
   bad([nn('p', { truth: '  ' })], /truth/);
   bad([nn('p', { prereqs: 'a' })], /prereqs/);
   bad([nn('p', { prereqs: [1] })], /prereqs/);
-  bad([{ id: 'p', title: 't', layer: 'L1', truth: 't' }], /prereqs/);
+  bad([{ id: 'p', title: 't', layer: 'L1', truth: 't', status: 'untested', evidence: '' }], /prereqs/);
   bad([nn('p')], /new_layers/, { new_layers: [{ id: 'q' }] });
   bad([nn('p')], /new_layers/, { new_layers: 'x' });
 });
@@ -392,12 +395,13 @@ test('reviewTurn on a generated course keeps a drawn plan; absent new_* normalis
   assert.deepEqual(r2.meta.pending_plan.new_layers, []);
 });
 
-test('applyPlan appends new nodes untested, leaves existing nodes intact, never mutates input', () => {
+test('applyPlan appends new nodes with their probed status and evidence, leaves existing nodes intact, never mutates input', () => {
   const before = structuredClone(map);
-  const out = applyPlan(map, ['a', 'z'], [], [{ ...nn('z', { prereqs: ['a'] }), status: 'solid', extra: 1 }]);
+  const out = applyPlan(map, ['a', 'z', 'y'], [], [{ ...nn('z', { prereqs: ['a'], status: 'shaky', evidence: 'mixed up ports' }), extra: 1 }, nn('y')]);
   assert.deepEqual(map, before);
   assert.deepEqual(out.nodes.slice(0, 4).map((n) => n.id), ['a', 'b', 'c', 'd']);
-  assert.deepEqual(out.nodes[4], { id: 'z', title: 'Z', layer: 'L1', prereqs: ['a'], truth: 'z is true', status: 'untested', evidence: '' });
+  assert.deepEqual(out.nodes[4], { id: 'z', title: 'Z', layer: 'L1', prereqs: ['a'], truth: 'z is true', status: 'shaky', evidence: 'mixed up ports' });
+  assert.deepEqual(out.nodes[5], { id: 'y', title: 'Y', layer: 'L1', prereqs: [], truth: 'y is true', status: 'untested', evidence: '' });
   for (const n of before.nodes) {
     const { in_scope, source_sections, ...rest } = out.nodes.find((x) => x.id === n.id);
     const { in_scope: i0, source_sections: s0, ...rest0 } = n;
