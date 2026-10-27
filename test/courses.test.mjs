@@ -105,3 +105,12 @@ test('a malformed shipped course still owns its slug over a dataDir course', asy
   });
   assert.deepEqual(await listCourses(local), [{ slug: 'alpha', title: 'Alpha' }]);
 });
+
+test('loadCourse.generated is true only for courses under <data>/courses', async () => {
+  const o = await fixture({
+    'courses/shipped/course.json': course('shipped', 'S'),
+    'data/courses/made/course.json': course('made', 'M'),
+  });
+  assert.equal((await loadCourse(o, 'shipped')).generated, false);
+  assert.equal((await loadCourse(o, 'made')).generated, true);
+});

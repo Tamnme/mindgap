@@ -722,6 +722,12 @@ test('course schema extends the turn schema: same seven fields, five more requir
   for (const key of Object.keys(turn.properties)) {
     assert.deepEqual(course.properties[key], turn.properties[key], key);
   }
+  const plan = course.properties.plan;
+  assert.deepEqual(plan.required, ['approach', 'in_scope', 'sources', 'new_layers', 'new_nodes']);
+  assert.deepEqual(Object.keys(plan.properties), plan.required);
+  assert.deepEqual(plan.properties.new_layers.items.required, ['id', 'name']);
+  assert.deepEqual(plan.properties.new_nodes.items.required, ['id', 'title', 'layer', 'prereqs', 'truth']);
+  for (const k of ['new_layers', 'new_nodes']) assert.equal(plan.properties[k].items.additionalProperties, false);
 });
 
 // Course-session tests. FAKE_CLAUDE answers with <dir>/turn.json while it exists.
