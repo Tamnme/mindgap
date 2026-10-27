@@ -1,0 +1,70 @@
+{
+ "title": "Feeding a starter",
+ "lede": "A starter is a living culture of wild yeast and lactic acid bacteria. Each feed dilutes the acid and adds fresh flour, so the yeast population rises, peaks and then falls. You bake with it near the peak.",
+ "sections": [
+  {
+   "id": "whats-in-the-jar",
+   "title": "What's in the jar",
+   "blocks": [
+    {
+     "md": "You already know hydration: the water's weight as a percentage of the flour's weight. Most starters are kept at **100% hydration**, meaning equal weights of flour and water. That makes a thick batter, something like pancake batter.\n\nPancake batter doesn't have anything living in it, though. A starter is a **culture** of two kinds of microbe that came in with the flour and the kitchen: **wild yeast** and **lactic acid bacteria** (LAB for short).\n\nThe yeast do the same job as the packet yeast you've baked with. They eat sugars and give off carbon dioxide, and that gas inflates dough. The bacteria eat sugars too, but what they mostly make is **acid** (lactic and acetic). The acid is where sourdough gets its sour taste.\n\nA sachet of dried yeast is a huge dose of one domesticated strain, ready to go. A spoonful of starter holds a smaller, mixed population, and you have to keep it alive and growing yourself. You do that by feeding it.\n\nHere is a typical feed:\n\n```\n  50 g ripe starter\n  50 g flour\n  50 g water\n -----\n 150 g at 100% hydration\n```\n\nThis is called a **1:1:1** feed: starter to flour to water, by weight. Many bakers put a rubber band around the jar at the level of the batter, so they can see how far it rises.\n\nSay you feed at 9 am, put the band on and leave the jar on the counter at ordinary room temperature. Then you don't touch it for three days.",
+     "checkpoint": null
+    },
+    {
+     "md": null,
+     "checkpoint": {
+      "id": "c1",
+      "prompt": "What does the jar do over those three days?",
+      "options": [
+       "Keeps rising: more time means more yeast and more gas",
+       "Peaks, then sinks: it rises, falls back and turns sharply sour",
+       "Holds at its highest point: once the gas is made it stays trapped",
+       "Dies within a day: wild yeast needs feeding every few hours"
+      ],
+      "key": 1,
+      "why": "The yeast multiply only while there's sugar to eat and the acid is still mild. When the food runs low and acid builds up, they make less gas than leaks out, so the dome falls, and the bacteria keep making the batter more sour."
+     }
+    }
+   ]
+  },
+  {
+   "id": "rise-peak-fall",
+   "title": "Rise, peak, fall",
+   "blocks": [
+    {
+     "md": "Flour is mostly starch. Enzymes that are naturally in flour break some of that starch into sugars, and the sugars are what the yeast and the bacteria eat.\n\n**Right after a feed**, there's plenty of sugar and very little acid. The yeast multiply, and every new cell makes gas. The flour and water have formed gluten, as you know from making dough, and the sticky batter traps the bubbles. The level climbs above the rubber band.\n\n**As the population grows**, it eats faster, because there are more mouths. The rise speeds up.\n\n**Then two things work against the yeast.** The easy sugar runs low. Meanwhile the bacteria have been adding acid the whole time, and the acid slows the yeast down. Acid and enzyme activity also weaken the gluten, so the batter holds gas less well.\n\n**The peak** comes when gas production drops to the rate at which gas escapes. After that the dome flattens and sinks. It often leaves a streaky ring on the glass to show how high it got.\n\nYou could have worked this out yourself, because you've watched the same curve in yeasted dough. Leave a bowl of dough to prove for far too long and it rises, then slumps, then smells boozy. The causes are the same: the food runs out and the waste products build up.\n\nSo a feed has two jobs:\n\n1. **Discard most of the old starter.** In a 1:1:1 feed the ripe starter makes up only a third of the new batter, so its acid is spread through three times the volume.\n2. **Add fresh flour and water.** That brings new starch to turn into sugar, at the same hydration.\n\nWhy not skip the discard and just keep adding flour? Without the discard, 1:1:1 turns 150 g into 450 g, then 1350 g. You'd need ever larger feeds just to keep the same ratio. Discarding keeps the jar a sensible size and the ratio steady.\n\n> [!IMPORTANT]\n> Every feed dilutes the acid and supplies new food, which restarts the curve: rise, peak, fall. Feeding a starter means managing where it is on that curve.",
+     "checkpoint": null
+    }
+   ]
+  },
+  {
+   "id": "ratio-and-temperature",
+   "title": "Ratio and temperature set the clock",
+   "blocks": [
+    {
+     "md": "Say your starter, fed 1:1:1, usually peaks about 5 hours later on your counter. One evening you'd like it to peak in the morning instead, so you feed it **1:5:5**: 10 g starter, 50 g flour, 50 g water. It's the same kitchen and the same flour.",
+     "checkpoint": null
+    },
+    {
+     "md": null,
+     "checkpoint": {
+      "id": "c2",
+      "prompt": "Compared with the 1:1:1 feed, when does the 1:5:5 jar peak?",
+      "options": [
+       "Later: fewer starting yeast cells need more doublings to fill the jar",
+       "Sooner: more fresh flour per cell means faster growth",
+       "About the same: temperature alone decides the peak time",
+       "Never: that little starter is too dilute to rise at all"
+      ],
+      "key": 0,
+      "why": "The peak arrives once the population is dense enough to make gas faster than the batter loses it. Starting at 1/11 of the mix instead of 1/3 means about two extra doublings before it gets there."
+     }
+    },
+    {
+     "md": "Think in doublings. Suppose the jar peaks when the yeast are back at roughly the density of ripe starter.\n\n| Feed | Starter share | Doublings to get back |\n|---|---|---|\n| 1:1:1 | 1/3 | about 1.6 (2^1.6 ≈ 3) |\n| 1:5:5 | 1/11 | about 3.5 (2^3.5 ≈ 11) |\n\nIf the cells double at a steady pace, the 1:5:5 jar takes about twice as long. Real starters aren't that tidy: the yeast pause briefly after a feed, and starters differ. Use this for the direction and rough size of the change, not as a timetable.\n\nA bigger ratio dilutes the acid more as well. Bakers use high-ratio feeds for overnight timing, and also to calm down a starter that has turned very sour.\n\n**Temperature is the second dial.** The warmer the kitchen, the faster both the yeast and the bacteria work, so the peak comes sooner. A cool kitchen slows the curve, and the fridge slows it to a crawl but doesn't stop it.\n\n| Dial | Turn it up | Peak comes |\n|---|---|---|\n| Fresh flour + water per gram of starter | Higher ratio | Later, milder |\n| Temperature | Warmer | Sooner |\n| Whole-grain or rye flour in the feed | More of it | Usually sooner |\n\nThe last row is general baker's experience rather than a fixed rule. Whole-grain flours carry more nutrients and microbes, and most starters respond to them quickly.",
+     "checkpoint": null
+    }
+   ]
+  }
+ ]
+}
