@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { mkdtemp, writeFile, chmod, readFile, rm, readdir } from 'node:fs/promises';
+import { mkdtemp, writeFile, chmod, readFile, rm, readdir, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -168,4 +168,17 @@ test('listSources and sectionIds on a missing dir', async (t) => {
   const { dir } = await setup(t);
   assert.deepEqual(await listSources(join(dir, 'none')), []);
   assert.equal((await sectionIds(join(dir, 'none'))).size, 0);
+});
+
+test('the conversion temp dir is removed after success and after failure', async (t) => {
+  const { tmp, dir } = await setup(t);
+  const cwdFile = join(tmp, 'cwd');
+  const body = `require('fs').writeFileSync(${JSON.stringify(cwdFile)}, process.cwd());`;
+  process.env.MARKITDOWN_BIN = await fake(tmp, 'ok', `${body}process.stdout.write('# T\\nx');`);
+  await importSource(dir, { filename: 'a.pdf', data: Buffer.from('x') });
+  const okCwd = await readFile(cwdFile, 'utf8');
+  await assert.rejects(stat(okCwd), { code: 'ENOENT' });
+  process.env.MARKITDOWN_BIN = await fake(tmp, 'bad2', `${body}process.exit(1);`);
+  await fails(importSource(dir, { filename: 'a.pdf', data: Buffer.from('x') }), 422);
+  await assert.rejects(stat(await readFile(cwdFile, 'utf8')), { code: 'ENOENT' });
 });
