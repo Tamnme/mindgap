@@ -90,12 +90,22 @@ if (cmd === 'exec') {
 
 // Fake agy: logs argv, cwd and whether the turn schema sits in cwd; always returns the same canned turn.
 const FAKE_AGY = `
-import { appendFileSync, existsSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 const dir = process.env.FAKE_DIR;
 const args = process.argv.slice(2);
 const cwd = process.cwd();
 appendFileSync(path.join(dir, 'agy-calls.jsonl'), JSON.stringify({ args, cwd, schema: existsSync(path.join(cwd, 'turn-schema.json')) }) + '\\n');
+// FAKE_DIR/agy-deny holds N: the next N calls end on a refused command, as agy 1.4.7 does.
+const denyFile = path.join(dir, 'agy-deny');
+if (existsSync(denyFile)) {
+  const n = Number(readFileSync(denyFile, 'utf8'));
+  if (n > 0) {
+    writeFileSync(denyFile, String(n - 1));
+    process.stdout.write(JSON.stringify({ conversation_id: 'conv-denied', status: 'SUCCESS', denied_actions: [{ action: 'command', display_name: 'RunCommand' }] }));
+    process.exit(0);
+  }
+}
 const turn = { say: 'hi from agy', question: null, sim: null, lab: null, lesson_done: false, node_updates: [], propositions: [] };
 process.stdout.write(JSON.stringify({ conversation_id: 'conv-1', structured_output: turn }));
 `;
@@ -539,6 +549,37 @@ test('agy server: lesson runs in an empty temp cwd with the schema file, removed
     assert.equal(t.status, 200, t.text);
     const second = (await readAgyCalls()).at(-1);
     assert.equal(second.args[second.args.indexOf('--conversation') + 1], 'conv-1');
+  } finally {
+    srv.kill();
+  }
+});
+
+test('agy refused command: the server resumes that conversation once and the lesson starts', async () => {
+  const { srv, port: agyPort } = startServer({ MINDGAP_DATA_DIR: dataDir, MINDGAP_TUTOR: 'agy', AGY_BIN: path.join(dir, 'agy'), FAKE_DIR: dir });
+  try {
+    const before = (await readAgyCalls()).length;
+    await writeFile(path.join(dir, 'agy-deny'), '1');
+    const r = await call('POST', '/api/lesson', { course: 'net', node_id: 'switch-mac-table', mode: 'teach' }, await agyPort);
+    assert.equal(r.status, 200, r.text);
+    const calls = (await readAgyCalls()).slice(before);
+    assert.equal(calls.length, 2);
+    const retry = calls[1].args;
+    assert.equal(retry[retry.indexOf('--conversation') + 1], 'conv-denied');
+    assert.match(retry.at(-1), /^SERVER: that command was refused/);
+  } finally {
+    srv.kill();
+  }
+});
+
+test('agy refused command twice: one retry only, then 502', async () => {
+  const { srv, port: agyPort } = startServer({ MINDGAP_DATA_DIR: dataDir, MINDGAP_TUTOR: 'agy', AGY_BIN: path.join(dir, 'agy'), FAKE_DIR: dir });
+  try {
+    const before = (await readAgyCalls()).length;
+    await writeFile(path.join(dir, 'agy-deny'), '2');
+    const r = await call('POST', '/api/lesson', { course: 'net', node_id: 'switch-mac-table', mode: 'teach' }, await agyPort);
+    assert.equal(r.status, 502, r.text);
+    assert.match(r.json.error, /no structured_output/);
+    assert.equal((await readAgyCalls()).length - before, 2);
   } finally {
     srv.kill();
   }

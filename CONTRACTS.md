@@ -4,7 +4,7 @@ Shared formats that every part builds against. Change them here first.
 
 ## Run
 `node server.mjs` → http://localhost:4810. No npm dependencies. Node ≥ 22.
-Env: `MINDGAP_DATA_DIR` (default `learner/`), `MINDGAP_COURSES_DIR` (default `courses/`), `MINDGAP_TUTOR` (`claude` default | `agy`; unknown → exit 1), `MINDGAP_MODEL` (default `opus` for claude, unset for agy). Binaries: `DOCKER_BIN` (default `docker`), `CLAUDE_BIN` (default `claude`), `AGY_BIN` (default `agy`).
+Env: `MINDGAP_DATA_DIR` (default `learner/`), `MINDGAP_COURSES_DIR` (default `courses/`), `MINDGAP_TUTOR` (`claude` default | `agy`; unknown → exit 1), `MINDGAP_MODEL` (default `opus` for claude, unset for agy), `MINDGAP_EFFORT` (default `low` for agy, unused by claude). Binaries: `DOCKER_BIN` (default `docker`), `CLAUDE_BIN` (default `claude`), `AGY_BIN` (default `agy`).
 
 ## Files
 ```
@@ -82,7 +82,7 @@ On accepted approval the server sets `in_scope: false` on every node outside the
 `MINDGAP_TUTOR` picks one adapter: `claude` (default) or `agy`. Each adapter exports `buildCall({systemPrompt, schemaText, message, sessionId, model, schemaFile}) -> {bin, args}` and `parseOutput(stdout) -> {turn, sessionId, error}`. Binaries come from `CLAUDE_BIN` / `AGY_BIN`.
 - Every call runs with cwd = a fresh `mindgap-turn-*` temp dir (holds `turn-schema.json`), stdin closed, and the dir is removed afterwards. The tutor gets no tools.
 - `claude`: `claude -p --safe-mode --tools "" --model <MINDGAP_MODEL|opus> --output-format json --json-schema <turn-schema.json> --system-prompt "<prompts/<mode>.md>\n\n<courses/<slug>/prompt.md, if present>" [--resume <tutor_session_id>] "<message>"`. Reads `.structured_output`, `.session_id`, `.is_error`.
-- `agy`: `agy --output-format json --json-schema <schema> [--model <MINDGAP_MODEL>] [--conversation <tutor_session_id>] -p "<message>"`. agy has no system-prompt flag, so the first turn prepends `SYSTEM INSTRUCTIONS:` plus the prompt to the message. Reads `.structured_output`, `.conversation_id`.
+- `agy`: `agy --output-format json --json-schema <schema> [--model <MINDGAP_MODEL>] [--effort <MINDGAP_EFFORT|low>] [--conversation <tutor_session_id>] -p "<message>"`. agy has no system-prompt flag, so the first turn prepends `SYSTEM INSTRUCTIONS:`, a no-tools line, then the prompt to the message. Reads `.structured_output`, `.conversation_id`, `.denied_actions`. When a turn has no `structured_output` and `denied_actions` is non-empty (agy 1.4.7 sometimes runs `pwd && ls -la` first, which print mode refuses), the server resumes that conversation once with a `SERVER:` nudge; a second refusal is a 502.
 - Timeout 180 s, stdout cap 16 MB. A parse or tutor error is HTTP 502 with the adapter's error, plus `: <first 500 chars of stderr>` when stderr is present. A missing binary is 502 `<tutor> not found on PATH`.
 - A lesson is bound to the tutor it started with (`meta.tutor`); a turn under a different `MINDGAP_TUTOR` is 409. Lessons with no `tutor` field count as `claude`.
 - `--safe-mode` keeps the user's CLAUDE.md/plugins/hooks out of the tutor. Auth still uses the subscription. Do NOT use `--bare` (it needs an API key).

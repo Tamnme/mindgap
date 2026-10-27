@@ -42,6 +42,7 @@ On first access to a course, the server copies `courses/<slug>/map.seed.json` to
 |---|---|---|
 | `MINDGAP_TUTOR` | `claude` | Tutor CLI: `claude` or `agy`. A lesson stays with the tutor it started with |
 | `MINDGAP_MODEL` | `opus` for claude | Model for the tutor (`sonnet` is cheaper and faster) |
+| `MINDGAP_EFFORT` | `low` for agy | agy reasoning effort. `medium` reasons more but a teach turn took 168 s of the 180 s limit; agy's own default runs past it |
 | `MINDGAP_DATA_DIR` | `learner/` | Where your map, propositions and transcripts live |
 | `PORT` | `4810` | |
 
