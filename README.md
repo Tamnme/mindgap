@@ -21,6 +21,7 @@ Each idea is meant to land as something you could have derived, not a fact to me
 ## Requirements
 
 - **Node.js 22 or newer.** No npm dependencies.
+- **[markitdown](https://github.com/microsoft/markitdown)** (optional): `pip install 'markitdown[all]'`. Only needed to add sources to a course; courses without sources need nothing extra.
 - **[Claude Code](https://claude.com/claude-code)** or **agy**, logged in. The server calls the tutor CLI for every turn, on your subscription. Pick with `MINDGAP_TUTOR`.
 - **Docker** for the labs: Docker Desktop, OrbStack or Docker Engine. Optional: chapters and the tutor work without it, but lab commands won't run.
 
@@ -44,6 +45,7 @@ On first access to a course, the server copies `courses/<slug>/map.seed.json` to
 | `MINDGAP_MODEL` | `opus` for claude | Model for the tutor (`sonnet` is cheaper and faster) |
 | `MINDGAP_EFFORT` | `low` for agy | agy reasoning effort. `medium` reasons more but a teach turn took 168 s of the 180 s limit; agy's own default runs past it |
 | `MINDGAP_DATA_DIR` | `learner/` | Where your map, propositions and transcripts live |
+| `MARKITDOWN_BIN` | `markitdown` | Converter for course sources (URLs and uploaded files) |
 | `PORT` | `4810` | |
 
 ## Upgrading from netbench/underlay

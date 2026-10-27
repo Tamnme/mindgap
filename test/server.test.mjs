@@ -888,3 +888,91 @@ test('a corrupt goal.json does not stop a teach lesson: learner is null', () => 
   const ctx = JSON.parse((await lastMessage()).slice(CONTEXT_PREFIX.length));
   assert.equal(ctx.learner, null);
 }));
+
+// Source routes. FAKE_MARKITDOWN turns stdin into "# Doc\n\n<stdin>" and records the -x hint.
+const FAKE_MARKITDOWN = `
+let s = '';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', (c) => (s += c));
+process.stdin.on('end', () => process.stdout.write('# Doc\\n\\n' + s + '\\n\\n## Part two\\n\\nmore'));
+`;
+
+async function startSourcesServer(bin) {
+  const started = startServer({ MINDGAP_DATA_DIR: path.join(dir, 'src-data'), MARKITDOWN_BIN: bin });
+  return { srv: started.srv, at: await started.port };
+}
+
+test('sources: add by URL and upload, list, delete, path safety, guards', async () => {
+  const js = path.join(dir, 'fake-markitdown.mjs');
+  const bin = path.join(dir, 'markitdown');
+  await writeFile(js, FAKE_MARKITDOWN);
+  await writeFile(bin, `#!/bin/sh\nexec "${process.execPath}" "${js}" "$@"\n`);
+  await chmod(bin, 0o755);
+  const site = http.createServer((req, res) => {
+    res.writeHead(200, { 'content-type': 'text/html' });
+    res.end('<p>from the web</p>');
+  });
+  await new Promise((r) => site.listen(0, '127.0.0.1', r));
+  const { srv, at } = await startSourcesServer(bin);
+  try {
+    const url = `http://127.0.0.1:${site.address().port}/page`;
+    const a = await call('POST', '/api/courses/net/sources', { url }, at);
+    assert.equal(a.status, 201, a.text);
+    assert.equal(a.json.origin.kind, 'url');
+    const b = await call('POST', '/api/courses/net/sources', { filename: 'n.txt', data_base64: Buffer.from('hello upload').toString('base64') }, at);
+    assert.equal(b.status, 201, b.text);
+    assert.equal(b.json.origin.value, 'n.txt');
+
+    const list = await call('GET', '/api/courses/net/sources', undefined, at);
+    assert.equal(list.status, 200);
+    assert.deepEqual(list.json.map((s) => s.id).sort(), [a.json.id, b.json.id].sort());
+    assert.ok(list.json[0].sections.every((x) => x.chars > 0 && x.heading));
+
+    // exactly one of url / data_base64; filename required; data must be a string
+    for (const body of [{}, { url, filename: 'a.txt', data_base64: 'aGk=' }, { data_base64: 'aGk=' }, { filename: 'a.txt', data_base64: 5 }]) {
+      assert.equal((await call('POST', '/api/courses/net/sources', body, at)).status, 400, JSON.stringify(body));
+    }
+    assert.equal((await call('POST', '/api/courses/nope/sources', { url }, at)).status, 404);
+
+    // guards: static still refuses DELETE; a non-JSON POST is 415
+    assert.equal((await call('DELETE', '/index.html', undefined, at)).status, 405);
+    const raw = await new Promise((resolve, reject) => {
+      const req = http.request({ host: '127.0.0.1', port: at, method: 'POST', path: '/api/courses/net/sources', headers: { 'content-type': 'text/plain' } }, (res) => { res.resume(); resolve(res.statusCode); });
+      req.on('error', reject);
+      req.end('{}');
+    });
+    assert.equal(raw, 415);
+
+    assert.equal((await call('DELETE', '/api/courses/net/sources/..', undefined, at)).status, 404);
+    assert.equal((await call('DELETE', '/api/courses/net/sources/..%2Fetc', undefined, at)).status, 404);
+    assert.equal((await call('DELETE', `/api/courses/net/sources/${a.json.id}`, undefined, at)).status, 204);
+    assert.equal((await call('DELETE', `/api/courses/net/sources/${a.json.id}`, undefined, at)).status, 404);
+    assert.equal((await call('GET', '/api/courses/net/sources', undefined, at)).json.length, 1);
+  } finally {
+    srv.kill();
+    site.close();
+  }
+});
+
+test('sources: missing markitdown is 503 with the install line', async () => {
+  const { srv, at } = await startSourcesServer('/nonexistent/markitdown');
+  try {
+    const r = await call('POST', '/api/courses/net/sources', { filename: 'n.txt', data_base64: 'aGk=' }, at);
+    assert.equal(r.status, 503, r.text);
+    assert.match(r.json.install, /markitdown\[all\]/);
+  } finally {
+    srv.kill();
+  }
+});
+
+test('sources: the 413 message names the real limit', async () => {
+  const { srv, at } = await startSourcesServer('/nonexistent/markitdown');
+  try {
+    const big = Buffer.alloc(300 * 1024, 'a').toString('base64');
+    const r = await call('POST', '/api/lesson', { pad: big }, at);
+    assert.equal(r.status, 413);
+    assert.match(r.json.error, /256 KB/);
+  } finally {
+    srv.kill();
+  }
+});
