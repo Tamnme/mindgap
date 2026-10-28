@@ -33,13 +33,15 @@ export function renderMarkdown(src) {
   const out = [];
   let para = [];
   let list = [];
+  let ordered = false;
 
   const flushPara = () => {
     if (para.length) out.push(`<p>${para.map(renderInline).join('<br>')}</p>`);
     para = [];
   };
   const flushList = () => {
-    if (list.length) out.push(`<ul>${list.map(li => `<li>${renderInline(li)}</li>`).join('')}</ul>`);
+    const tag = ordered ? 'ol' : 'ul';
+    if (list.length) out.push(`<${tag}>${list.map(li => `<li>${renderInline(li)}</li>`).join('')}</${tag}>`);
     list = [];
   };
 
@@ -92,9 +94,12 @@ export function renderMarkdown(src) {
       continue;
     }
 
-    const m = line.match(LIST_RE) || line.match(/^\s*\d+[.)]\s+(.*)$/);
+    const bullet = line.match(LIST_RE);
+    const m = bullet || line.match(/^\s*\d+[.)]\s+(.*)$/);
     if (m) {
       flushPara();
+      if (list.length && ordered !== !bullet) flushList();
+      ordered = !bullet;
       list.push(m[1]);
       continue;
     }
