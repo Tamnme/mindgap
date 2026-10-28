@@ -395,8 +395,9 @@ async function startLesson(body) {
     // A course session spans the whole map, so any node_id is ignored.
     const lesson_id = `course-${Date.now()}`;
     const meta = { course: c.slug, tutor: TUTOR, tutor_session_id: null, node_id: null, mode, started: new Date().toISOString(), labs_sent: 0 };
-    await writeAtomic(metaPath(c, lesson_id), JSON.stringify(meta, null, 2));
+    // Context first: a throw here must not leave a meta behind (advanceOrDrop only covers what follows).
     const message = 'CONTEXT:\n' + JSON.stringify(await courseContext(c, map), null, 2);
+    await writeAtomic(metaPath(c, lesson_id), JSON.stringify(meta, null, 2));
     const turn = await advanceOrDrop(c, lesson_id, meta, message, { role: 'system', data: { type: 'start', node_id: null, mode } });
     return { lesson_id, turn };
   }
@@ -406,10 +407,9 @@ async function startLesson(body) {
 
   const lesson_id = `${node_id}-${Date.now()}`;
   const meta = { course: c.slug, tutor: TUTOR, tutor_session_id: null, node_id, mode, started: new Date().toISOString(), labs_sent: 0 };
-  await writeAtomic(metaPath(c, lesson_id), JSON.stringify(meta, null, 2));
-
   const ctx = await contextFor(c, map, node_id, mode);
   const message = 'CONTEXT:\n' + JSON.stringify(ctx, null, 2);
+  await writeAtomic(metaPath(c, lesson_id), JSON.stringify(meta, null, 2));
   const turn = await advanceOrDrop(c, lesson_id, meta, message, { role: 'system', data: { type: 'start', node_id, mode } });
   return { lesson_id, turn };
 }

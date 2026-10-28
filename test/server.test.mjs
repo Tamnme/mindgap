@@ -1423,6 +1423,20 @@ test('failed lesson start (tutor error) leaves no meta', async () => {
   await noOrphanAfterFailedStart(slug, cdir);
 });
 
+for (const [mode, body] of [['node', { node_id: 'alpha', mode: 'teach' }], ['course', { mode: 'course' }]]) {
+  test(`lesson start whose context build throws (${mode} mode) leaves no meta and never calls the tutor`, async () => {
+    const { slug, cdir } = await writableCourse(`Start Ctx ${mode}`);
+    await mkdir(path.join(cdir, 'state'), { recursive: true });
+    await writeFile(path.join(cdir, 'state', 'propositions.jsonl'), '{not json\n');
+    const calls = async () => (await readCalls().catch(() => [])).length;
+    const n = await calls();
+    const r = await call('POST', '/api/lesson', { course: slug, ...body });
+    assert.ok(r.status >= 400, r.text);
+    assert.equal(await calls(), n);
+    await noOrphanAfterFailedStart(slug, cdir);
+  });
+}
+
 test('cancel with nothing running is 200 cancelled:false; unknown course is 404', async () => {
   const r = await call('POST', '/api/courses/net/cancel', {});
   assert.equal(r.status, 200, r.text);
