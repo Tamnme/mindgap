@@ -374,6 +374,16 @@ async function advance(c, id, meta, message, record, labsTotal, event = null) {
   return turn;
 }
 
+// A start that fails or is cancelled must not leave its meta behind: progress() would offer it as Resume.
+async function advanceOrDrop(c, lesson_id, meta, message, record) {
+  try {
+    return await advance(c, lesson_id, meta, message, record, 0);
+  } catch (err) {
+    await rm(metaPath(c, lesson_id), { force: true });
+    throw err;
+  }
+}
+
 async function startLesson(body) {
   const c = await openCourse(body.course);
   const { mode } = body;
@@ -387,7 +397,7 @@ async function startLesson(body) {
     const meta = { course: c.slug, tutor: TUTOR, tutor_session_id: null, node_id: null, mode, started: new Date().toISOString(), labs_sent: 0 };
     await writeAtomic(metaPath(c, lesson_id), JSON.stringify(meta, null, 2));
     const message = 'CONTEXT:\n' + JSON.stringify(await courseContext(c, map), null, 2);
-    const turn = await advance(c, lesson_id, meta, message, { role: 'system', data: { type: 'start', node_id: null, mode } }, 0);
+    const turn = await advanceOrDrop(c, lesson_id, meta, message, { role: 'system', data: { type: 'start', node_id: null, mode } });
     return { lesson_id, turn };
   }
   const { node_id } = body;
@@ -400,7 +410,7 @@ async function startLesson(body) {
 
   const ctx = await contextFor(c, map, node_id, mode);
   const message = 'CONTEXT:\n' + JSON.stringify(ctx, null, 2);
-  const turn = await advance(c, lesson_id, meta, message, { role: 'system', data: { type: 'start', node_id, mode } }, 0);
+  const turn = await advanceOrDrop(c, lesson_id, meta, message, { role: 'system', data: { type: 'start', node_id, mode } });
   return { lesson_id, turn };
 }
 

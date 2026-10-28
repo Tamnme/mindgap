@@ -1396,6 +1396,33 @@ test('cancel during a chapter write: no chapter file, index unchanged, the write
   assert.equal((await call('POST', `/api/courses/${slug}/chapters/alpha/write`, {})).status, 201);
 });
 
+async function noOrphanAfterFailedStart(slug, cdir) {
+  const list = (await call('GET', '/api/courses')).json.find((c) => c.slug === slug);
+  assert.equal(list.lastLesson, null);
+  assert.deepEqual(await readdir(path.join(cdir, 'state', 'sessions')), []);
+}
+
+test('cancelled lesson start leaves no meta: no Resume target, nothing on disk', async () => {
+  const { slug, cdir } = await writableCourse('Start Cancel');
+  const n = (await readCalls()).length;
+  await setControl('hang');
+  const w = call('POST', '/api/lesson', { course: slug, node_id: 'alpha', mode: 'teach' });
+  await waitForCalls(n + 1);
+  await call('POST', `/api/courses/${slug}/cancel`, {});
+  await setControl('ok');
+  assert.equal((await w).status, 499);
+  await noOrphanAfterFailedStart(slug, cdir);
+});
+
+test('failed lesson start (tutor error) leaves no meta', async () => {
+  const { slug, cdir } = await writableCourse('Start Fail');
+  await setControl('error');
+  const r = await call('POST', '/api/lesson', { course: slug, node_id: 'alpha', mode: 'teach' });
+  await setControl('ok');
+  assert.equal(r.status, 502, r.text);
+  await noOrphanAfterFailedStart(slug, cdir);
+});
+
 test('cancel with nothing running is 200 cancelled:false; unknown course is 404', async () => {
   const r = await call('POST', '/api/courses/net/cancel', {});
   assert.equal(r.status, 200, r.text);

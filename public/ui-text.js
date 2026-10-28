@@ -16,7 +16,7 @@ export function withCode(message, status) {
 // Message for a failed tutor turn: err = {status?, message}. Server text, when present, follows the plain words.
 export function turnErrorText(err) {
   const detail = err.message && !/^HTTP \d+$/.test(err.message) ? `: ${err.message}` : '';
-  if (err.status === 499) return 'Cancelled. Your answer is kept — Retry when ready.';
+  if (err.status === 499) return 'Cancelled. Your message is kept — Retry when ready.';
   if (err.status === 409) return withCode('The lesson is busy with another turn. Retry', 409);
   if (err.status === 502) return withCode('The tutor did not answer. Retry', 502);
   if (err.status) return withCode(`The request failed${detail}. Retry`, err.status);

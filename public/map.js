@@ -1,6 +1,7 @@
 // Map home: renders learner/map.json as an SVG graph and drives lesson starts.
 // All map text comes from model-written files, so it is only ever set via textContent.
 
+import { elapsedText, withCode } from './ui-text.js';
 import { visibleNodes, offGoalCount, isOffGoal, pickNext, dataUrlToBase64, sourceErrorMessage, canWriteChapter, nodeMatches, legendVisible, practiceShakyLabel, lockWhileBusy } from './map-logic.js';
 
 const STATUSES = ['untested', 'gap', 'shaky', 'solid'];
@@ -373,7 +374,7 @@ function setBusy(on, text, lockSide = false) {
   clearInterval(busyTimer);
   if (on) {
     const t0 = Date.now();
-    const tick = () => { $('busy-text').textContent = `${text} (${Math.round((Date.now() - t0) / 1000)}s)`; };
+    const tick = () => { const e = elapsedText(Date.now() - t0); $('busy-text').textContent = e ? `${text} (${e})` : text; };
     tick();
     busyTimer = setInterval(tick, 1000);
   }
@@ -388,7 +389,7 @@ function cancelCall() {
   fetch(courseApi('/cancel'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }).catch(() => {});
 }
 
-const failText = (what, err) => (err.message === 'cancelled' ? 'Cancelled. Nothing was changed.' : `${what}: ${err.message}`);
+const failText = (what, err) => (err.message === 'cancelled' ? 'Cancelled. Nothing was changed.' : withCode(`${what}: ${err.message}`, err.status));
 
 function showError(msg) {
   const box = $('error');

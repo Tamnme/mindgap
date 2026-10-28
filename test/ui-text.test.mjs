@@ -17,7 +17,7 @@ test('withCode leads with words and trails the code', () => {
 });
 
 test('turnErrorText', () => {
-  assert.equal(turnErrorText({ status: 499, message: 'cancelled' }), 'Cancelled. Your answer is kept — Retry when ready.');
+  assert.equal(turnErrorText({ status: 499, message: 'cancelled' }), 'Cancelled. Your message is kept — Retry when ready.');
   assert.equal(turnErrorText({ status: 409, message: 'x' }), 'The lesson is busy with another turn. Retry (HTTP 409)');
   assert.equal(turnErrorText({ status: 502, message: 'x' }), 'The tutor did not answer. Retry (HTTP 502)');
   assert.equal(turnErrorText({ status: 500, message: 'boom' }), 'The request failed: boom. Retry (HTTP 500)');
