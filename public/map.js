@@ -27,6 +27,7 @@ const state = {
   selected: null,
   chapters: [],
   generated: false,   // generated courses may write chapters and grow their map
+  busy: false,        // an AI call is in flight: AI-starting buttons stay locked, including ones rendered later
   showOff: false,     // draw off-goal nodes (faded)
   query: '',          // node search text; non-matching nodes are dimmed
 };
@@ -291,16 +292,16 @@ function renderSide() {
 
   const teachLabel = state.chapters.includes(n.id) ? 'Read the chapter' : 'Teach me this';
   const actions = el('div', { class: 'actions' }, [
-    el('button', { class: 'primary', 'data-action': 'teach', onclick: () => startLesson(n.id, 'teach'), text: teachLabel }),
+    el('button', { class: 'primary', 'data-node': n.id, 'data-action': 'teach', onclick: () => startLesson(n.id, 'teach'), text: teachLabel }),
   ]);
   if (canWriteChapter(state.generated, state.chapters, n.id)) {
-    actions.append(el('button', { 'data-action': 'write', onclick: () => writeChapter(n.id), text: 'Write chapter' }));
+    actions.append(el('button', { 'data-node': n.id, 'data-action': 'write', onclick: () => writeChapter(n.id), text: 'Write chapter' }));
   }
   if (status === 'shaky' || status === 'solid') {
-    actions.append(el('button', { 'data-action': 'practice', onclick: () => startLesson(n.id, 'practice'), text: 'Practice' }));
+    actions.append(el('button', { 'data-node': n.id, 'data-action': 'practice', onclick: () => startLesson(n.id, 'practice'), text: 'Practice' }));
   }
   if (status === 'untested') {
-    actions.append(el('button', { 'data-action': 'probe', onclick: () => startLesson(n.id, 'probe'), text: 'Quick check' }));
+    actions.append(el('button', { 'data-node': n.id, 'data-action': 'probe', onclick: () => startLesson(n.id, 'probe'), text: 'Quick check' }));
   }
   const hint = status === 'untested'
     ? el('p', { class: 'muted small', text: `${teachLabel} teaches the topic. Quick check measures what you already know without teaching: a few questions, and it updates the map.` })
@@ -316,6 +317,7 @@ function renderSide() {
     ...(hint ? [hint] : []),
     more,
   );
+  applyBusyLocks(); // a node selected mid-call must not offer live AI buttons
 }
 
 function nextLesson() {
@@ -355,6 +357,13 @@ function refreshToolbar() {
 
 let busyTimer = null;
 
+// DOM wiring (verified in the browser): lock state is per button, from its own node's chapter.
+function applyBusyLocks() {
+  document.querySelectorAll('button[data-action]').forEach((b) => {
+    b.disabled = state.busy && lockWhileBusy(b.dataset.action, state.chapters.includes(b.dataset.node));
+  });
+}
+
 // Locks only the buttons that would start another AI call; reading, search and navigation stay live.
 // `lockSide` also locks the Sources panel while an import runs.
 function setBusy(on, text, lockSide = false) {
@@ -366,8 +375,8 @@ function setBusy(on, text, lockSide = false) {
     tick();
     busyTimer = setInterval(tick, 1000);
   }
-  const hasChapter = state.chapters.includes(state.selected);
-  document.querySelectorAll('button[data-action]').forEach((b) => { b.disabled = on && lockWhileBusy(b.dataset.action, hasChapter); });
+  state.busy = on;
+  applyBusyLocks();
   if (lockSide || !on) document.querySelectorAll('#side button, #side input').forEach((b) => { b.disabled = on && lockSide; });
   if (!on) refreshToolbar();
 }
