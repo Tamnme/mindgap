@@ -1,7 +1,7 @@
 // Map home: renders learner/map.json as an SVG graph and drives lesson starts.
 // All map text comes from model-written files, so it is only ever set via textContent.
 
-import { visibleNodes, offGoalCount, isOffGoal, pickNext, dataUrlToBase64, sourceErrorMessage, canWriteChapter } from './map-logic.js';
+import { visibleNodes, offGoalCount, isOffGoal, pickNext, dataUrlToBase64, sourceErrorMessage, canWriteChapter, nodeMatches, legendVisible, practiceShakyLabel, lockWhileBusy } from './map-logic.js';
 
 const STATUSES = ['untested', 'gap', 'shaky', 'solid'];
 // Roadmap layout: one yellow topic per layer on a curved spine, its nodes in a column on each side.
@@ -28,6 +28,7 @@ const state = {
   chapters: [],
   generated: false,   // generated courses may write chapters and grow their map
   showOff: false,     // draw off-goal nodes (faded)
+  query: '',          // node search text; non-matching nodes are dimmed
 };
 
 const $ = (id) => document.getElementById(id);
@@ -146,6 +147,7 @@ function renderMap() {
   const svg = $('map');
   svg.replaceChildren();
   $('map-empty').classList.toggle('hidden', state.nodes.length > 0);
+  $('map-legend').classList.toggle('hidden', !legendVisible(state.nodes.length));
   svg.classList.toggle('hidden', state.nodes.length === 0);
   if (!state.nodes.length) return;
   const { topics, pos, width, height } = layoutFor(visibleNodes(state.nodes, state.showOff));
@@ -155,10 +157,13 @@ function renderMap() {
   svg.removeAttribute('height');
   svg.style.minWidth = `${Math.round(width * 0.8)}px`;
 
+  // Spine and dotted links are decoration: hidden from assistive tech.
+  const deco = svgEl('g', { 'aria-hidden': 'true' });
+  svg.append(deco);
   // Spine: topic to topic.
   topics.slice(1).forEach((t, i) => {
     const prev = topics[i];
-    svg.append(svgEl('path', { class: 'spine', d: curve(prev.cx, prev.y + TOPIC_H, t.cx, t.y, true) }));
+    deco.append(svgEl('path', { class: 'spine', d: curve(prev.cx, prev.y + TOPIC_H, t.cx, t.y, true) }));
   });
   // Dotted links: topic edge to each of its nodes.
   for (const n of state.nodes) {
@@ -167,7 +172,7 @@ function renderMap() {
     const t = p.topic;
     const fromX = p.side === 'left' ? t.x : t.x + TOPIC_W;
     const toX = p.side === 'left' ? p.x + BOX_W : p.x;
-    svg.append(svgEl('path', { class: 'link', d: curve(fromX, t.y + TOPIC_H / 2, toX, p.y + BOX_H / 2) }));
+    deco.append(svgEl('path', { class: 'link', d: curve(fromX, t.y + TOPIC_H / 2, toX, p.y + BOX_H / 2) }));
   }
 
   // Selected node: dashed curves to its prereqs and dependants (instead of drawing every edge).
@@ -182,12 +187,17 @@ function renderMap() {
       related.add(id);
       const ax = a.side === 'left' ? a.x + BOX_W : a.x;
       const bx = b.side === 'left' ? b.x + BOX_W : b.x;
-      svg.append(svgEl('path', { class: 'rel-edge', d: curve(ax, a.y + BOX_H / 2, bx, b.y + BOX_H / 2) }));
+      deco.append(svgEl('path', { class: 'rel-edge', d: curve(ax, a.y + BOX_H / 2, bx, b.y + BOX_H / 2) }));
     }
   }
 
+  // One labelled group per layer; its topic header is decoration (the group name says the same).
+  const groups = new Map();
   for (const t of topics) {
-    const g = svgEl('g', { class: 'topic' });
+    const grp = svgEl('g', { role: 'group', 'aria-label': state.layerNames[t.layer] || t.layer });
+    groups.set(t.layer, grp);
+    svg.append(grp);
+    const g = svgEl('g', { class: 'topic', 'aria-hidden': 'true' });
     g.append(svgEl('rect', { x: t.x, y: t.y, width: TOPIC_W, height: TOPIC_H, rx: 6 }));
     const label = svgEl('text', { x: t.cx, y: t.y + TOPIC_H / 2 + 5, 'text-anchor': 'middle' });
     label.textContent = state.layerNames[t.layer] || t.layer;
@@ -195,7 +205,7 @@ function renderMap() {
     const count = svgEl('text', { class: 'count', x: t.x + TOPIC_W - 8, y: t.y + 14, 'text-anchor': 'end' });
     count.textContent = `${solid}/${t.nodes.length}`;
     g.append(label, count);
-    svg.append(g);
+    grp.append(g);
   }
 
   for (const n of state.nodes) {
@@ -207,6 +217,7 @@ function renderMap() {
     if (related.has(n.id)) cls.push('related');
     if (state.chapters.includes(n.id)) cls.push('has-chapter');
     if (isOffGoal(n)) cls.push('off-goal');
+    if (!nodeMatches(n, state.query)) cls.push('dim');
     const g = svgEl('g', {
       class: cls.join(' '),
       role: 'button',
@@ -224,14 +235,6 @@ function renderMap() {
       t.textContent = line;
       g.append(t);
     });
-    if (state.chapters.includes(n.id)) {
-      // Tag on the top edge = a written chapter exists.
-      const tx = p.x + BOX_W / 2;
-      g.append(svgEl('rect', { class: 'ch-tag', x: tx - 30, y: p.y - 8, width: 60, height: 15, rx: 7.5 }));
-      const tt = svgEl('text', { class: 'ch-tag-txt', x: tx, y: p.y + 3, 'text-anchor': 'middle' });
-      tt.textContent = 'CHAPTER';
-      g.append(tt);
-    }
     if (BADGE[status]) {
       // Badge on the outer edge, like roadmap.sh's check marks.
       const bx = p.side === 'left' ? p.x : p.x + BOX_W;
@@ -244,14 +247,21 @@ function renderMap() {
     g.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(n.id); }
     });
-    svg.append(g);
+    groups.get(p.topic.layer).append(g);
   }
 }
+
+const focusNode = (id) => $('map').querySelector(`[data-id="${CSS.escape(id)}"]`)?.focus({ preventScroll: true });
 
 function select(id) {
   state.selected = id;
   renderMap();
   renderSide();
+  focusNode(id); // renderMap rebuilt the nodes; keep keyboard focus where it was
+  // Narrow screens stack the panel under the map: bring it into view.
+  if (!matchMedia('(min-width: 900px)').matches) {
+    $('side').scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  }
 }
 
 function renderSide() {
@@ -265,20 +275,18 @@ function renderSide() {
   const status = statusOf(n);
   const sources = (n.sources || []).filter(u => /^https?:\/\//.test(u));
 
-  const dl = el('dl');
-  const field = (label, value) => {
-    if (!value) return;
-    dl.append(el('dt', { text: label }), el('dd', { text: value }));
-  };
+  // Evidence-style blocks are collapsed by default: the actions come first.
+  const more = el('div', { class: 'side-more' });
+  const block = (label, body) => more.append(el('details', {}, [el('summary', { text: label }), body]));
+  const field = (label, value) => { if (value) block(label, el('p', { text: value })); };
   field('Evidence', n.evidence);
   field('The truth to lock in', n.truth);
   for (const l of n.links || []) field(l.label, l.text);
   field('Lab', n.lab);
   if (sources.length) {
-    const ul = el('ul', {}, sources.map(u => el('li', {}, [
+    block('Sources', el('ul', {}, sources.map(u => el('li', {}, [
       el('a', { href: u, target: '_blank', rel: 'noopener noreferrer', text: u }),
-    ])));
-    dl.append(el('dt', { text: 'Sources' }), el('dd', {}, [ul]));
+    ]))));
   }
 
   const teachLabel = state.chapters.includes(n.id) ? 'Read the chapter' : 'Teach me this';
@@ -302,12 +310,11 @@ function renderSide() {
     el('h2', { text: n.title || n.id }),
     el('div', {}, [
       el('span', { class: `chip ${status}`, text: status }),
-      el('span', { class: 'chip', text: n.layer || '' }),
-      el('span', { class: 'chip', text: n.id }),
+      el('span', { class: 'chip', text: state.layerNames[n.layer] || n.layer || '' }),
     ]),
-    dl,
     actions,
     ...(hint ? [hint] : []),
+    more,
   );
 }
 
@@ -324,8 +331,10 @@ function refreshToolbar() {
 
   const shaky = state.topo.filter(n => !isOffGoal(n) && statusOf(n) === 'shaky');
   const btnPractice = $('btn-practice');
-  btnPractice.textContent = `Practice shaky (${shaky.length})`;
+  btnPractice.textContent = practiceShakyLabel(shaky.length);
+  btnPractice.classList.toggle('hidden', shaky.length === 0);
   btnPractice.disabled = shaky.length === 0;
+  // With several shaky nodes this starts the first in learning order; the others are one click away on the map.
   btnPractice.onclick = () => shaky.length && startLesson(shaky[0].id, 'practice');
 
   $('btn-goal').disabled = false;
@@ -344,12 +353,22 @@ function refreshToolbar() {
   $('btn-sources').onclick = openSources;
 }
 
-function setBusy(on, text) {
+let busyTimer = null;
+
+// Locks only the buttons that would start another AI call; reading, search and navigation stay live.
+// `lockSide` also locks the Sources panel while an import runs.
+function setBusy(on, text, lockSide = false) {
   $('busy').classList.toggle('hidden', !on);
-  if (text) $('busy-text').textContent = text;
-  // Side-panel buttons and inputs (Sources panel) are restored here too; toolbar ones by refreshToolbar.
-  document.querySelectorAll('button, #side input').forEach(b => { b.disabled = on; });
-  $('show-off').disabled = on;
+  clearInterval(busyTimer);
+  if (on) {
+    const t0 = Date.now();
+    const tick = () => { $('busy-text').textContent = `${text} (${Math.round((Date.now() - t0) / 1000)}s)`; };
+    tick();
+    busyTimer = setInterval(tick, 1000);
+  }
+  const hasChapter = state.chapters.includes(state.selected);
+  document.querySelectorAll('button[data-action]').forEach((b) => { b.disabled = on && lockWhileBusy(b.dataset.action, hasChapter); });
+  if (lockSide || !on) document.querySelectorAll('#side button, #side input').forEach((b) => { b.disabled = on && lockSide; });
   if (!on) refreshToolbar();
 }
 
@@ -424,7 +443,7 @@ function renderSources(list) {
   const add = el('button', { text: 'Add' });
   const importSource = async (body) => {
     showError('');
-    setBusy(true, 'Importing source… this can take a minute.');
+    setBusy(true, 'Importing source… this can take a minute.', true);
     let ok = false;
     try {
       await sourcesRequest('', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
@@ -514,6 +533,15 @@ async function load() {
       if (!state.showOff && isOffGoal(state.byId.get(state.selected) || {})) state.selected = null;
       renderMap();
       renderSide();
+    });
+    $('node-search').addEventListener('input', (e) => {
+      state.query = e.target.value;
+      renderMap();
+    });
+    $('node-search').addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      const first = state.topo.find((n) => (state.showOff || !isOffGoal(n)) && nodeMatches(n, state.query));
+      if (first) focusNode(first.id);
     });
     renderMap();
     renderSide();

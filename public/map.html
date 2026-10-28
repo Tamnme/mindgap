@@ -7,18 +7,21 @@
   <link rel="stylesheet" href="app.css">
 </head>
 <body>
+  <a class="skip-link" href="#side">Skip to the details panel</a>
   <main style="padding: 16px; max-width: 1400px; margin: 0 auto;">
     <header style="margin-bottom: 12px;">
+      <p class="small" style="margin: 0 0 4px;"><a href="/">← Courses</a></p>
       <h1 id="course-title">mindgap · your map</h1>
       <p class="muted small">New here? Click <strong>New goal</strong> to say what you want to learn; mindgap measures what you know and proposes a plan.</p>
     </header>
 
     <div class="map-toolbar">
-      <button id="btn-next" class="primary" disabled>Next lesson</button>
-      <button id="btn-practice" disabled>Practice shaky (0)</button>
-      <button id="btn-goal">New goal</button>
-      <button id="btn-debug" disabled>Debug drill</button>
+      <button id="btn-next" class="primary" data-action="next" disabled>Next lesson</button>
+      <button id="btn-practice" data-action="practice" class="hidden" disabled>Practice shaky</button>
+      <button id="btn-goal" data-action="goal">New goal</button>
+      <button id="btn-debug" data-action="debug" disabled>Debug drill</button>
       <button id="btn-sources">Sources</button>
+      <input type="search" id="node-search" class="map-search" placeholder="Find a topic…" aria-label="Find a topic" autocomplete="off">
       <label id="off-goal-row" class="small muted hidden"><input type="checkbox" id="show-off"> <span id="show-off-text"></span></label>
       <span id="busy" class="small muted hidden"><span class="spinner"></span><span id="busy-text">Starting lesson… this can take up to a minute.</span></span>
     </div>
@@ -28,12 +31,18 @@
       <section class="panel">
         <div class="map-scroll">
           <p id="map-empty" class="notice hidden">This course has no map yet. Add sources if you have any, then click <strong>New goal</strong> to draw it.</p>
-          <svg id="map" class="map-svg" role="img" aria-label="Knowledge map"></svg>
+          <svg id="map" class="map-svg" aria-label="Knowledge map"></svg>
         </div>
-        <div class="map-legend"><b style="color:#2f9e44">✓</b> solid · <b style="color:#f08c00">~</b> shaky · <b style="color:#e03131">!</b> gap · no badge = not tested yet · CHAPTER tag = written chapter ready · select a node to see what it builds on</div>
+        <p id="map-legend" class="map-legend" aria-label="Key">
+          <span><i class="dot solid" aria-hidden="true">✓</i> solid</span>
+          <span><i class="dot shaky" aria-hidden="true">~</i> shaky</span>
+          <span><i class="dot gap" aria-hidden="true">!</i> gap</span>
+          <span><i class="dot none" aria-hidden="true"></i> not tested yet</span>
+          <span>Select a node to see what it builds on.</span>
+        </p>
       </section>
 
-      <aside id="side" class="panel side" aria-live="polite">
+      <aside id="side" class="panel side" tabindex="-1" aria-label="Topic details" aria-live="polite">
         <p class="muted">Select a node to see its evidence and lesson options.</p>
       </aside>
     </div>
