@@ -58,3 +58,17 @@ test('canWriteChapter: generated courses only, and only without a chapter', asyn
   assert.equal(canWriteChapter(false, [], 'a'), false);
   assert.equal(canWriteChapter(undefined, [], 'a'), false);
 });
+
+test('replyQuestion: a pending plan turn still gets a reply box', async () => {
+  const { replyQuestion } = await import('../public/map-logic.js');
+  const q = { kind: 'choice', prompt: 'p', options: ['a'], wants_confidence: true };
+  assert.equal(replyQuestion({ question: q }), q);
+  const plan = { approach: 'x', in_scope: [] };
+  const r = replyQuestion({ plan, question: null });
+  assert.equal(r.kind, 'free');
+  assert.deepEqual(r.options, []);
+  assert.equal(r.wants_confidence, false);
+  assert.equal(replyQuestion({ say: 'go', question: null }), null);
+  assert.equal(replyQuestion({ plan, approved: true, lesson_done: true }), null);
+  assert.equal(replyQuestion(null), null);
+});
