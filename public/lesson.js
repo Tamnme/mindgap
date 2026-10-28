@@ -436,6 +436,8 @@ async function init() {
   $('ask-cancel').addEventListener('click', () => openAsk(false));
   $('ask-input').addEventListener('input', refreshControls);
   $('ask-box').addEventListener('keydown', (e) => { if (e.key === 'Escape') openAsk(false); });
+  // Fire and forget: the pending turn request comes back as 499 and the normal retry path takes over.
+  $('btn-cancel').addEventListener('click', () => { fetch(`/api/courses/${encodeURIComponent(course)}/cancel`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }).catch(() => {}); });
   $('btn-retry').addEventListener('click', () => { if (S.pending && !S.waiting) dispatch(); });
   $('q-text').addEventListener('input', refreshControls);
 

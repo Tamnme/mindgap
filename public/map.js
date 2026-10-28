@@ -353,6 +353,7 @@ function refreshToolbar() {
   btnDebug.onclick = () => debug && startLesson('debug-method', 'practice');
 
   $('btn-sources').onclick = openSources;
+  $('busy-cancel').onclick = cancelCall;
 }
 
 let busyTimer = null;
@@ -368,6 +369,7 @@ function applyBusyLocks() {
 // `lockSide` also locks the Sources panel while an import runs.
 function setBusy(on, text, lockSide = false) {
   $('busy').classList.toggle('hidden', !on);
+  $('busy-cancel').classList.toggle('hidden', lockSide); // an import is not a tutor call
   clearInterval(busyTimer);
   if (on) {
     const t0 = Date.now();
@@ -380,6 +382,13 @@ function setBusy(on, text, lockSide = false) {
   if (lockSide || !on) document.querySelectorAll('#side button, #side input').forEach((b) => { b.disabled = on && lockSide; });
   if (!on) refreshToolbar();
 }
+
+// The cancel button is outside every [data-action] and #side, so no busy lock reaches it.
+function cancelCall() {
+  fetch(courseApi('/cancel'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }).catch(() => {});
+}
+
+const failText = (what, err) => (err.message === 'cancelled' ? 'Cancelled. Nothing was changed.' : `${what}: ${err.message}`);
 
 function showError(msg) {
   const box = $('error');
@@ -488,7 +497,7 @@ async function writeChapter(nodeId) {
     if (!res.ok) throw new Error(await errorText(res));
     location.href = `chapter.html?course=${encodeURIComponent(state.course)}&node=${encodeURIComponent(nodeId)}`;
   } catch (err) {
-    showError(`Could not write the chapter: ${err.message}`);
+    showError(failText('Could not write the chapter', err));
     setBusy(false);
   }
 }
@@ -511,7 +520,7 @@ async function startLesson(nodeId, mode) {
     const data = await res.json();
     location.href = `lesson.html?course=${encodeURIComponent(state.course)}&id=${encodeURIComponent(data.lesson_id)}`;
   } catch (err) {
-    showError(`Could not start lesson: ${err.message}. Try again.`);
+    showError(failText('Could not start lesson', err) + (err.message === 'cancelled' ? '' : '. Try again.'));
     setBusy(false);
   }
 }

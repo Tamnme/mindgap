@@ -26,7 +26,7 @@ const MAP = {
 
 const CHAPTER = { node: 'switch-mac-table', title: 'Switch chapter' };
 
-// Fake claude: logs argv, returns canned structured_output. control file: ok | slow | error.
+// Fake claude: logs argv, returns canned structured_output. control file: ok | slow | hang | error.
 const FAKE_CLAUDE = `
 import { appendFileSync, readFileSync, existsSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
@@ -55,7 +55,7 @@ if (message.startsWith('CONTEXT:') && message.includes('"mode": "write"')) {
 const reply = control === 'error'
   ? { type: 'result', is_error: true, result: 'rate limited boom', session_id: 'sess-err' }
   : { type: 'result', is_error: false, session_id: 'sess-abc', structured_output: turn, total_cost_usd: 0 };
-setTimeout(() => process.stdout.write(JSON.stringify(reply)), control === 'slow' ? 800 : 0);
+setTimeout(() => process.stdout.write(JSON.stringify(reply)), control === 'hang' ? 60000 : control === 'slow' ? 800 : 0);
 `;
 
 // Fake docker: logs argv to docker-calls.jsonl, keeps image and container state in docker-state.json.
@@ -1349,4 +1349,56 @@ test('instruments: a generated course (lab null) never returns a sim or lab; a s
   assert.deepEqual(net.json.turn.sim, instruments.sim);
   assert.deepEqual(net.json.turn.lab, instruments.lab);
   await rm(path.join(dir, 'turn.json'), { force: true });
+});
+
+// --- cancel a running AI call ---
+async function waitForCalls(n) {
+  for (let i = 0; i < 100; i++) {
+    if ((await readCalls()).length >= n) return;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  throw new Error('fake tutor never started');
+}
+
+test('cancel during a turn: 200 cancelled, the turn fails as cancelled, lesson log unchanged, next turn works', async () => {
+  const before = (await call('GET', `/api/lesson/${lessonId}?course=net`)).json.events;
+  const n = (await readCalls()).length;
+  await setControl('hang');
+  const turnReq = call('POST', '/api/turn', { course: 'net', lesson_id: lessonId, event: { type: 'lost', text: 'cancel me' } });
+  await waitForCalls(n + 1);
+  const c = await call('POST', '/api/courses/net/cancel', {});
+  await setControl('ok');
+  assert.equal(c.status, 200, c.text);
+  assert.deepEqual(c.json, { cancelled: true });
+  const t = await turnReq;
+  assert.equal(t.status, 499, t.text);
+  assert.equal(t.json.cancelled, true);
+  const after = (await call('GET', `/api/lesson/${lessonId}?course=net`)).json.events;
+  assert.deepEqual(after, before);
+  const again = await call('POST', '/api/turn', { course: 'net', lesson_id: lessonId, event: { type: 'lost', text: 'cancel me' } });
+  assert.equal(again.status, 200, again.text);
+});
+
+test('cancel during a chapter write: no chapter file, index unchanged, the write can be retried', async () => {
+  const { slug, cdir } = await writableCourse('Write Cancel');
+  const n = (await readCalls()).length;
+  await setControl('hang');
+  const w = call('POST', `/api/courses/${slug}/chapters/alpha/write`, {});
+  await waitForCalls(n + 1);
+  const c = await call('POST', `/api/courses/${slug}/cancel`, {});
+  await setControl('ok');
+  assert.deepEqual(c.json, { cancelled: true });
+  const r = await w;
+  assert.equal(r.status, 499, r.text);
+  assert.equal((await readCalls()).length, n + 1, 'a cancelled write is not retried');
+  assert.deepEqual(await readdir(path.join(cdir, 'chapters')), ['index.json']);
+  assert.deepEqual(JSON.parse(await readFile(path.join(cdir, 'chapters', 'index.json'), 'utf8')), []);
+  assert.equal((await call('POST', `/api/courses/${slug}/chapters/alpha/write`, {})).status, 201);
+});
+
+test('cancel with nothing running is 200 cancelled:false; unknown course is 404', async () => {
+  const r = await call('POST', '/api/courses/net/cancel', {});
+  assert.equal(r.status, 200, r.text);
+  assert.deepEqual(r.json, { cancelled: false });
+  assert.equal((await call('POST', '/api/courses/nope/cancel', {})).status, 404);
 });
