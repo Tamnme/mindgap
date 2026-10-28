@@ -109,7 +109,7 @@ A course whose folder is under `<data>/courses/` is generated (`loadCourse().gen
 Binds 127.0.0.1 only. Unknown or invalid course slugs → 404. A malformed `course.json` → 500 (message logged).
 | Method | Path | Body → Response |
 |---|---|---|
-| GET | `/api/courses` | → `[{slug, title}]` |
+| GET | `/api/courses` | → `[{slug, title, solid, total, lastLesson}]`. `solid`/`total` count the course's map nodes (state `map.json`, else `map.seed.json`; the same counts as the map page). `lastLesson` is `{id, nodeId, title, mode}` for the most recently started lesson that has a node (`title` is the node's), else `null`. Missing or unreadable state gives `0`, `0`, `null`; the list never fails on it. |
 | POST | `/api/courses` | `{title, background?}` → 201 `{slug}`. `title` 1-80 chars after trimming, `background` text up to 2000 chars (blank = none), else 400. Creates a generated course in `<data>/courses/<slug>/`: `course.json` `{slug, title, layers: [], lab: null}`, `map.seed.json` `{nodes: []}`, `chapters/index.json` `[]`, and `state/goal.json` `{goal: null, background}` only when a background is given. Slug = lowercase title with runs of non-`[a-z0-9]` as `-`, max 48 chars (`course` if empty); `-2`, `-3`, ... if a shipped or data course already has it. |
 | GET | `/api/courses/:slug` | → `{...course.json, chapters: string[], lab, generated: boolean}` (`chapters` = `chapters/index.json`, `[]` if absent; `lab` = `{available, reason?, request:{caps, network}, approved}`, `reason` set when Docker is unavailable) |
 | GET | `/api/courses/:slug/map` | → state map.json (seeded on first access) |

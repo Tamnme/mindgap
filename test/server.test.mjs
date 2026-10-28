@@ -256,7 +256,7 @@ after(async () => {
 test('GET /api/courses lists the course', async () => {
   const r = await call('GET', '/api/courses');
   assert.equal(r.status, 200, r.text);
-  assert.deepEqual(r.json, [{ slug: 'net', title: 'Net' }]);
+  assert.deepEqual(r.json, [{ slug: 'net', title: 'Net', solid: 0, total: 3, lastLesson: null }]);
 });
 
 test('GET /api/courses/net returns course.json plus its chapter index', async () => {

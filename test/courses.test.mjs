@@ -41,7 +41,25 @@ after(async () => {
 });
 
 test('listCourses returns shipped courses with slug and title', async () => {
-  assert.deepEqual(await listCourses(opts), [{ slug: 'alpha', title: 'Alpha' }]);
+  assert.deepEqual(await listCourses(opts), [{ slug: 'alpha', title: 'Alpha', solid: 0, total: 0, lastLesson: null }]);
+});
+
+test('listCourses reports solid/total from state map and the latest node lesson', async () => {
+  const o = await fixture({
+    'courses/a/course.json': course('a', 'A'),
+    'courses/a/map.seed.json': JSON.stringify({ nodes: [{ id: 'x', title: 'X', status: 'untested' }, { id: 'y', title: 'Y' }] }),
+    'courses/b/course.json': course('b', 'B'),
+    'courses/b/map.seed.json': JSON.stringify({ nodes: [{ id: 'x', title: 'X' }] }),
+    'data/courses/a/state/map.json': JSON.stringify({ nodes: [{ id: 'x', title: 'X', status: 'solid' }, { id: 'y', title: 'Y', status: 'shaky' }, { id: 'z', title: 'Z', status: 'solid' }] }),
+    'data/courses/a/state/sessions/course-300.meta.json': JSON.stringify({ node_id: null, mode: 'course', started: '2026-01-03T00:00:00Z' }),
+    'data/courses/a/state/sessions/x-100.meta.json': JSON.stringify({ node_id: 'x', mode: 'teach', started: '2026-01-01T00:00:00Z' }),
+    'data/courses/a/state/sessions/y-200.meta.json': JSON.stringify({ node_id: 'y', mode: 'chapter', started: '2026-01-02T00:00:00Z' }),
+    'data/courses/a/state/sessions/bad.meta.json': '{nope',
+  });
+  const [a, b] = await listCourses(o);
+  assert.deepEqual(a, { slug: 'a', title: 'A', solid: 2, total: 3, lastLesson: { id: 'y-200', nodeId: 'y', title: 'Y', mode: 'chapter' } });
+  // no state yet: total comes from the seed the map would be seeded with
+  assert.deepEqual(b, { slug: 'b', title: 'B', solid: 0, total: 1, lastLesson: null });
 });
 
 test('loadCourse sets stateDir under dataDir/courses/<slug>/state', async () => {
@@ -75,7 +93,7 @@ test('a shipped course wins over a same-slug course in dataDir', async () => {
     'courses/alpha/course.json': course('alpha', 'Alpha'),
     'data/courses/alpha/course.json': course('alpha', 'Alpha Local'),
   });
-  assert.deepEqual(await listCourses(local), [{ slug: 'alpha', title: 'Alpha' }]);
+  assert.deepEqual(await listCourses(local), [{ slug: 'alpha', title: 'Alpha', solid: 0, total: 0, lastLesson: null }]);
   assert.equal((await loadCourse(local, 'alpha')).title, 'Alpha');
 });
 
@@ -85,8 +103,8 @@ test('a dataDir-only course is listed after shipped ones and loads from dataDir'
     'data/courses/beta/course.json': course('beta', 'Beta'),
   });
   assert.deepEqual(await listCourses(local), [
-    { slug: 'alpha', title: 'Alpha' },
-    { slug: 'beta', title: 'Beta' },
+    { slug: 'alpha', title: 'Alpha', solid: 0, total: 0, lastLesson: null },
+    { slug: 'beta', title: 'Beta', solid: 0, total: 0, lastLesson: null },
   ]);
   const beta = await loadCourse(local, 'beta');
   assert.equal(beta.title, 'Beta');
@@ -104,7 +122,7 @@ test('a malformed shipped course still owns its slug over a dataDir course', asy
     assert.ok(err.message.includes('course.json'));
     return true;
   });
-  assert.deepEqual(await listCourses(local), [{ slug: 'alpha', title: 'Alpha' }]);
+  assert.deepEqual(await listCourses(local), [{ slug: 'alpha', title: 'Alpha', solid: 0, total: 0, lastLesson: null }]);
 });
 
 test('loadCourse.generated is true only for courses under <data>/courses', async () => {
