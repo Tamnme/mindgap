@@ -23,18 +23,19 @@
 
     <div class="wb-layout">
       <section class="panel" aria-label="Tutor">
-        <div class="label muted small">Tutor</div>
         <div id="thread" class="thread" aria-live="polite"></div>
 
         <div id="question" class="question hidden">
-          <p id="q-prompt"></p>
-          <div id="q-options"></div>
+          <div id="q-prompt" class="q-prompt"></div>
+          <fieldset id="q-options" class="q-options" aria-labelledby="q-prompt"></fieldset>
           <div id="q-free" class="hidden">
             <textarea id="q-text" placeholder="Your answer"></textarea>
           </div>
-          <div id="q-confidence" class="conf hidden">
+          <div id="q-confidence" class="conf hidden" role="group" aria-label="Confidence, 1 guessing to 5 certain">
             <span>Confidence</span>
-            <span id="conf-buttons"></span>
+            <span class="conf-end">1 guessing</span>
+            <span id="conf-buttons" class="conf-buttons"></span>
+            <span class="conf-end">5 certain</span>
           </div>
           <textarea id="reasoning" placeholder="Think out loud: why do you think that?" style="margin-top:6px"></textarea>
         </div>
@@ -43,8 +44,16 @@
           <button id="btn-submit" class="primary" disabled>Submit</button>
           <button id="btn-lost">I'm lost</button>
           <button id="btn-ask">Ask something else</button>
-          <span id="waiting" class="small muted hidden"><span class="spinner"></span>Tutor is thinking…</span>
+          <span id="waiting" class="small muted hidden"><span class="spinner"></span>Tutor is thinking… <span id="elapsed"></span></span>
         </div>
+        <form id="ask-box" class="ask-box hidden">
+          <label for="ask-input" class="small muted">What would you like to ask the tutor?</label>
+          <div class="ask-row">
+            <input id="ask-input" type="text" autocomplete="off">
+            <button id="ask-send" class="primary" type="submit" disabled>Ask</button>
+            <button id="ask-cancel" type="button">Cancel</button>
+          </div>
+        </form>
         <div id="turn-error" class="notice error hidden" role="alert">
           <span id="turn-error-text"></span>
           <button id="btn-retry">Retry</button>

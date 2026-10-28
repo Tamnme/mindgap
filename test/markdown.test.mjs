@@ -74,3 +74,14 @@ test('callout, table, heading and numbered list render; contents stay escaped', 
   assert.match(html, /<li>one<\/li><li>two<\/li>/);
   assert.doesNotMatch(html, /\[!IMPORTANT\]/);
 });
+
+test('numbered lines render as an ordered list, not bullets', () => {
+  assert.equal(renderMarkdown('Two parts:\n1. a\n2) **b**'), '<p>Two parts:</p>\n<ol><li>a</li><li><strong>b</strong></li></ol>');
+  assert.equal(renderMarkdown('- a\n1. b'), '<ul><li>a</li></ul>\n<ol><li>b</li></ol>');
+});
+
+test('a prompt cannot inject HTML', () => {
+  const out = renderMarkdown('1. <img src=x onerror=alert(1)>\n2. [x](javascript:alert(1))');
+  assert.ok(!out.includes('<img'));
+  assert.ok(!out.includes('href="javascript'));
+});
