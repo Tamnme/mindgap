@@ -154,7 +154,7 @@ function updateMap(c, fn) {
   const prev = mapChains.get(c.slug) ?? Promise.resolve();
   const next = prev.then(async () => {
     const map = await loadMap(c);
-    const after = fn(map);
+    const after = await fn(map);
     await writeAtomic(mapPath(c), JSON.stringify(map, null, 2) + '\n');
     // fn may return an async follow-up that must run after the map write, still inside the chain.
     if (typeof after === 'function') await after();
@@ -345,10 +345,13 @@ async function advance(c, id, meta, message, record, labsTotal, event = null) {
   // course.json leaves nodes on an unknown layer, which map.js tolerates. Journal them if that ever matters.
   // Acceptance is decided on the fresh map inside the chain: the plan was checked when presented, but another
   // session may have grown the map since. A refusal keeps node_updates and the turn's evidence, not plan/layers/goal.
-  await updateMap(c, (map) => {
+  await updateMap(c, async (map) => {
     applyNodeUpdates(map, turn.node_updates ?? []);
     if (!accepted) return;
-    const stale = checkPlan(map, meta.pending_plan, ids, course);
+    // Layers are read fresh too (before any write): another session may have added one since the request began.
+    const cjPath = path.join(c.dir, 'course.json');
+    const cj = JSON.parse(await readFile(cjPath, 'utf8'));
+    const stale = checkPlan(map, meta.pending_plan, ids, { ...course, layers: (cj.layers ?? []).map((l) => l.id) });
     if (stale) {
       accepted = false;
       turn.approved = false;
@@ -361,8 +364,6 @@ async function advance(c, id, meta, message, record, labsTotal, event = null) {
     return async () => {
       // New layers extend the course's own course.json (read fresh, every other key kept, deduped by id).
       if (new_layers?.length) {
-        const cjPath = path.join(c.dir, 'course.json');
-        const cj = JSON.parse(await readFile(cjPath, 'utf8'));
         cj.layers ??= [];
         for (const { id: lid, name } of new_layers) if (!cj.layers.some((l) => l.id === lid)) cj.layers.push({ id: lid, name });
         await writeAtomic(cjPath, JSON.stringify(cj, null, 2) + '\n');

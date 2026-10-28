@@ -1360,6 +1360,41 @@ test('two-tab approval race: concurrent approvals of the same plan apply it once
   await rm(path.join(dir, 'turn.json'), { force: true });
 });
 
+test('two-tab approval race on a shared new layer: distinct nodes, one approval; the loser is refused', async () => {
+  const slug = (await call('POST', '/api/courses', { title: 'Race Layer' })).json.slug;
+  const cdir = path.join(dataDir, 'courses', slug);
+  const plans = ['y', 'z'].map((n) => ({ approach: n, in_scope: [n], new_layers: [{ id: 'basics', name: 'Basics' }], new_nodes: [NODE(n)] }));
+  let k = 0;
+  const open = async () => {
+    const plan = plans[k++];
+    await setTurn({ goal: GOAL, assessment: ASSESSMENT });
+    const id = (await call('POST', '/api/lesson', { course: slug, mode: 'course' })).json.lesson_id;
+    const say = () => call('POST', '/api/turn', { course: slug, lesson_id: id, event: { type: 'ask', text: 'ok' } });
+    await setTurn({ plan });
+    assert.ok((await say()).json.turn.plan, 'plan presented');
+    return say;
+  };
+  const A = await open();
+  const B = await open();
+  await setTurn({ approved: true, lesson_done: true });
+  await setControl('slow'); // both tutor replies land together, before either approval is written
+  const [ra, rb] = await Promise.all([A(), B()]);
+  await setControl('ok');
+  const approved = [ra, rb].filter((r) => r.json.turn.approved);
+  const refused = [ra, rb].filter((r) => !r.json.turn.approved);
+  assert.equal(approved.length, 1);
+  assert.equal(refused.length, 1);
+  assert.equal(refused[0].json.turn.lesson_done, false);
+  const map = (await call('GET', `/api/courses/${slug}/map`)).json;
+  assert.equal(map.nodes.filter((n) => n.id === 'y' || n.id === 'z').length, 1);
+  const layers = JSON.parse(await readFile(path.join(cdir, 'course.json'), 'utf8')).layers.map((l) => l.id);
+  assert.deepEqual(layers, ['basics']);
+  await setTurn({});
+  await (ra === refused[0] ? A : B)();
+  assert.match((await lastMessage()).split('EVENT:')[0], /approval refused: the plan no longer fits the map/);
+  await rm(path.join(dir, 'turn.json'), { force: true });
+});
+
 test('instruments: a generated course (lab null) never returns a sim or lab; a shipped course with a lab keeps both', async () => {
   const slug = (await call('POST', '/api/courses', { title: 'No Instruments' })).json.slug;
   const cdir = path.join(dataDir, 'courses', slug);
