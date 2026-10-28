@@ -2,7 +2,7 @@
 // Model text is rendered with renderMarkdown (escapes first); everything else uses textContent.
 
 import { renderMarkdown } from './md.js';
-import { planNodes } from './map-logic.js';
+import { planNodes, replyQuestion } from './map-logic.js';
 import { createLabCard, fillLabCard, runLabCommand, setLabBusy } from './labcard.js';
 
 const $ = (id) => document.getElementById(id);
@@ -262,7 +262,7 @@ function applyNodeUpdates(turn) {
 function applyTurn(turn) {
   S.turn = turn;
   applyNodeUpdates(turn);
-  renderQuestion(turn.question || null);
+  renderQuestion(replyQuestion(turn));
   if (S.meta) {
     for (const u of turn.node_updates || []) {
       if (u.id === S.meta.node_id) setStatusChip(u.status);
@@ -275,7 +275,7 @@ function applyTurn(turn) {
 
 function refreshControls() {
   const locked = S.waiting || S.done;
-  const q = S.turn?.question || null;
+  const q = replyQuestion(S.turn);
   let hasAnswer = false;
   if (q && isChoice(q)) hasAnswer = S.selectedChoice != null;
   else if (q) hasAnswer = $('q-text').value.trim() !== '';
@@ -326,7 +326,7 @@ function send(event, summary) {
 }
 
 function onSubmit() {
-  const q = S.turn?.question;
+  const q = replyQuestion(S.turn);
   if (!q) return;
   const reasoning = $('reasoning').value.trim();
   const event = { type: 'answer' };

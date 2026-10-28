@@ -26,6 +26,16 @@ export function planNodes(plan, nodes) {
   return { nodes: order, rest: nodes.length - order.length };
 }
 
+// The question the learner answers this turn. A presented plan carries `question: null` by contract,
+// but the learner still has to reply to it, so a pending plan gets a free-text box.
+export function replyQuestion(turn) {
+  if (turn?.question) return turn.question;
+  if (turn?.plan && !turn.approved && !turn.lesson_done) {
+    return { kind: 'free', prompt: 'Reply to the plan: say go, or ask for changes.', options: [], wants_confidence: false };
+  }
+  return null;
+}
+
 // Next node to teach: in-scope, gap/untested, every prereq solid/shaky (unknown or off-goal prereqs count as met).
 // Falls back to the first in-scope gap. `topo` is in learning order; `status` maps a node to its status.
 export function pickNext(topo, byId, status) {
