@@ -250,8 +250,11 @@ pre code { background: none; padding: 0; color: inherit; }
 .bubble ul, .bubble ol { margin: 4px 0; padding-left: 20px; }
 .bubble ol:last-child { margin-bottom: 0; }
 
-.question { margin-top: 12px; }
-.q-prompt { font-weight: 500; margin-bottom: 10px; }
+.question { margin-top: 12px; max-width: 72ch; }
+.q-prompt { margin-bottom: 12px; }
+/* The last block is usually the ask itself (a sentence or the numbered sub-questions). */
+.q-prompt > :last-child { font-weight: 600; }
+.q-prompt > :last-child:not(:first-child) { margin-top: 12px; }
 .q-prompt p { margin: 0 0 6px; }
 .q-prompt p:last-child, .q-prompt ol:last-child, .q-prompt ul:last-child { margin-bottom: 0; }
 .q-prompt ol, .q-prompt ul, .cp-q ol, .cp-q ul { margin: 4px 0 6px; padding-left: 22px; }
@@ -264,15 +267,26 @@ pre code { background: none; padding: 0; color: inherit; }
 .ask-row { display: flex; flex-wrap: wrap; gap: 8px; }
 .ask-row input { flex: 1 1 220px; min-width: 0; }
 .question label.opt {
-  display: block;
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
   border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 5px 8px;
-  margin: 4px 0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 6px 0;
   cursor: pointer;
   overflow-wrap: anywhere;
 }
-.question label.opt input { margin-right: 6px; }
+.question label.opt input { margin: 0; accent-color: var(--accent); flex: none; }
+.question label.opt:hover { border-color: var(--muted); }
+.question label.opt:has(input:checked) { border-color: var(--accent); background: var(--tutor-bg); }
+/* Submitted: keep the answer legible; only the unchosen options recede. */
+.question.submitted label.opt { cursor: default; }
+.question.submitted label.opt:not(:has(input:checked)) { opacity: .55; }
+.question.submitted label.opt:hover:not(:has(input:checked)) { border-color: var(--border); }
+.question.submitted textarea:disabled { background: transparent; color: var(--fg); border-style: solid; cursor: default; }
+.question.submitted .conf button:disabled { background: transparent; color: var(--muted); border-style: solid; cursor: default; }
+.question.submitted .conf button.on:disabled { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .conf { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin: 8px 0; font-size: 12px; }
 .conf button { width: 32px; padding: 4px 0; text-align: center; }
 .conf button.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }

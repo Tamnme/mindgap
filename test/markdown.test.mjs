@@ -85,3 +85,16 @@ test('a prompt cannot inject HTML', () => {
   assert.ok(!out.includes('<img'));
   assert.ok(!out.includes('href="javascript'));
 });
+
+test('bold wrapping inline code renders as bold with code inside', () => {
+  const html = renderMarkdown('- **OU `Prod`**: detached. Only `s3:*` and `ec2:*` allowed.');
+  assert.ok(html.includes('<strong>OU <code>Prod</code></strong>'), html);
+  assert.ok(html.includes('<code>s3:*</code> and <code>ec2:*</code>'), html);
+  assert.ok(!html.includes('**'), html);
+});
+
+test('a NUL in model text cannot spoof a code placeholder', () => {
+  const html = renderMarkdown('a \u00000\u0000 b `x`');
+  assert.ok(!html.includes('undefined'), html);
+  assert.ok(html.includes('<code>x</code>'), html);
+});

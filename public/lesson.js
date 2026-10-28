@@ -302,6 +302,8 @@ function refreshControls() {
   $('ask-send').disabled = locked || $('ask-input').value.trim() === '';
   document.querySelectorAll('#question input, #question textarea, #question button')
     .forEach((x) => { x.disabled = locked; });
+  // Locked after Submit reads as a record of the answer, not as unavailable controls.
+  $('question').classList.toggle('submitted', locked);
   $('btn-retry').disabled = S.waiting;
 }
 
