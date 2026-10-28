@@ -351,7 +351,9 @@ async function advance(c, id, meta, message, record, labsTotal, event = null) {
     // Layers are read fresh too (before any write): another session may have added one since the request began.
     const cjPath = path.join(c.dir, 'course.json');
     const cj = JSON.parse(await readFile(cjPath, 'utf8'));
-    const stale = checkPlan(map, meta.pending_plan, ids, { ...course, layers: (cj.layers ?? []).map((l) => l.id) });
+    // Source sections are read fresh too: a source deleted since the request began must not leave dangling tags.
+    const freshIds = await sectionIds(sourcesDir(c));
+    const stale = checkPlan(map, meta.pending_plan, freshIds, { ...course, layers: (cj.layers ?? []).map((l) => l.id) });
     if (stale) {
       accepted = false;
       turn.approved = false;
