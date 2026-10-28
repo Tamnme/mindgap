@@ -50,7 +50,7 @@ On first access to a course, the server copies `courses/<slug>/map.seed.json` to
 
 ## Creating a course
 
-Give a title (and optionally some background about you) to start an empty course; it is created in `<data>/courses/<slug>/`. Open it, optionally add sources, and click **New goal**. When you approve the plan, the tutor draws the course's map: its nodes and layers are added to the course. Nothing is written for the shipped networking course's map. Use **Write chapter** on a node to have the tutor write its chapter on demand. Generated courses have no labs or simulators.
+On the course list, fill in **What do you want to learn?** (and optionally some background about you) and click **Create course** to start an empty course; it is created in `<data>/courses/<slug>/`. Open it, optionally add sources, and click **New goal**. When you approve the plan, the tutor draws the course's map: its nodes and layers are added to the course. Nothing is written for the shipped networking course's map. Use **Write chapter** on a node to have the tutor write its chapter on demand. Generated courses have no labs or simulators.
 
 ## Upgrading from netbench/underlay
 
