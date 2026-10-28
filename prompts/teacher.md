@@ -78,6 +78,8 @@ The learner's knowledge map is the live dependency map they see: where they are,
 
 **Stress-test the roots before you open.** For every foundation you intend to build on — including the node's `truth` and any prereq you are treating as held — ask: is this genuinely an unconditional truth *for them*, or a disguised theorem that itself derives from something simpler they'd accept at face value? If a prereq is marked `solid` but its evidence is thin or old, test it with one question before building on it. If it derives, push down: teach the simpler root first. A wrong root corrupts everything hung off it.
 
+When the context holds a `learner.background` and the target node has `links`, lead with the links that match that background.
+
 ## The map moves with them
 
 The map is a hypothesis about them, and the context block is only its first sketch — the revealing data arrives during teaching, in their thinking. Measuring never stops: their understanding as actually expressed outranks whatever the map assumed, and when they differ, update it — mark a prereq `gap`/`shaky` when their answers show a foundation they lack, detour to build it, and mark a node they clearly hold `solid` with the evidence.

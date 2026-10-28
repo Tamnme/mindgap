@@ -733,7 +733,7 @@ test('course schema extends the turn schema: same seven fields, five more requir
   assert.deepEqual(plan.required, ['approach', 'in_scope', 'sources', 'new_layers', 'new_nodes']);
   assert.deepEqual(Object.keys(plan.properties), plan.required);
   assert.deepEqual(plan.properties.new_layers.items.required, ['id', 'name']);
-  assert.deepEqual(plan.properties.new_nodes.items.required, ['id', 'title', 'layer', 'prereqs', 'truth', 'status', 'evidence']);
+  assert.deepEqual(plan.properties.new_nodes.items.required, ['id', 'title', 'layer', 'prereqs', 'truth', 'status', 'evidence', 'links']);
   for (const k of ['new_layers', 'new_nodes']) assert.equal(plan.properties[k].items.additionalProperties, false);
 });
 
@@ -1155,6 +1155,16 @@ test('approval on a generated course adds nodes and the layer, writes no chapter
   assert.deepEqual(map2.nodes[3], { ...NODE('d', ['c']), status: 'gap', evidence: 'confused X with Y' });
   assert.deepEqual(JSON.parse(await readFile(path.join(cdir, 'course.json'), 'utf8')).layers, [{ id: 'basics', name: 'Basics' }]);
   assert.deepEqual(await readdir(path.join(cdir, 'chapters')), ['index.json']);
+});
+
+test('approved drawn plan persists links into state/map.json', async () => {
+  const slug = (await call('POST', '/api/courses', { title: 'Link Me' })).json.slug;
+  const links = [{ label: 'AWS', text: 'like a security group' }];
+  const r = await drawSession(slug, { approach: 'draw', in_scope: ['a', 'b'], new_layers: [{ id: 'basics', name: 'Basics' }], new_nodes: [{ ...NODE('a'), links }, { ...NODE('b', ['a']), links: [] }] });
+  assert.equal(r.approved.json.turn.approved, true, r.approved.text);
+  const map = (await call('GET', `/api/courses/${slug}/map`)).json;
+  assert.deepEqual(map.nodes[0].links, links);
+  assert.ok(!('links' in map.nodes[1]));
 });
 
 test('a shipped course session with new_nodes is refused and its map is untouched', () => withCourseState(async (mapBefore) => {

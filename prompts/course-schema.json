@@ -298,7 +298,8 @@
               "prereqs",
               "truth",
               "status",
-              "evidence"
+              "evidence",
+              "links"
             ],
             "properties": {
               "id": {
@@ -331,6 +332,19 @@
               "evidence": {
                 "type": "string",
                 "description": "one sentence of what the learner said or did that shows the status; empty when untested"
+              },
+              "links": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["label", "text"],
+                  "properties": {
+                    "label": { "type": "string" },
+                    "text": { "type": "string" }
+                  }
+                },
+                "description": "1-3 counterparts from learner.background; [] when no background is on record"
               }
             }
           },
