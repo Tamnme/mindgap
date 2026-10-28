@@ -80,7 +80,7 @@ When the review refuses a field, it becomes a note in `meta.server_notes`. The n
 | `approved` | previous turn presented an accepted plan, this turn carries no plan field (even a refused one), the event it answers is `ask` or `answer` (never the first turn), and a goal is on record |
 | `lesson_done` | only with accepted approval |
 
-Stale approval: before applying an accepted approval, `advance` re-runs `checkPlan` on `meta.pending_plan` against the freshly loaded map. If it fails (another session grew the map meanwhile), nothing is written, the turn is stored and returned with `approved: false, lesson_done: false`, and the next message carries `SERVER:\n- approval refused: the plan no longer fits the map (<problem>); present a fresh plan`.
+Stale approval: acceptance is decided inside the per-course map write chain (`updateMap`), on the freshly read map: `advance` re-runs `checkPlan` on `meta.pending_plan` there, so two sessions approving at once cannot both apply. If it fails (another session grew the map meanwhile), the turn is stored and returned with `approved: false, lesson_done: false`, and the next message carries `SERVER:\n- approval refused: the plan no longer fits the map (<problem>); present a fresh plan`. A refusal still writes the turn's `node_updates` (to the map), propositions, transcript and meta; it writes no plan nodes, no layers and no `goal.json`.
 
 Instruments: in every mode, a course with `lab: null` always gets `turn.lab = null`, and a generated course always gets `turn.sim = null` (sims are networking scenarios).
 
@@ -103,7 +103,7 @@ On accepted approval the server sets `in_scope: false` on every node outside the
 - First message of a lesson = a JSON block containing: the mode, the target node, its prereqs with their statuses, every other node's id/title/status (`in_scope: false` when off-goal), the learner's goal and background (or null), and all propositions for those nodes. Later messages = the learner event as JSON.
 
 ## Generated courses
-A course whose folder is under `<data>/courses/` is generated (`loadCourse().generated`); only those may draw. On approval of a plan, the server (in this order) appends `plan.new_nodes` to `state/map.json` (with the `status` and `evidence` the plan gave them, existing nodes untouched apart from `in_scope` / `source_sections`), appends `plan.new_layers` (`{id, name}` only) to `layers` in `<data>/courses/<slug>/course.json` (other keys kept), then writes `state/goal.json`. No chapter files are written by creating a course or approving a plan. The course CONTEXT carries `course.generated`.
+A course whose folder is under `<data>/courses/` is generated (`loadCourse().generated`); only those may draw. On approval of a plan, the server, inside the map write chain and in this order, re-checks the plan, appends `plan.new_nodes` to `state/map.json` (with the `status` and `evidence` the plan gave them, existing nodes untouched apart from `in_scope` / `source_sections`), then appends `plan.new_layers` (`{id, name}` only, skipping ids already present) to `layers` in `<data>/courses/<slug>/course.json` (other keys kept), then writes `state/goal.json`. No chapter files are written by creating a course or approving a plan. The course CONTEXT carries `course.generated`.
 
 ## HTTP API
 Binds 127.0.0.1 only. Unknown or invalid course slugs → 404. A malformed `course.json` → 500 (message logged).
