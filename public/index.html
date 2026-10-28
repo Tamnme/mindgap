@@ -7,19 +7,24 @@
   <link rel="stylesheet" href="app.css">
 </head>
 <body>
-  <main style="padding: 16px; max-width: 900px; margin: 0 auto;">
-    <header style="margin-bottom: 12px;">
-      <h1>mindgap · courses</h1>
-      <p class="muted small">Pick a course to open its map, or start a new one.</p>
+  <main class="index" id="index">
+    <header>
+      <h1>mindgap</h1>
+      <p class="muted lede" id="lede">Tell it what you want to learn. It probes what you already know, then teaches the gaps.</p>
     </header>
     <div id="error" class="notice error hidden" role="alert"></div>
-    <ul id="courses"></ul>
-    <h2>New course</h2>
-    <form id="new-course">
-      <p><label>Title <input id="title" type="text" name="title" required maxlength="80" style="width: 100%;"></label></p>
-      <p><label>Background <textarea id="background" name="background" maxlength="2000" rows="4" style="width: 100%;" placeholder="What do you already know? Optional."></textarea></label></p>
-      <button type="submit" class="primary" id="create">Create course</button>
-    </form>
+    <ul id="courses" class="course-list"></ul>
+    <section class="new-course" aria-labelledby="new-heading">
+      <h2 id="new-heading" class="new-heading">Start a new course</h2>
+      <form id="new-course">
+        <p><label for="title">What do you want to learn?</label>
+          <input id="title" type="text" name="title" required maxlength="80" placeholder="e.g. Kubernetes networking"></p>
+        <p><label for="background">Background</label>
+          <textarea id="background" name="background" maxlength="2000" rows="4" aria-describedby="bg-help"></textarea>
+          <span id="bg-help" class="muted small">Optional. What you already know or have used, so the first questions start at the right level.</span></p>
+        <button type="submit" class="primary" id="create">Create course</button>
+      </form>
+    </section>
   </main>
   <script type="module">
     const list = document.getElementById('courses');
@@ -28,17 +33,37 @@
       box.textContent = msg;
       box.classList.toggle('hidden', !msg);
     };
+    const el = (tag, cls, text) => {
+      const e = document.createElement(tag);
+      if (cls) e.className = cls;
+      if (text != null) e.textContent = text;
+      return e;
+    };
+    const courseItem = (c) => {
+      const q = encodeURIComponent(c.slug);
+      const li = el('li', 'course');
+      const title = el('a', 'course-title', c.title || c.slug);
+      title.href = `map.html?course=${q}`;
+      const bar = el('progress');
+      bar.max = Math.max(c.total, 1);
+      bar.value = c.solid;
+      bar.setAttribute('aria-label', `${c.title || c.slug}: ${c.solid} of ${c.total} solid`);
+      const count = el('span', 'muted small', c.total ? `${c.solid}/${c.total} solid` : 'No map yet');
+      const l = c.lastLesson;
+      const go = el('a', 'course-go', l ? `Resume ${l.title}` : 'Open map');
+      go.href = !l ? `map.html?course=${q}`
+        : l.mode === 'chapter' ? `chapter.html?course=${q}&node=${encodeURIComponent(l.nodeId)}`
+        : `lesson.html?course=${q}&id=${encodeURIComponent(l.id)}`;
+      li.append(title, bar, count, go);
+      return li;
+    };
     try {
       const res = await fetch('/api/courses');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      for (const c of await res.json()) {
-        const a = document.createElement('a');
-        a.href = `map.html?course=${encodeURIComponent(c.slug)}`;
-        a.textContent = c.title || c.slug;
-        const li = document.createElement('li');
-        li.append(a);
-        list.append(li);
-      }
+      const courses = await res.json();
+      document.getElementById('index').classList.toggle('has-courses', courses.length > 0);
+      if (courses.length) document.getElementById('lede').textContent = 'Pick up where you left off, or start something new below.';
+      for (const c of courses) list.append(courseItem(c));
     } catch (err) {
       showError(`Could not load courses: ${err.message}`);
     }

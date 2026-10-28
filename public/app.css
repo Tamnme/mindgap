@@ -470,3 +470,31 @@ body.has-focus::after { content: ""; position: fixed; inset: 0; background: rgba
 .plan-card { margin: 8px 0; }
 .plan-card .plan-nodes { margin: 6px 0; padding-left: 22px; }
 .plan-card .plan-nodes li { margin: 2px 0; }
+
+/* index: course list and new-course form */
+.index { max-width: 720px; margin: 0 auto; padding: 40px 16px 64px; }
+.index header { margin-bottom: 24px; }
+.index .lede { max-width: 60ch; margin: 0; font-size: 16px; }
+.course-list { list-style: none; margin: 0 0 40px; padding: 0; border-top: 1px solid var(--border); }
+.course-list:empty { display: none; }
+.course { display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; align-items: center; padding: 14px 0; border-bottom: 1px solid var(--border); }
+.course-title { grid-column: 1 / -1; font-size: 18px; font-weight: 700; letter-spacing: -0.01em; overflow-wrap: anywhere; }
+.course progress { grid-column: 1; width: 100%; height: 6px; appearance: none; -webkit-appearance: none; border: 0; border-radius: 3px; background: var(--disabled-bg); overflow: hidden; }
+.course progress::-webkit-progress-bar { background: var(--disabled-bg); }
+.course progress::-webkit-progress-value { background: var(--st-solid-fg); border-radius: 3px; }
+.course progress::-moz-progress-bar { background: var(--st-solid-fg); border-radius: 3px; }
+.course .small { grid-column: 2; grid-row: 2; white-space: nowrap; }
+.course-go { grid-column: 1 / -1; justify-self: start; margin-top: 4px; font-weight: 600; }
+.new-course label { display: block; font-weight: 600; margin-bottom: 4px; }
+.new-course .small { display: block; margin-top: 4px; max-width: 60ch; }
+.new-course form { max-width: 560px; }
+/* Empty state: the form is the page. Once a course exists it drops to a quiet secondary section. */
+.index:not(.has-courses) .new-course label[for="title"] { font-size: 18px; }
+.index:not(.has-courses) .new-course .new-heading { display: none; }
+.index.has-courses .new-heading { font-size: 15px; color: var(--muted); font-weight: 600; }
+.index.has-courses .new-course { padding-top: 8px; }
+@media (max-width: 480px) {
+  .index { padding-top: 24px; }
+  .course { grid-template-columns: 1fr; }
+  .course .small { grid-column: 1; grid-row: auto; }
+}
