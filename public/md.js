@@ -11,18 +11,19 @@ export function escapeHtml(s) {
     .replace(/'/g, '&#39;');
 }
 
-// Inline: code spans are cut out first so their contents are never formatted.
+// Inline: code spans become NUL-delimited placeholders so their contents are never
+// formatted, yet bold/italic can still wrap them (**OU `Prod`**). NULs in the input are
+// dropped first so model text cannot forge a placeholder.
 // Links only survive for http(s) and mailto; anything else stays as literal text.
 function renderInline(text) {
-  const parts = escapeHtml(text).split(/`([^`\n]+)`/);
-  return parts.map((part, i) => {
-    if (i % 2 === 1) return `<code>${part}</code>`;
-    return part
-      .replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+|mailto:[^\s)]+)\)/g,
-        (_, label, href) => `<a href="${href}" target="_blank" rel="noopener noreferrer">${label}</a>`)
-      .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
-      .replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
-  }).join('');
+  const codes = [];
+  return escapeHtml(text).replace(/\0/g, '')
+    .replace(/`([^`\n]+)`/g, (_, code) => `\0${codes.push(code) - 1}\0`)
+    .replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+|mailto:[^\s)]+)\)/g,
+      (_, label, href) => `<a href="${href}" target="_blank" rel="noopener noreferrer">${label}</a>`)
+    .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*([^*\n]+)\*/g, '<em>$1</em>')
+    .replace(/\0(\d+)\0/g, (_, i) => `<code>${codes[i]}</code>`);
 }
 
 const LIST_RE = /^\s*[-*]\s+(.*)$/;
@@ -33,13 +34,15 @@ export function renderMarkdown(src) {
   const out = [];
   let para = [];
   let list = [];
+  let ordered = false;
 
   const flushPara = () => {
     if (para.length) out.push(`<p>${para.map(renderInline).join('<br>')}</p>`);
     para = [];
   };
   const flushList = () => {
-    if (list.length) out.push(`<ul>${list.map(li => `<li>${renderInline(li)}</li>`).join('')}</ul>`);
+    const tag = ordered ? 'ol' : 'ul';
+    if (list.length) out.push(`<${tag}>${list.map(li => `<li>${renderInline(li)}</li>`).join('')}</${tag}>`);
     list = [];
   };
 
@@ -92,9 +95,12 @@ export function renderMarkdown(src) {
       continue;
     }
 
-    const m = line.match(LIST_RE) || line.match(/^\s*\d+[.)]\s+(.*)$/);
+    const bullet = line.match(LIST_RE);
+    const m = bullet || line.match(/^\s*\d+[.)]\s+(.*)$/);
     if (m) {
       flushPara();
+      if (list.length && ordered !== !bullet) flushList();
+      ordered = !bullet;
       list.push(m[1]);
       continue;
     }

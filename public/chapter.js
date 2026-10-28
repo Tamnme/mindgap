@@ -2,6 +2,7 @@
 // Chapter prose is authored and model text comes from the tutor: both go through renderMarkdown (escapes first).
 
 import { renderMarkdown } from './md.js';
+import { elapsedText, turnErrorText, withCode } from './ui-text.js';
 import { createLabCard, fillLabCard, runLabCommand, setLabBusy } from './labcard.js';
 import { firstOpenCheckpoint, flatBlocks, answerEvent, answersFrom, sectionState } from './chapter-logic.js';
 
@@ -40,11 +41,15 @@ function showError(msg) {
   $('error').classList.toggle('hidden', !msg);
 }
 
+function httpError(res, data) {
+  return Object.assign(new Error(data.error || ''), { status: res.status });
+}
+
 async function postJson(url, body) {
   const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
   let data = {};
   try { data = await res.json(); } catch { /* empty body */ }
-  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  if (!res.ok) throw httpError(res, data);
   return data;
 }
 
@@ -52,7 +57,7 @@ async function getJson(url) {
   const res = await fetch(url);
   let data = {};
   try { data = await res.json(); } catch { /* empty body */ }
-  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  if (!res.ok) throw httpError(res, data);
   return data;
 }
 
@@ -74,7 +79,7 @@ function receipt(cp, ans) {
       ? `✓ ${pick} · confidence ${ans.confidence}`
       : `✗ You: ${pick} · answer: ${short(cp.options[cp.key])}`;
   const details = el('div', { class: 'cp-details hidden' }, [
-    el('p', { class: 'cp-q', text: cp.prompt }),
+    md(cp.prompt, 'cp-q'),
     el('p', { text: cp.why }),
     ans.reasoning ? el('p', { class: 'muted', text: `Your reasoning: ${ans.reasoning}` }) : null,
   ]);
@@ -96,15 +101,17 @@ function checkpointCard(cp) {
 
   let chosen = null;
   let confidence = null;
-  const commit = el('button', { class: 'primary', disabled: true, text: 'Commit' });
+  const commit = el('button', { class: 'primary', disabled: true, text: 'Submit' });
   const sync = () => { commit.disabled = chosen == null || confidence == null; };
 
+  const promptId = `cp-q-${cp.id}`;
   const opts = cp.options.map((o, i) => el('label', { class: 'opt' }, [
     el('input', { type: 'radio', name: `cp-${cp.id}`, onchange: () => { chosen = i; sync(); } }),
     el('span', { text: o }),
   ]));
   const confBtns = [1, 2, 3, 4, 5].map((c) => el('button', {
     type: 'button', 'aria-pressed': 'false', text: String(c),
+    'aria-label': `Confidence ${c} of 5${c === 1 ? ', guessing' : c === 5 ? ', certain' : ''}`,
     onclick: () => {
       confidence = c;
       confBtns.forEach((b, i) => { b.classList.toggle('on', i + 1 === c); b.setAttribute('aria-pressed', String(i + 1 === c)); });
@@ -118,9 +125,14 @@ function checkpointCard(cp) {
 
   return el('div', { class: 'cp' }, [
     el('div', { class: 'cp-kicker', text: 'Checkpoint · predict first' }),
-    el('p', { class: 'cp-q', text: cp.prompt }),
-    el('div', { class: 'cp-opts' }, opts),
-    el('div', { class: 'conf' }, [el('span', { text: 'Confidence' }), ...confBtns]),
+    Object.assign(md(cp.prompt, 'cp-q'), { id: promptId }),
+    el('fieldset', { class: 'cp-opts', 'aria-labelledby': promptId }, opts),
+    el('div', { class: 'conf', role: 'group', 'aria-label': 'Confidence, 1 guessing to 5 certain' }, [
+      el('span', { text: 'Confidence' }),
+      el('span', { class: 'conf-end', text: '1 guessing' }),
+      ...confBtns,
+      el('span', { class: 'conf-end', text: '5 certain' }),
+    ]),
     why,
     el('div', { class: 'cp-actions' }, [commit, skip]),
   ]);
@@ -290,19 +302,37 @@ function noteFor(ev) {
   return ['note', ev.type];
 }
 
+let opener = null;
 function setOpen(open) {
-  $('drawer').classList.toggle('open', open);
-  $('drawer').setAttribute('aria-hidden', String(!open));
+  const drawer = $('drawer');
+  if (open === drawer.classList.contains('open')) return;
+  if (open) opener = document.activeElement;
+  drawer.classList.toggle('open', open);
+  drawer.inert = !open;
   $('tutor-fab').setAttribute('aria-expanded', String(open));
   if (open) {
     S.unread = 0;
     $('tutor-badge').classList.add('hidden');
     $('ask-text').focus();
+  } else {
+    (opener?.isConnected ? opener : $('tutor-fab')).focus();
+    opener = null;
   }
 }
 
+let tutorText = '';
+let tutorStart = 0;
+let tutorTimer = null;
+function paintTutorState() {
+  const t = tutorText && elapsedText(Date.now() - tutorStart);
+  $('tutor-state').textContent = tutorText ? `· ${tutorText}${t ? ` ${t}` : ''}` : '';
+}
 function setTutorState(text) {
-  $('tutor-state').textContent = text ? `· ${text}` : '';
+  if (text !== tutorText && text) tutorStart = Date.now();
+  tutorText = text;
+  if (text === 'reviewing…' && !tutorTimer) tutorTimer = setInterval(paintTutorState, 1000);
+  else if (text !== 'reviewing…' && tutorTimer) { clearInterval(tutorTimer); tutorTimer = null; }
+  paintTutorState();
 }
 
 function handleTurn(turn) {
@@ -336,7 +366,7 @@ async function pump() {
     S.sending = false;
     setTutorState('error');
     const retry = el('button', { text: 'Retry', onclick: () => { box.remove(); pump(); } });
-    const box = el('div', { class: 'notice error' }, [el('span', { text: `The tutor didn't answer: ${err.message} ` }), retry]);
+    const box = el('div', { class: 'notice error' }, [el('span', { text: `${turnErrorText(err)} ` }), retry]);
     $('drawer-thread').append(box);
     return;
   }
@@ -408,11 +438,12 @@ async function init() {
       if (card) fillLabCard(card, ev.data);
     }
   } catch (err) {
-    showError(`Could not load chapter: ${err.message}`);
+    showError(withCode(`Could not load chapter${err.message ? `: ${err.message}` : ''}`, err.status));
   }
 
   $('tutor-fab').addEventListener('click', () => setOpen(!$('drawer').classList.contains('open')));
   $('drawer-close').addEventListener('click', () => setOpen(false));
+  $('drawer').addEventListener('keydown', (e) => { if (e.key === 'Escape') setOpen(false); });
   $('ask-form').addEventListener('submit', (e) => {
     e.preventDefault();
     const text = $('ask-text').value.trim();

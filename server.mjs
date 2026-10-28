@@ -54,6 +54,8 @@ const MIME = {
 const busy = new Set();
 // ponytail: one map write chain per course serializes its read-modify-writes; per-file locks if this ever matters.
 const mapChains = new Map();
+// Tutor children in flight, per course slug; POST /api/courses/:slug/cancel kills them.
+const inflight = new Map();
 
 class HttpError extends Error {
   // body, when given, replaces the default {error: message} response.
@@ -270,13 +272,17 @@ async function callTutor(c, meta, message, timeoutMs = TUTOR_TIMEOUT_MS) {
       const { bin, args } = tutor.buildCall({
         systemPrompt: sys, schemaText: schema, message: msg, sessionId, model: MODEL, effort: EFFORT, schemaFile,
       });
+      const kids = inflight.get(c.slug) ?? inflight.set(c.slug, new Set()).get(c.slug);
       const r = await new Promise((resolve) => {
         const child = execFile(bin, args, { cwd, timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024 },
-          (e, o, s) => resolve({ err: e, stdout: o, stderr: s }));
+          (e, o, s) => { kids.delete(child); resolve({ err: e, stdout: o, stderr: s, child }); });
+        kids.add(child);
         // An early-exiting tutor makes the write to stdin fail with EPIPE; that must not crash the server.
         child.stdin.on('error', () => {});
         child.stdin.end();
       });
+      // Same exit as a failed call, so nothing is persisted; the reason is what tells the UI it was cancelled.
+      if (r.child.cancelled) throw new HttpError(499, 'cancelled', { error: 'cancelled', cancelled: true });
       if (r.err && r.err.code === 'ENOENT') throw new HttpError(502, `${TUTOR} not found on PATH`);
       return { ...r, parsed: tutor.parseOutput(r.stdout ?? '') };
     };
@@ -291,6 +297,13 @@ async function callTutor(c, meta, message, timeoutMs = TUTOR_TIMEOUT_MS) {
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }
+}
+
+// Kills the course's running tutor call(s). execFile spawns the CLI directly (no shell), so SIGTERM reaches it.
+function cancelCourse(slug) {
+  const kids = inflight.get(slug) ?? new Set();
+  for (const child of kids) { child.cancelled = true; child.kill('SIGTERM'); }
+  return { cancelled: kids.size > 0 };
 }
 
 // Calls the tutor, then persists everything. labsTotal = lab events the message has seen.
@@ -361,6 +374,16 @@ async function advance(c, id, meta, message, record, labsTotal, event = null) {
   return turn;
 }
 
+// A start that fails or is cancelled must not leave its meta behind: progress() would offer it as Resume.
+async function advanceOrDrop(c, lesson_id, meta, message, record) {
+  try {
+    return await advance(c, lesson_id, meta, message, record, 0);
+  } catch (err) {
+    await rm(metaPath(c, lesson_id), { force: true });
+    throw err;
+  }
+}
+
 async function startLesson(body) {
   const c = await openCourse(body.course);
   const { mode } = body;
@@ -374,7 +397,7 @@ async function startLesson(body) {
     const meta = { course: c.slug, tutor: TUTOR, tutor_session_id: null, node_id: null, mode, started: new Date().toISOString(), labs_sent: 0 };
     await writeAtomic(metaPath(c, lesson_id), JSON.stringify(meta, null, 2));
     const message = 'CONTEXT:\n' + JSON.stringify(await courseContext(c, map), null, 2);
-    const turn = await advance(c, lesson_id, meta, message, { role: 'system', data: { type: 'start', node_id: null, mode } }, 0);
+    const turn = await advanceOrDrop(c, lesson_id, meta, message, { role: 'system', data: { type: 'start', node_id: null, mode } });
     return { lesson_id, turn };
   }
   const { node_id } = body;
@@ -387,7 +410,7 @@ async function startLesson(body) {
 
   const ctx = await contextFor(c, map, node_id, mode);
   const message = 'CONTEXT:\n' + JSON.stringify(ctx, null, 2);
-  const turn = await advance(c, lesson_id, meta, message, { role: 'system', data: { type: 'start', node_id, mode } }, 0);
+  const turn = await advanceOrDrop(c, lesson_id, meta, message, { role: 'system', data: { type: 'start', node_id, mode } });
   return { lesson_id, turn };
 }
 
@@ -588,6 +611,7 @@ async function api(req, res, pathname) {
   const mapM = pathname.match(/^\/api\/courses\/([^/]+)\/map$/);
   const chapterM = pathname.match(/^\/api\/courses\/([^/]+)\/chapters\/([^/]+)$/);
   const writeM = pathname.match(/^\/api\/courses\/([^/]+)\/chapters\/([^/]+)\/write$/);
+  const cancelM = pathname.match(/^\/api\/courses\/([^/]+)\/cancel$/);
   const approvalM = pathname.match(/^\/api\/courses\/([^/]+)\/lab-approval$/);
   const sourcesM = pathname.match(/^\/api\/courses\/([^/]+)\/sources$/);
   const sourceM = pathname.match(/^\/api\/courses\/([^/]+)\/sources\/([^/]+)$/);
@@ -605,6 +629,7 @@ async function api(req, res, pathname) {
   if (method === 'GET' && mapM) return send(res, 200, await loadMap(await openCourse(safeDecode(mapM[1]))));
   if (method === 'GET' && chapterM) return send(res, 200, await getChapter(safeDecode(chapterM[1]), safeDecode(chapterM[2])));
   if (method === 'POST' && writeM) return send(res, 201, await writeChapter(safeDecode(writeM[1]), safeDecode(writeM[2])));
+  if (method === 'POST' && cancelM) return send(res, 200, cancelCourse((await openCourse(safeDecode(cancelM[1]))).slug));
   if (method === 'GET' && lessonM) {
     return send(res, 200, await getLesson(await openCourse(query.get('course')), safeDecode(lessonM[1])));
   }

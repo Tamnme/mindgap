@@ -3,6 +3,7 @@
 
 import { renderMarkdown } from './md.js';
 import { planNodes, replyQuestion } from './map-logic.js';
+import { elapsedText, turnErrorText, withCode } from './ui-text.js';
 import { createLabCard, fillLabCard, runLabCommand, setLabBusy } from './labcard.js';
 
 const $ = (id) => document.getElementById(id);
@@ -49,9 +50,9 @@ function el(tag, props = {}, children = []) {
 async function errorText(res) {
   try {
     const body = await res.json();
-    return body.error || `HTTP ${res.status}`;
+    return body.error || '';
   } catch {
-    return `HTTP ${res.status}`;
+    return '';
   }
 }
 
@@ -68,12 +69,7 @@ function showTurnError(msg) {
   $('btn-retry').disabled = S.waiting;
 }
 
-function messageFor(err) {
-  if (err.status === 409) return 'The lesson is busy with another turn (HTTP 409). Retry.';
-  if (err.status === 502) return 'The tutor did not answer (HTTP 502). Retry.';
-  if (err.status) return `Request failed (HTTP ${err.status}): ${err.message}. Retry.`;
-  return `Could not reach the server: ${err.message}. Retry.`;
-}
+const messageFor = turnErrorText;
 
 // The page scrolls, not the thread: sims and lab cards live inline in the conversation.
 function scrollToBottom() {
@@ -170,10 +166,12 @@ function renderQuestion(q) {
   card.classList.toggle('hidden', !q);
   if (!q) return;
 
-  $('q-prompt').textContent = q.prompt || '';
+  // renderMarkdown escapes the prompt first, same as tutor bubbles.
+  $('q-prompt').innerHTML = renderMarkdown(q.prompt || '');
   const opts = $('q-options');
   opts.replaceChildren();
   const choice = isChoice(q);
+  opts.classList.toggle('hidden', !choice);
   if (choice) {
     q.options.forEach((opt) => {
       const input = el('input', { type: 'radio', name: 'choice' });
@@ -189,7 +187,8 @@ function renderQuestion(q) {
   cb.replaceChildren();
   if (q.wants_confidence) {
     for (let c = 1; c <= 5; c++) {
-      const b = el('button', { type: 'button', 'aria-label': `Confidence ${c}`, text: String(c) });
+      const end = c === 1 ? ', guessing' : c === 5 ? ', certain' : '';
+      const b = el('button', { type: 'button', 'aria-label': `Confidence ${c} of 5${end}`, text: String(c) });
       b.addEventListener('click', () => {
         S.confidence = S.confidence === c ? null : c;
         syncConfidence();
@@ -273,6 +272,19 @@ function applyTurn(turn) {
   refreshControls();
 }
 
+let waitStart = 0;
+let waitTimer = null;
+function trackElapsed() {
+  if (S.waiting && !waitTimer) {
+    waitStart = Date.now();
+    waitTimer = setInterval(() => { $('elapsed').textContent = elapsedText(Date.now() - waitStart); }, 1000);
+  } else if (!S.waiting && waitTimer) {
+    clearInterval(waitTimer);
+    waitTimer = null;
+    $('elapsed').textContent = '';
+  }
+}
+
 function refreshControls() {
   const locked = S.waiting || S.done;
   const q = replyQuestion(S.turn);
@@ -285,13 +297,19 @@ function refreshControls() {
   $('btn-ask').disabled = locked;
   document.querySelectorAll('.lab-card .run').forEach((b) => { b.disabled = locked || S.labRunning; });
   $('waiting').classList.toggle('hidden', !S.waiting);
+  trackElapsed();
+  $('ask-input').disabled = locked;
+  $('ask-send').disabled = locked || $('ask-input').value.trim() === '';
   document.querySelectorAll('#question input, #question textarea, #question button')
     .forEach((x) => { x.disabled = locked; });
+  // Locked after Submit reads as a record of the answer, not as unavailable controls.
+  $('question').classList.toggle('submitted', locked);
   $('btn-retry').disabled = S.waiting;
 }
 
 async function dispatch() {
   S.waiting = true;
+  showTurnError('');
   refreshControls();
   try {
     const res = await fetch('/api/turn', {
@@ -344,9 +362,18 @@ function onLost() {
   send(event, summarize(event));
 }
 
-function onAsk() {
-  const text = (window.prompt('What would you like to ask the tutor?') || '').trim();
-  if (!text) return;
+function openAsk(open) {
+  $('ask-box').classList.toggle('hidden', !open);
+  if (open) $('ask-input').focus();
+  else { $('ask-input').value = ''; $('btn-ask').focus(); }
+  refreshControls();
+}
+
+function onAsk(e) {
+  e.preventDefault();
+  const text = $('ask-input').value.trim();
+  if (!text || S.waiting || S.done) return;
+  openAsk(false);
   send({ type: 'ask', text }, summarize({ type: 'ask', text }));
 }
 
@@ -406,7 +433,13 @@ async function init() {
   $('back-map').href = mapUrl;
   $('btn-submit').addEventListener('click', onSubmit);
   $('btn-lost').addEventListener('click', onLost);
-  $('btn-ask').addEventListener('click', onAsk);
+  $('btn-ask').addEventListener('click', () => openAsk($('ask-box').classList.contains('hidden')));
+  $('ask-box').addEventListener('submit', onAsk);
+  $('ask-cancel').addEventListener('click', () => openAsk(false));
+  $('ask-input').addEventListener('input', refreshControls);
+  $('ask-box').addEventListener('keydown', (e) => { if (e.key === 'Escape') openAsk(false); });
+  // Fire and forget: the pending turn request comes back as 499 and the normal retry path takes over.
+  $('btn-cancel').addEventListener('click', () => { fetch(`/api/courses/${encodeURIComponent(course)}/cancel`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }).catch(() => {}); });
   $('btn-retry').addEventListener('click', () => { if (S.pending && !S.waiting) dispatch(); });
   $('q-text').addEventListener('input', refreshControls);
 
@@ -417,7 +450,7 @@ async function init() {
       fetch(`/api/courses/${c}/map`),
       fetch(`/api/courses/${c}`),
     ]);
-    if (!lessonRes.ok) throw new Error(await errorText(lessonRes));
+    if (!lessonRes.ok) throw new HttpError(lessonRes.status, await errorText(lessonRes));
     const { meta = {}, events = [] } = await lessonRes.json();
     S.meta = meta;
     if (courseRes.ok) S.lab = (await courseRes.json()).lab ?? null;
@@ -440,7 +473,7 @@ async function init() {
     }
     replay(events);
   } catch (err) {
-    showError(`Could not load lesson: ${err.message}`);
+    showError(withCode(`Could not load lesson${err.message ? `: ${err.message}` : ''}`, err.status));
   }
 }
 
