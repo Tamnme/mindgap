@@ -9,7 +9,7 @@ import { createLabCard, fillLabCard, runLabCommand, setLabBusy } from './labcard
 const $ = (id) => document.getElementById(id);
 const course = new URLSearchParams(location.search).get('course');
 const lessonId = new URLSearchParams(location.search).get('id');
-const mapUrl = `map.html?course=${encodeURIComponent(course || '')}`;
+const mapUrl = `course.html?course=${encodeURIComponent(course || '')}`;
 
 const S = {
   meta: null,
@@ -244,7 +244,7 @@ function renderBanner() {
   if (S.done) {
     banner.replaceChildren(
       el('span', { text: S.meta?.mode === 'course' ? 'Plan approved — ' : 'Lesson complete — ' }),
-      el('a', { href: mapUrl, text: 'back to map' }),
+      el('a', { href: mapUrl, text: 'back to the course' }),
     );
   }
 }

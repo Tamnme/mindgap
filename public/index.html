@@ -43,7 +43,7 @@
       const q = encodeURIComponent(c.slug);
       const li = el('li', 'course');
       const title = el('a', 'course-title', c.title || c.slug);
-      title.href = `map.html?course=${q}`;
+      title.href = `course.html?course=${q}`;
       const bar = el('progress');
       bar.max = Math.max(c.total, 1);
       bar.value = c.solid;
@@ -51,7 +51,7 @@
       const count = el('span', 'muted small', c.total ? `${c.solid}/${c.total} solid` : 'No map yet');
       const l = c.lastLesson;
       const go = el('a', 'course-go', l ? `Resume ${l.title}` : 'Open map');
-      go.href = !l ? `map.html?course=${q}`
+      go.href = !l ? `course.html?course=${q}`
         : l.mode === 'chapter' ? `chapter.html?course=${q}&node=${encodeURIComponent(l.nodeId)}`
         : `lesson.html?course=${q}&id=${encodeURIComponent(l.id)}`;
       li.append(title, bar, count, go);
@@ -82,7 +82,7 @@
         let body = null;
         try { body = await res.json(); } catch { /* no JSON body */ }
         if (res.status !== 201) throw new Error((body && body.error) || `HTTP ${res.status}`);
-        location.href = `map.html?course=${encodeURIComponent(body.slug)}`;
+        location.href = `course.html?course=${encodeURIComponent(body.slug)}`;
         return;
       } catch (err) {
         showError(err.message);

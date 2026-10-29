@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>mindgap</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body class="sheet">
+  <a class="skip-link" href="#view">Skip to the course</a>
+  <header class="topbar">
+    <a class="wordmark" href="/">mindgap</a>
+    <h1 id="course-title" class="tb-title"></h1>
+    <nav class="tabs" aria-label="Course">
+      <a href="#home" data-view="home">Home</a>
+      <a href="#map" data-view="map">Map</a>
+      <a href="#sources" data-view="sources">Sources</a>
+    </nav>
+    <details class="more" id="more">
+      <summary>More</summary>
+      <div class="more-menu">
+        <button type="button" id="btn-goal" data-action="goal">New goal</button>
+        <button type="button" id="btn-debug" data-action="debug" class="hidden">Debug drill</button>
+      </div>
+    </details>
+  </header>
+
+  <div id="busy" class="busy hidden" role="status"><span class="spinner"></span><span id="busy-text"></span> <button id="busy-cancel" type="button">Cancel</button></div>
+  <div id="error" class="notice error hidden" role="alert"></div>
+
+  <main id="view" tabindex="-1">
+    <section id="view-home" class="home" aria-label="Home">
+      <div id="next" class="next"></div>
+      <div id="sheet-home" class="sheet-slot"></div>
+    </section>
+
+    <section id="view-map" class="mapview hidden" aria-label="Map">
+      <div>
+        <div class="map-tools">
+          <input type="search" id="node-search" placeholder="Find a topic (press /)" aria-label="Find a topic" autocomplete="off">
+          <label id="off-goal-row" class="hidden"><input type="checkbox" id="show-off"> <span id="show-off-text"></span></label>
+        </div>
+        <div id="sheet-map" class="sheet-slot"></div>
+      </div>
+      <aside id="side" class="side" tabindex="-1" aria-label="Topic details" aria-live="polite"></aside>
+    </section>
+
+    <section id="view-sources" class="sources-view hidden" aria-label="Sources">
+      <div id="sources"></div>
+    </section>
+  </main>
+  <script type="module" src="course.js"></script>
+</body>
+</html>

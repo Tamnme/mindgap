@@ -1,0 +1,136 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-29T00:00:00Z",
+  "title": "Design System: mindgap",
+  "extensions": {
+    "colorMeta": {
+      "sheet-ground": { "role": "neutral", "displayName": "Sheet Ground", "canonical": "#f7f8f6", "tonalRamp": ["#1c2321", "#353d3a", "#4f5853", "#6b746f", "#8a928e", "#b4bab7", "#dcdfdc", "#f7f8f6"] },
+      "ink": { "role": "neutral", "displayName": "Ink", "canonical": "#1c2321", "tonalRamp": ["#0f1312", "#1c2321", "#2f3835", "#47514d", "#5a6460", "#8a948f", "#c3c9c6", "#eef0ee"] },
+      "ink-2": { "role": "neutral", "displayName": "Ink 2", "canonical": "#47514d" },
+      "muted": { "role": "neutral", "displayName": "Muted", "canonical": "#5a6460" },
+      "panel": { "role": "neutral", "displayName": "Panel White", "canonical": "#ffffff" },
+      "grid-blue": { "role": "secondary", "displayName": "National-Grid Blue", "canonical": "#2b6cb0", "tonalRamp": ["#0f2742", "#173d66", "#20538c", "#2b6cb0", "#5089c4", "#7fa8d4", "#b5cde6", "#e6eef7"] },
+      "grid-hairline": { "role": "secondary", "displayName": "Grid Hairline", "canonical": "rgba(43, 108, 176, 0.28)" },
+      "border": { "role": "neutral", "displayName": "Border", "canonical": "rgba(28, 35, 33, 0.22)" },
+      "disabled": { "role": "neutral", "displayName": "Disabled", "canonical": "#eceeeb" },
+      "survey-magenta": { "role": "primary", "displayName": "Survey Magenta", "canonical": "#c0176b", "tonalRamp": ["#46072a", "#6e0d41", "#9e1258", "#c0176b", "#d34a8c", "#e27fb0", "#f0b8d3", "#fbe6f0"] },
+      "survey-magenta-ink": { "role": "primary", "displayName": "Survey Magenta Ink", "canonical": "#9e1258" },
+      "survey-green": { "role": "tertiary", "displayName": "Survey Green", "canonical": "#4f9a52", "tonalRamp": ["#1a361b", "#295a2b", "#3a7b3d", "#4f9a52", "#73b175", "#9cc99d", "#c8e1c8", "#e6f0e4"] },
+      "contour-orange": { "role": "tertiary", "displayName": "Contour Orange", "canonical": "#c2652a", "tonalRamp": ["#46220c", "#6e3714", "#984d1e", "#c2652a", "#d48653", "#e2a982", "#efcfb7", "#fbf0e6"] },
+      "untested-grey": { "role": "tertiary", "displayName": "Untested Grey", "canonical": "#8a948f" },
+      "danger": { "role": "neutral", "displayName": "Danger", "canonical": "#a3123f" },
+      "danger-bg": { "role": "neutral", "displayName": "Danger Background", "canonical": "#fbe8ee" }
+    },
+    "typographyMeta": {
+      "headline": { "displayName": "Headline", "purpose": "Next-step topic title or the first-run question; 24px below 900px." },
+      "quote": { "displayName": "Quote", "purpose": "The learner's own words in the evidence figure." },
+      "title": { "displayName": "Title", "purpose": "Topic title in the Map side panel." },
+      "wordmark": { "displayName": "Wordmark", "purpose": "Lowercase 'mindgap' in the top bar." },
+      "lede": { "displayName": "Lede", "purpose": "Reason line when there is no quote; max 46ch." },
+      "body": { "displayName": "Body", "purpose": "Root size on the sheet." },
+      "note": { "displayName": "Note", "purpose": "Tutor's note, sheet margin note, Resume." },
+      "meta": { "displayName": "Meta", "purpose": "Meta line, grid ref beside the large mark, 'Or' heading." },
+      "square-title": { "displayName": "Square title", "purpose": "Topic title inside a sheet square, clamped to 3 lines." },
+      "label": { "displayName": "Label", "purpose": "Grid refs, column numbers, key counts; tabular figures; 11px floor." }
+    },
+    "shadows": [
+      { "name": "menu-lift", "value": "0 6px 18px rgba(28, 35, 33, 0.14)", "purpose": "The open More menu only; the one floating layer." }
+    ],
+    "motion": [],
+    "breakpoints": [
+      { "name": "compact", "value": "899px", "purpose": "Max-width: tighter page padding, 24px headline." },
+      { "name": "wide", "value": "1240px", "purpose": "Min-width: next step beside the sheet; sheet beside the sticky side panel. Shared with course.js WIDE." }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Magenta, square: starts the next lesson. One per block.",
+      "html": "<button class=\"ds-btn-primary\">Start lesson</button>",
+      "css": ".ds-btn-primary { font: 600 15px/1.55 system-ui, -apple-system, 'Segoe UI', sans-serif; background: #c0176b; border: 1px solid #c0176b; color: #fff; padding: 9px 16px; border-radius: 0; cursor: pointer; } .ds-btn-primary:hover { background: #9e1258; border-color: #9e1258; } .ds-btn-primary:focus-visible { outline: 2px solid #2b6cb0; outline-offset: 2px; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "White panel, 1px border, ink text; border turns ink on hover.",
+      "html": "<button class=\"ds-btn\">Read chapter</button>",
+      "css": ".ds-btn { font: 15px/1.55 system-ui, -apple-system, 'Segoe UI', sans-serif; background: #fff; border: 1px solid rgba(28, 35, 33, 0.22); color: #1c2321; padding: 6px 12px; border-radius: 0; cursor: pointer; } .ds-btn:hover { border-color: #1c2321; } .ds-btn:focus-visible { outline: 2px solid #2b6cb0; outline-offset: 2px; } .ds-btn:disabled { background: #eceeeb; border-style: dashed; color: #5a6460; cursor: not-allowed; }"
+    },
+    {
+      "name": "Top Bar Tabs",
+      "kind": "nav",
+      "refersTo": "tab-current",
+      "description": "Home / Map / Sources; current tab is ink 600 with a 2px grid-blue underline on the bar's ink rule.",
+      "html": "<nav class=\"ds-bar\"><a class=\"ds-wm\" href=\"#\">mindgap</a><span class=\"ds-ct\">Networking under the cloud</span><a class=\"ds-tab\" aria-current=\"page\" href=\"#\">Home</a><a class=\"ds-tab\" href=\"#\">Map</a><a class=\"ds-tab\" href=\"#\">Sources</a></nav>",
+      "css": ".ds-bar { display: flex; align-items: center; gap: 24px; padding: 10px 24px; background: #fff; border-bottom: 1px solid #1c2321; font: 15px/1.55 system-ui, -apple-system, 'Segoe UI', sans-serif; } .ds-wm { font-weight: 800; font-size: 17px; letter-spacing: -0.02em; color: #1c2321; text-decoration: none; } .ds-ct { flex: 1; font-weight: 500; color: #47514d; } .ds-tab { padding: 6px 14px; color: #47514d; text-decoration: none; border-bottom: 2px solid transparent; margin-bottom: -11px; } .ds-tab:hover { color: #1c2321; } .ds-tab[aria-current=page] { color: #1c2321; font-weight: 600; border-bottom-color: #2b6cb0; } .ds-tab:focus-visible { outline: 2px solid #2b6cb0; outline-offset: 2px; }"
+    },
+    {
+      "name": "Status Marks",
+      "kind": "chip",
+      "refersTo": "status-mark-lg",
+      "description": "One square mark at three scales (10, 12, 56px): solid fill, shaky hatching, gap fill struck white, untested dashed.",
+      "html": "<span class=\"ds-mark ds-solid\"></span><span class=\"ds-mark ds-shaky\"></span><span class=\"ds-mark ds-gap\"></span><span class=\"ds-mark ds-untested\"></span><span class=\"ds-mark ds-lg ds-gap\"></span>",
+      "css": ".ds-mark { display: inline-block; width: 12px; height: 12px; margin-right: 8px; border: 1px solid #1c2321; background: #fff; vertical-align: middle; } .ds-lg { width: 56px; height: 56px; } .ds-solid { background: #4f9a52; border-color: #4f9a52; } .ds-gap { border-color: #c0176b; background: linear-gradient(135deg, transparent calc(50% - 1px), #fff calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)), #c0176b; } .ds-shaky { border-color: #c2652a; background: repeating-linear-gradient(135deg, #c2652a 0 1.5px, transparent 1.5px 4px); } .ds-untested { border: 1px dashed #8a948f; background: transparent; }"
+    },
+    {
+      "name": "Sheet Square",
+      "kind": "custom",
+      "refersTo": "sheet-square",
+      "description": "A topic on the sheet: grid ref, mark, title; status is the fill.",
+      "html": "<div class=\"ds-row\"><button class=\"ds-sq ds-sq-solid\"><span class=\"ds-top\"><span class=\"ds-ref\">L3·01</span></span><span class=\"ds-t\">IP addressing and subnet math</span></button><button class=\"ds-sq ds-sq-shaky\"><span class=\"ds-top\"><span class=\"ds-ref ds-chip\">L3·02</span></span><span class=\"ds-t ds-chip\">Default gateway</span></button><button class=\"ds-sq ds-sq-gap\"><span class=\"ds-top\"><span class=\"ds-ref\">L3·03</span></span><span class=\"ds-t\">Router vs switch</span></button><button class=\"ds-sq ds-sq-untested\"><span class=\"ds-top\"><span class=\"ds-ref\">L3·04</span></span><span class=\"ds-t\">Longest-prefix match</span></button></div>",
+      "css": ".ds-row { display: grid; grid-template-columns: repeat(4, 110px); font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; } .ds-sq { display: flex; flex-direction: column; gap: 3px; min-height: 84px; margin: 3px; padding: 5px 5px 6px; border: 1px solid rgba(28, 35, 33, 0.22); background: #fff; color: #1c2321; text-align: left; border-radius: 0; cursor: pointer; font: inherit; } .ds-sq:hover { border-color: #1c2321; } .ds-sq:focus-visible { outline: 2px solid #2b6cb0; outline-offset: 2px; } .ds-ref { font-size: 11px; color: #5a6460; font-variant-numeric: tabular-nums; } .ds-t { font-size: 12px; line-height: 1.3; font-weight: 500; } .ds-sq-solid { background: #4f9a52; border-color: #4f9a52; } .ds-sq-solid .ds-ref { color: #1c2321; } .ds-sq-gap { background: #c0176b; border-color: #c0176b; color: #fff; } .ds-sq-gap .ds-ref { color: #fff; } .ds-sq-shaky { border-color: #c2652a; background: repeating-linear-gradient(135deg, #c2652a 0 1.5px, #fff 1.5px 6px); } .ds-chip { background: #fff; padding: 0 3px; margin: 0 -3px; align-self: flex-start; } .ds-sq-untested { border-style: dashed; border-color: #8a948f; background: transparent; }"
+    },
+    {
+      "name": "Evidence Figure",
+      "kind": "card",
+      "refersTo": "evidence",
+      "description": "The learner's quote, then the tutor's note, then a muted source line.",
+      "html": "<figure class=\"ds-ev\"><blockquote><p>“The switch forwards it to every port because it checks the IP.”</p></blockquote><figcaption><p class=\"ds-ev-note\">Confuses L2 forwarding with routing; has not met the MAC table.</p><p class=\"ds-ev-src\">The tutor’s note on your last answer</p></figcaption></figure>",
+      "css": ".ds-ev { margin: 0; padding: 12px 14px; background: #fff; border: 1px solid rgba(28, 35, 33, 0.22); border-radius: 0; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; color: #1c2321; max-width: 400px; } .ds-ev blockquote { margin: 0 0 8px; } .ds-ev blockquote p { margin: 0; font-size: 19px; line-height: 1.35; font-weight: 600; letter-spacing: -0.01em; } .ds-ev-note { margin: 0; font-size: 14px; line-height: 1.5; color: #47514d; } .ds-ev-src { margin: 8px 0 0; font-size: 12px; color: #5a6460; }"
+    },
+    {
+      "name": "Sheet Key",
+      "kind": "custom",
+      "refersTo": "sheet-square",
+      "description": "Key box in the sheet head: four marks with tabular counts, blue hairline box.",
+      "html": "<ul class=\"ds-key\"><li><span class=\"ds-k ds-k-solid\"></span>solid <b>0</b></li><li><span class=\"ds-k ds-k-shaky\"></span>shaky <b>0</b></li><li><span class=\"ds-k ds-k-gap\"></span>gap <b>0</b></li><li><span class=\"ds-k ds-k-un\"></span>untested <b>33</b></li></ul>",
+      "css": ".ds-key { display: flex; gap: 4px 16px; margin: 0; padding: 6px 10px; list-style: none; border: 1px solid rgba(43, 108, 176, 0.28); font: 12px system-ui, -apple-system, 'Segoe UI', sans-serif; color: #47514d; } .ds-key li { display: flex; align-items: center; gap: 6px; } .ds-key b { color: #1c2321; font-weight: 600; font-variant-numeric: tabular-nums; } .ds-k { width: 12px; height: 12px; border: 1px solid #1c2321; } .ds-k-solid { background: #4f9a52; border-color: #4f9a52; } .ds-k-gap { background: #c0176b; border-color: #c0176b; } .ds-k-shaky { border-color: #c2652a; background: repeating-linear-gradient(135deg, #c2652a 0 1.5px, transparent 1.5px 4px); } .ds-k-un { border: 1px dashed #8a948f; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Survey Sheet",
+    "overview": "A course is a surveyed sheet. The page borrows from an Ordnance Survey topographic map only its type discipline, its palette and one signature move: every topic is a square with a grid reference on a grid-referenced sheet, the layer codes in the left margin and column numbers along the top edge. Nothing else of the map comes along. There are no contour textures, terrain or paper grain; the ground is cool white, not cream.\n\nDensity is high and calm. All 33 topics of the networking course fit one 1440x900 viewport beside the next step. Marks are 1px hairlines, corners are square, and every number is set in tabular figures. One colour does two jobs on purpose: magenta marks a gap and also the primary action, so the button that starts the next lesson is the same colour as the gaps it teaches into.\n\nScope today: this system applies to the course page only (`public/course.html`, scoped by `body.sheet` with its tokens on `:root:has(body.sheet)`). The lesson, chapter and course-list pages still use the older global tokens at the top of `public/app.css` until a later slice migrates them. The system is light only; dark is a later slice, and the sheet sets `color-scheme: light`.",
+    "keyCharacteristics": [
+      "Grid-referenced sheet: layer codes in the margin, two-digit column numbers on top, a grid ref such as `L3·04` on every square.",
+      "A closed vocabulary of four status marks (solid, shaky, gap, untested), with one mark form drawn at three scales.",
+      "Square corners and 1px rules throughout; ink rules frame things and blue hairlines divide them.",
+      "Tabular figures for every count and reference.",
+      "The margin always counts what remains (\"N of M untested\")."
+    ],
+    "rules": [
+      { "name": "The Shared Magenta Rule", "body": "Magenta means \"gap\" and \"act on it\" and nothing else. Do not use it for decoration, headings or links.", "section": "colors" },
+      { "name": "The Status Is the Fill Rule", "body": "A square's state is shown by its whole surface: a green fill, orange hatching, a magenta fill, or blank with a dashed edge. A sheet must read without the key; the key only confirms it.", "section": "colors" },
+      { "name": "The Tabular Figures Rule", "body": "Every count, grid ref, column number and elapsed time is set with `tabular-nums`, so the numbers line up like a survey index.", "section": "typography" },
+      { "name": "The Ruled Not Raised Rule", "body": "Separate things with a 1px rule. Use the ink rule for a frame and a blue hairline for a division. A shadow appears only on a layer that floats over content.", "section": "elevation" },
+      { "name": "The One Mark Rule", "body": "A topic's status is always this same square mark, scaled as needed. Do not use dots, chips, rings or percentages for status on the sheet.", "section": "shapes" }
+    ],
+    "dos": [
+      "**Do** show status by filling the whole square: green fill, 135° orange hatching, magenta fill, or blank with a dashed edge.",
+      "**Do** put the fixed furniture on every square: grid ref, mark and title, with the title clamped to 3 lines.",
+      "**Do** set every number in tabular figures and keep the \"N of M untested\" count in the sheet margin.",
+      "**Do** use 1px ink rules for frames, 1px grid-blue hairlines for divisions and square corners for everything.",
+      "**Do** quote the learner's own words as the reason for the next step, with the tutor's note beneath.",
+      "**Do** keep functional text at 11px or larger and keep text on status fills at WCAG AA (ink on green, white on magenta)."
+    ],
+    "donts": [
+      "**Don't** use magenta for anything except gap and the primary action.",
+      "**Don't** add progress rings, mastery percentages or a card per unit; the sheet is the progress view.",
+      "**Don't** dress the sheet as a map: no contour textures, terrain or paper grain. The hatching on shaky squares is a status mark, not decoration.",
+      "**Don't** round corners or put shadows on resting surfaces; the More menu is the only floating layer.",
+      "**Don't** apply these tokens to the lesson, chapter or course-list pages until their migration slice, and don't add a dark variant outside the dark slice."
+    ]
+  }
+}
