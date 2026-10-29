@@ -3,3 +3,6 @@ learner/
 *.tmp
 .superpowers/
 .DS_Store
+
+# impeccable design-tool state (local only)
+.impeccable/
