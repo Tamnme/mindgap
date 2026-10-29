@@ -53,7 +53,7 @@ Compared with its upstream, learnharness, and with generic AI tutors:
 ## Evidence on Hand
 
 - The shipped networking course: 33 topics from L1 to DNS, chapters, labs and simulators (`courses/networking/`).
-- Screenshot of the map on first run: `docs/img/map.png`.
+- Screenshot of the course home on first run: `docs/img/home.png`.
 - No user counts, testimonials, reviews or benchmarks exist. Do not invent any.
 
 ## Product Principles

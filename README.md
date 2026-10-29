@@ -6,15 +6,15 @@ It ships with a networking course: learn the networking underneath your cloud. I
 
 The tutor's teaching method comes from [learnharness](https://github.com/amosblomqvist/learnharness), an agent harness for learning difficult things. See [Credits](#credits-and-license).
 
-![The map on first run: every topic untested, grouped by layer](docs/img/map.png)
+![The course home on first run: the goal question beside a sheet of 33 untested topics, one row per layer](docs/img/home.png)
 
 ## How it works
 
-1. **Map.** 33 topics from L1 to DNS, each with its prerequisites. Every topic starts as `untested`.
+1. **Map.** 33 topics from L1 to DNS, each with its prerequisites, laid out as a sheet: one row per layer, one square per topic, each with a grid reference like `L3·04`. Every topic starts as `untested`. The course home puts the next step beside it: one topic, the note from your last answer as the reason, and two alternates.
 2. **New goal.** You say what you want to be able to do; the tutor asks prediction questions and marks each topic `gap`, `shaky` or `solid`, with a note recording what you said.
 3. **Chapters.** Each topic has a written chapter. Checkpoints ask you to commit to a prediction (with a confidence) before the page reveals the answer. Wrong options are beliefs a smart person could hold, so a miss tells the tutor something.
 4. **Labs.** Chapters include commands that run in a real Linux container (`ip`, `tcpdump`, `bridge`, `conntrack`, ...). You predict the output, then run it.
-5. **Tutor.** Claude reads your answers in a side drawer, teaches into the gap it finds, and updates the map. You can also run teach, practice and debug-drill sessions from the map.
+5. **Tutor.** Claude reads your answers in a side drawer, teaches into the gap it finds, and updates the map. You can also start teach and practice sessions from a topic on the **Map** tab, and a debug drill from **More**.
 
 Each idea is meant to land as something you could have derived, not a fact to memorise: a security group is stateful *because* of conntrack, a pod reaches another node *because* of encapsulation.
 
@@ -35,7 +35,7 @@ node server.mjs
 
 Labs need Docker. The first lab run builds the lab image (a minute or two) and asks for your approval. The image is built once. After a Dockerfile change, run `docker rm -f mindgap-networking` and `docker rmi -f mindgap-networking`; the next lab run rebuilds it.
 
-Open http://localhost:4810 and start with **New goal**.
+Open http://localhost:4810, open a course, and click **Start with your goal**. Later goals start from **More → New goal**.
 
 On first access to a course, the server copies `courses/<slug>/map.seed.json` to `<data>/courses/<slug>/state/map.json`. Your progress lives in `learner/` and is gitignored.
 
@@ -50,7 +50,7 @@ On first access to a course, the server copies `courses/<slug>/map.seed.json` to
 
 ## Creating a course
 
-On the course list, fill in **What do you want to learn?** (and optionally some background about you) and click **Create course** to start an empty course; it is created in `<data>/courses/<slug>/`. Open it, optionally add sources, and click **New goal**. When you approve the plan, the tutor draws the course's map: its nodes and layers are added to the course. Nothing is written for the shipped networking course's map. Use **Write chapter** on a node to have the tutor write its chapter on demand. Generated courses have no labs or simulators.
+On the course list, fill in **What do you want to learn?** (and optionally some background about you) and click **Create course** to start an empty course; it is created in `<data>/courses/<slug>/`. Open it, optionally add sources on the **Sources** tab, and click **Start with your goal**. When you approve the plan, the tutor draws the course's map: its nodes and layers are added to the course. Nothing is written for the shipped networking course's map. Use **Write chapter** on a topic to have the tutor write its chapter on demand. Generated courses have no labs or simulators.
 
 ## Upgrading from netbench/underlay
 

@@ -69,12 +69,6 @@ export function nodeMatches(node, query) {
   return `${node.title || ''}\n${node.id || ''}`.toLowerCase().includes(q);
 }
 
-// The legend only means something when there is a map to read.
-export const legendVisible = (nodeCount) => nodeCount > 0;
-
-// "Practice shaky" is hidden at 0; the count shows only when there is a choice.
-export const practiceShakyLabel = (n) => (n > 1 ? `Practice shaky (${n})` : 'Practice shaky');
-
 // Buttons tagged with these data-action values start an AI call and are locked while one runs.
 const AI_ACTIONS = new Set(['next', 'practice', 'debug', 'goal', 'write', 'probe', 'teach']);
 export const startsAiCall = (action) => AI_ACTIONS.has(action);

@@ -73,7 +73,7 @@ test('replyQuestion: a pending plan turn still gets a reply box', async () => {
   assert.equal(replyQuestion(null), null);
 });
 
-import { nodeMatches, legendVisible, practiceShakyLabel, lockWhileBusy } from '../public/map-logic.js';
+import { nodeMatches, lockWhileBusy } from '../public/map-logic.js';
 
 test('nodeMatches: case-insensitive substring on title and id, empty matches all', () => {
   const n = { id: 'tcp-handshake', title: 'Three-way Handshake' };
@@ -83,16 +83,6 @@ test('nodeMatches: case-insensitive substring on title and id, empty matches all
   assert.equal(nodeMatches(n, 'tcp-h'), true);
   assert.equal(nodeMatches(n, 'udp'), false);
   assert.equal(nodeMatches({ id: 'x' }, 'x'), true);
-});
-
-test('legendVisible only with nodes', () => {
-  assert.equal(legendVisible(0), false);
-  assert.equal(legendVisible(3), true);
-});
-
-test('practiceShakyLabel shows the count only above one', () => {
-  assert.equal(practiceShakyLabel(1), 'Practice shaky');
-  assert.equal(practiceShakyLabel(4), 'Practice shaky (4)');
 });
 
 test('lockWhileBusy locks AI-starting actions only', () => {
