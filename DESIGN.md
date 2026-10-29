@@ -134,7 +134,7 @@ A course is a surveyed sheet. The page borrows from an Ordnance Survey topograph
 
 Density is high and calm. All 33 topics of the networking course fit one 1440x900 viewport beside the next step. Marks are 1px hairlines, corners are square, and every number is set in tabular figures. One colour does two jobs on purpose: magenta marks a gap and also the primary action, so the button that starts the next lesson is the same colour as the gaps it teaches into.
 
-Scope today: this system applies to the course page only (`public/course.html`, scoped by `body.sheet` with its tokens on `:root:has(body.sheet)`). The lesson, chapter and course-list pages still use the older global tokens at the top of `public/app.css` until a later slice migrates them. The system is light only; dark is a later slice, and the sheet sets `color-scheme: light`.
+Scope: every page (course list, course, lesson, chapter) uses this system. The tokens sit once on `:root` at the top of `public/app.css`, each written as `light-dark(light, dark)` under `color-scheme: light dark`. The theme control (System / Light / Dark, stored in `localStorage` as `mindgap-theme`) sets `data-theme` on the root, which forces `color-scheme`; an inline script in each page's head applies it before paint. The hex values in the front matter are the light ones.
 
 **Key Characteristics:**
 - Grid-referenced sheet: layer codes in the margin, two-digit column numbers on top, a grid ref such as `L3·04` on every square.
@@ -229,7 +229,7 @@ Every corner is square (0px): buttons, inputs, summaries, notices, squares, fram
 - **Focus:** a 2px grid-blue outline at a 2px offset everywhere on the sheet.
 
 ### Navigation
-- **Top bar:** white with a 1px ink bottom rule. It holds the wordmark, the course title in ink-2 (500, 15px), then the Home / Map / Sources tabs. The current tab is ink, weight 600, with a 2px grid-blue underline that sits on the bar's rule. "More" is a square `details` button whose menu holds New goal and Debug drill.
+- **Top bar:** panel-coloured with a 1px ink bottom rule, on every page. It holds the wordmark, the course title in ink-2 (500, 15px; a link back to the course on lesson and chapter pages), then the Home / Map / Sources tabs. The current tab is ink, weight 600, with a 2px grid-blue underline that sits on the bar's rule. On the course page "More" is a square `details` button whose menu holds New goal, Debug drill and the theme select; the course list, lesson and chapter pages put the theme select at the end of the bar.
 
 ### Sheet (signature component)
 - A white frame with a 1px ink border. The head row holds the margin note ("**33** of 33 untested", with the first figure in 18px bold ink) and the key box: a blue-hairline box listing the four marks with tabular counts.
@@ -264,4 +264,4 @@ Every corner is square (0px): buttons, inputs, summaries, notices, squares, fram
 - **Don't** add progress rings, mastery percentages or a card per unit; the sheet is the progress view.
 - **Don't** dress the sheet as a map: no contour textures, terrain or paper grain. The hatching on shaky squares is a status mark, not decoration.
 - **Don't** round corners or put shadows on resting surfaces; the More menu is the only floating layer.
-- **Don't** apply these tokens to the lesson, chapter or course-list pages until their migration slice, and don't add a dark variant outside the dark slice.
+- **Don't** hard-code a colour that has to read in both themes; add a token with `light-dark()`. The lab card is the one surface that stays dark in both.

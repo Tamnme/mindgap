@@ -18,5 +18,6 @@ Busy, cancel and timeout states without a paid call: `scripts/scratch-server.sh 
 
 ## Known traps
 Never kill the user's server on 4810 or touch the real `learner/`; ask instead. (2026-10-27)
+A scratch server picks up `public/` edits on reload but runs `server.mjs` and `lib/` as loaded: after editing those, restart that scratch PID. A stale one made the course list show 0 gaps with the new code on disk. (2026-10-29)
 Green tests are not done: f2's Write chapter POST lacked a JSON content-type with 264 tests passing; only the real check caught it. The design pass's Cancel POST repeated it, so `test/client-fetch.test.mjs` now scans `public/*.js` for it. (2026-10-28)
 SSH push/pull can fail on agent signing: fetch with `git -c credential.helper='!gh auth git-credential' fetch https://github.com/Tamnme/mindgap.git main`. Do not stash `.planning/`. (2026-10-27)
