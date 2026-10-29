@@ -18,6 +18,8 @@ The tutor's teaching method comes from [learnharness](https://github.com/amosblo
 
 Each idea is meant to land as something you could have derived, not a fact to memorise: a security group is stateful *because* of conntrack, a pod reaches another node *because* of encapsulation.
 
+Every page follows your system's light or dark setting. To pick one, use the theme control in the top bar (on a course page it is under **More**).
+
 ## Requirements
 
 - **Node.js 22 or newer.** No npm dependencies.
