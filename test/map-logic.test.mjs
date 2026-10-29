@@ -171,3 +171,18 @@ test('gridMove: left/right wrap in a row, up/down keep the column (clamped), unk
   assert.equal(gridMove(rows, 'a', 'Home'), null);
   assert.equal(gridMove(rows, 'zz', 'ArrowRight'), null);
 });
+
+import { evidenceParts } from '../public/map-logic.js';
+
+test('evidenceParts lifts the learner\'s quoted words and drops a dated prefix', () => {
+  assert.deepEqual(
+    evidenceParts('Placement 2026-10-24: picked /24 over /26 for 10.0.5.77.'),
+    { quote: null, note: 'picked /24 over /26 for 10.0.5.77.' },
+  );
+  assert.deepEqual(
+    evidenceParts('Predicted no frames, saying "without IP address the package don\'t know where to go" (believes X).'),
+    { quote: 'without IP address the package don\'t know where to go', note: 'Predicted no frames, saying … (believes X).' },
+  );
+  assert.deepEqual(evidenceParts('said "ok"'), { quote: null, note: 'said "ok"' }, 'short quoted bits stay in the note');
+  assert.deepEqual(evidenceParts(''), { quote: null, note: '' });
+});

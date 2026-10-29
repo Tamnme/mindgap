@@ -4,11 +4,12 @@
 import { elapsedText, withCode } from './ui-text.js';
 import {
   offGoalCount, isOffGoal, pickNext, dataUrlToBase64, sourceErrorMessage, canWriteChapter, nodeMatches, lockWhileBusy,
-  sheetRows, gridRefs, alternates, prereqRoute, statusCounts, isFirstRun, gridMove,
+  sheetRows, gridRefs, alternates, prereqRoute, statusCounts, isFirstRun, gridMove, evidenceParts,
 } from './map-logic.js';
 
 const STATUSES = ['untested', 'gap', 'shaky', 'solid'];
 const MAX_COLS = 10; // longer layers wrap within their row
+const WIDE = '(min-width: 1240px)'; // side-by-side layouts; below this the sheet stacks under the next step / panel
 
 const state = {
   course: null,       // slug from ?course=
@@ -160,7 +161,7 @@ function select(id) {
   renderSide();
   focusSquare(id); // the sheet was rebuilt; keep keyboard focus where it was
   // Narrow screens stack the panel under the sheet: bring it into view.
-  if (!matchMedia('(min-width: 900px)').matches) {
+  if (!matchMedia(WIDE).matches) {
     $('side').scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
   }
 }
@@ -168,6 +169,18 @@ function select(id) {
 function openOnMap(id) {
   state.selected = id;
   location.hash = `map:${encodeURIComponent(id)}`;
+}
+
+// The tutor's note on the learner's last answer: their own words as the quote, the rest as the note.
+function evidenceBlock(text, footer) {
+  const { quote, note } = evidenceParts(text);
+  return el('figure', { class: 'evidence' }, [
+    ...(quote ? [el('blockquote', {}, [el('p', { text: `“${quote}”` })])] : []),
+    el('figcaption', {}, [
+      ...(note ? [el('p', { class: 'ev-note', text: note })] : []),
+      ...(footer ? [el('p', { class: 'ev-src', text: footer })] : []),
+    ]),
+  ]);
 }
 
 // ---------- Home: what now? ----------
@@ -185,11 +198,11 @@ function renderNext() {
       el('p', { class: 'lede', text: 'Tell it what you want to learn. It probes what you already know, then teaches the gaps.' }),
       el('div', { class: 'actions' }, [
         el('button', { class: 'primary', 'data-action': 'goal', onclick: () => startLesson(null, 'course'), text: 'Start with your goal' }),
+        ...(state.nodes.length ? [] : [el('a', { class: 'button', href: '#sources', text: 'Add sources first' })]),
       ]),
       el('p', { class: 'muted small', text: state.nodes.length
         ? 'Every topic on the sheet is untested. The tutor asks a few prediction questions, marks each topic, and proposes a plan.'
         : 'This course has no map yet. Add sources first if you have any; the tutor draws the map when you approve its plan.' }),
-      ...(state.nodes.length ? [] : [el('p', { class: 'small' }, [el('a', { href: '#sources', text: 'Add sources' })])]),
     );
     renderResume(box);
     applyBusyLocks();
@@ -239,12 +252,12 @@ function topicBlock(n, mode) {
     actions.push(el('button', { 'data-action': 'write', 'data-node': n.id, onclick: () => writeChapter(n.id), text: 'Write chapter' }));
   }
   const reason = n.evidence
-    ? el('blockquote', { class: 'evidence' }, [el('p', { text: n.evidence }), el('footer', { text: 'From your last answer on this topic' })])
+    ? evidenceBlock(n.evidence, 'The tutor’s note on your last answer')
     : el('p', { class: 'lede', text: 'Not tested yet. The lesson starts by checking what you already know.' });
   return el('div', { class: 'topic-block' }, [
     el('div', { class: 'tb-mark' }, [mark(status, 'lg'), el('span', { class: 'num', text: state.refs[n.id] })]),
-    el('h2', { class: 'next-title' }, [el('span', { class: 'next-pre', text: mode === 'practice' ? 'Review ' : 'Next ' }), n.title || n.id]),
-    el('p', { class: 'meta', text: `${status} · ${state.layerNames[n.layer] || n.layer || ''}` }),
+    el('h2', { class: 'next-title', text: n.title || n.id }),
+    el('p', { class: 'meta' }, [el('strong', { class: 'next-pre', text: mode === 'practice' ? 'Review' : 'Next step' }), ` · ${status} · ${state.layerNames[n.layer] || n.layer || ''}`]),
     reason,
     el('div', { class: 'actions' }, actions),
   ]);
@@ -256,7 +269,7 @@ function altRow(n, verb, mode) {
     mark(status),
     el('div', { class: 'alt-body' }, [
       el('p', { class: 'alt-title' }, [el('span', { class: 'num', text: state.refs[n.id] }), ' ', n.title || n.id]),
-      el('p', { class: 'alt-why', text: n.evidence || status }),
+      el('p', { class: 'alt-why', text: evidenceParts(n.evidence).note || status }),
     ]),
     el('button', { 'data-action': mode, onclick: () => startLesson(n.id, mode, true), text: verb }),
   ]);
@@ -316,7 +329,7 @@ function renderSide() {
     el('div', { class: 'tb-mark' }, [mark(status, 'lg'), el('span', { class: 'num', text: state.refs[n.id] })]),
     el('h2', { text: n.title || n.id }),
     el('p', { class: 'meta', text: `${status}${isOffGoal(n) ? ' · off-goal' : ''} · ${state.layerNames[n.layer] || n.layer || ''}` }),
-    ...(n.evidence ? [el('blockquote', { class: 'evidence' }, [el('p', { text: n.evidence })])] : []),
+    ...(n.evidence ? [evidenceBlock(n.evidence, 'The tutor’s note on your last answer')] : []),
     actions,
     ...(hint ? [hint] : []),
     more,

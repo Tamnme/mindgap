@@ -174,3 +174,12 @@ export function gridMove(rows, id, key) {
   const to = key === 'ArrowDown' ? rows[r + 1] : key === 'ArrowUp' ? rows[r - 1] : null;
   return to ? to.nodes[Math.min(c, to.nodes.length - 1)].id : null;
 }
+
+// Split a tutor's evidence note: the learner's own quoted words (if any, 12+ chars) and the rest of the note.
+// A leading "Word 2026-10-24:" stamp is dropped; the note is the tutor's words, not the learner's.
+export function evidenceParts(text) {
+  const s = String(text || '').replace(/^\w+ \d{4}-\d{2}-\d{2}:\s*/, '');
+  const m = s.match(/["“]([^"”]{12,})["”]/);
+  if (!m) return { quote: null, note: s };
+  return { quote: m[1], note: s.replace(m[0], '…').replace(/\s+/g, ' ').trim() };
+}
