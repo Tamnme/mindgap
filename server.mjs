@@ -154,8 +154,10 @@ function updateMap(c, fn) {
   const prev = mapChains.get(c.slug) ?? Promise.resolve();
   const next = prev.then(async () => {
     const map = await loadMap(c);
-    fn(map);
+    const after = await fn(map);
     await writeAtomic(mapPath(c), JSON.stringify(map, null, 2) + '\n');
+    // fn may return an async follow-up that must run after the map write, still inside the chain.
+    if (typeof after === 'function') await after();
   });
   mapChains.set(c.slug, next.catch(() => {}));
   return next;
@@ -314,25 +316,19 @@ async function advance(c, id, meta, message, record, labsTotal, event = null) {
   let turn = called.turn;
   const ts = new Date().toISOString();
   let accepted = false;
+  let ids = null;
+  let course = null;
   if (meta.mode === 'course') {
     // The server keeps only what the acceptance rules allow; the reviewed turn is what gets stored and returned.
     const map = await loadMap(c);
-    const ids = await sectionIds(sourcesDir(c));
-    const course = { generated: c.generated, layers: c.layers.map((l) => l.id) };
+    ids = await sectionIds(sourcesDir(c));
+    course = { generated: c.generated, layers: c.layers.map((l) => l.id) };
     const r = reviewTurn({ meta, turn, map, event, sectionIds: ids, course });
     turn = r.turn;
     accepted = turn.approved;
     Object.assign(meta, r.meta);
     // Notes already sent in this message are spent; this turn's notes go out with the next one.
     meta.server_notes = r.notes;
-    // The plan was checked when presented; another session may have changed the map since.
-    const stale = accepted ? checkPlan(map, meta.pending_plan, ids, course) : null;
-    if (stale) {
-      accepted = false;
-      turn.approved = false;
-      turn.lesson_done = false;
-      meta.server_notes.push(`approval refused: the plan no longer fits the map (${stale}); present a fresh plan`);
-    }
   }
   // Instruments the course does not have: sims are networking scenarios, labs need the course's lab block.
   if (c.lab === null || c.lab === undefined) turn.lab = null;
@@ -345,25 +341,38 @@ async function advance(c, id, meta, message, record, labsTotal, event = null) {
     ? { goal: meta.goal.text, background: meta.goal.background, approved_at: ts }
     : null;
   if (accepted && !goal) throw new Error('approval accepted without a goal on record');
-  // New layers extend the course's own course.json (read fresh, every other key kept); built before any write.
-  const newLayers = accepted ? meta.pending_plan.new_layers ?? [] : [];
-  let courseJson = null;
-  if (newLayers.length) {
-    const cj = JSON.parse(await readFile(path.join(c.dir, 'course.json'), 'utf8'));
-    cj.layers = [...(cj.layers ?? []), ...newLayers.map(({ id, name }) => ({ id, name }))];
-    courseJson = JSON.stringify(cj, null, 2) + '\n';
-  }
   // ponytail: map, then course.json, then goal.json are separate atomic writes; a crash between map and
   // course.json leaves nodes on an unknown layer, which map.js tolerates. Journal them if that ever matters.
-  await updateMap(c, (map) => {
+  // Acceptance is decided on the fresh map inside the chain: the plan was checked when presented, but another
+  // session may have grown the map since. A refusal keeps node_updates and the turn's evidence, not plan/layers/goal.
+  await updateMap(c, async (map) => {
     applyNodeUpdates(map, turn.node_updates ?? []);
-    if (accepted) {
-      const { in_scope, sources, new_nodes } = meta.pending_plan;
-      Object.assign(map, applyPlan(map, in_scope, sources ?? [], new_nodes ?? []));
+    if (!accepted) return;
+    // Layers are read fresh too (before any write): another session may have added one since the request began.
+    const cjPath = path.join(c.dir, 'course.json');
+    const cj = JSON.parse(await readFile(cjPath, 'utf8'));
+    // Source sections are read fresh too: a source deleted since the request began must not leave dangling tags.
+    const freshIds = await sectionIds(sourcesDir(c));
+    const stale = checkPlan(map, meta.pending_plan, freshIds, { ...course, layers: (cj.layers ?? []).map((l) => l.id) });
+    if (stale) {
+      accepted = false;
+      turn.approved = false;
+      turn.lesson_done = false;
+      meta.server_notes.push(`approval refused: the plan no longer fits the map (${stale}); present a fresh plan`);
+      return;
     }
+    const { in_scope, sources, new_nodes, new_layers } = meta.pending_plan;
+    Object.assign(map, applyPlan(map, in_scope, sources ?? [], new_nodes ?? []));
+    return async () => {
+      // New layers extend the course's own course.json (read fresh, every other key kept, deduped by id).
+      if (new_layers?.length) {
+        cj.layers ??= [];
+        for (const { id: lid, name } of new_layers) if (!cj.layers.some((l) => l.id === lid)) cj.layers.push({ id: lid, name });
+        await writeAtomic(cjPath, JSON.stringify(cj, null, 2) + '\n');
+      }
+      await writeAtomic(goalPath(c), JSON.stringify(goal, null, 2) + '\n');
+    };
   });
-  if (courseJson) await writeAtomic(path.join(c.dir, 'course.json'), courseJson);
-  if (goal) await writeAtomic(goalPath(c), JSON.stringify(goal, null, 2) + '\n');
 
   const props = turn.propositions ?? [];
   if (props.length) {
@@ -395,8 +404,9 @@ async function startLesson(body) {
     // A course session spans the whole map, so any node_id is ignored.
     const lesson_id = `course-${Date.now()}`;
     const meta = { course: c.slug, tutor: TUTOR, tutor_session_id: null, node_id: null, mode, started: new Date().toISOString(), labs_sent: 0 };
-    await writeAtomic(metaPath(c, lesson_id), JSON.stringify(meta, null, 2));
+    // Context first: a throw here must not leave a meta behind (advanceOrDrop only covers what follows).
     const message = 'CONTEXT:\n' + JSON.stringify(await courseContext(c, map), null, 2);
+    await writeAtomic(metaPath(c, lesson_id), JSON.stringify(meta, null, 2));
     const turn = await advanceOrDrop(c, lesson_id, meta, message, { role: 'system', data: { type: 'start', node_id: null, mode } });
     return { lesson_id, turn };
   }
@@ -406,10 +416,9 @@ async function startLesson(body) {
 
   const lesson_id = `${node_id}-${Date.now()}`;
   const meta = { course: c.slug, tutor: TUTOR, tutor_session_id: null, node_id, mode, started: new Date().toISOString(), labs_sent: 0 };
-  await writeAtomic(metaPath(c, lesson_id), JSON.stringify(meta, null, 2));
-
   const ctx = await contextFor(c, map, node_id, mode);
   const message = 'CONTEXT:\n' + JSON.stringify(ctx, null, 2);
+  await writeAtomic(metaPath(c, lesson_id), JSON.stringify(meta, null, 2));
   const turn = await advanceOrDrop(c, lesson_id, meta, message, { role: 'system', data: { type: 'start', node_id, mode } });
   return { lesson_id, turn };
 }

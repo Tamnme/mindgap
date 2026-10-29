@@ -733,7 +733,7 @@ test('course schema extends the turn schema: same seven fields, five more requir
   assert.deepEqual(plan.required, ['approach', 'in_scope', 'sources', 'new_layers', 'new_nodes']);
   assert.deepEqual(Object.keys(plan.properties), plan.required);
   assert.deepEqual(plan.properties.new_layers.items.required, ['id', 'name']);
-  assert.deepEqual(plan.properties.new_nodes.items.required, ['id', 'title', 'layer', 'prereqs', 'truth', 'status', 'evidence']);
+  assert.deepEqual(plan.properties.new_nodes.items.required, ['id', 'title', 'layer', 'prereqs', 'truth', 'status', 'evidence', 'links']);
   for (const k of ['new_layers', 'new_nodes']) assert.equal(plan.properties[k].items.additionalProperties, false);
 });
 
@@ -1157,6 +1157,16 @@ test('approval on a generated course adds nodes and the layer, writes no chapter
   assert.deepEqual(await readdir(path.join(cdir, 'chapters')), ['index.json']);
 });
 
+test('approved drawn plan persists links into state/map.json', async () => {
+  const slug = (await call('POST', '/api/courses', { title: 'Link Me' })).json.slug;
+  const links = [{ label: 'AWS', text: 'like a security group' }];
+  const r = await drawSession(slug, { approach: 'draw', in_scope: ['a', 'b'], new_layers: [{ id: 'basics', name: 'Basics' }], new_nodes: [{ ...NODE('a'), links }, { ...NODE('b', ['a']), links: [] }] });
+  assert.equal(r.approved.json.turn.approved, true, r.approved.text);
+  const map = (await call('GET', `/api/courses/${slug}/map`)).json;
+  assert.deepEqual(map.nodes[0].links, links);
+  assert.ok(!('links' in map.nodes[1]));
+});
+
 test('a shipped course session with new_nodes is refused and its map is untouched', () => withCourseState(async (mapBefore) => {
   const { shown } = await drawSession('net', { approach: 'x', in_scope: ['frames-mac', 'zz'], new_layers: [{ id: 'basics', name: 'B' }], new_nodes: [NODE('zz')] });
   assert.equal(shown.json.turn.plan, null);
@@ -1327,6 +1337,74 @@ test('stale approval: a plan that no longer fits the map is refused with a note 
   await rm(path.join(dir, 'turn.json'), { force: true });
 });
 
+test('two-tab approval race: concurrent approvals of the same plan apply it once; the loser is refused with a note', async () => {
+  const slug = (await call('POST', '/api/courses', { title: 'Race Plan' })).json.slug;
+  const cdir = path.join(dataDir, 'courses', slug);
+  const plan = { approach: 'x', in_scope: ['x'], new_layers: [{ id: 'basics', name: 'Basics' }], new_nodes: [NODE('x')] };
+  const open = async () => {
+    await setTurn({ goal: GOAL, assessment: ASSESSMENT });
+    const id = (await call('POST', '/api/lesson', { course: slug, mode: 'course' })).json.lesson_id;
+    const say = () => call('POST', '/api/turn', { course: slug, lesson_id: id, event: { type: 'ask', text: 'ok' } });
+    await setTurn({ plan });
+    assert.ok((await say()).json.turn.plan, 'plan presented');
+    return say;
+  };
+  const A = await open();
+  const B = await open();
+  await setTurn({ approved: true, lesson_done: true });
+  await setControl('slow'); // both tutor replies land together, before either approval is written
+  const [ra, rb] = await Promise.all([A(), B()]);
+  await setControl('ok');
+  const approved = [ra, rb].filter((r) => r.json.turn.approved);
+  const refused = [ra, rb].filter((r) => !r.json.turn.approved);
+  assert.equal(approved.length, 1);
+  assert.equal(refused.length, 1);
+  assert.equal(refused[0].json.turn.lesson_done, false);
+  const map = (await call('GET', `/api/courses/${slug}/map`)).json;
+  assert.equal(map.nodes.filter((n) => n.id === 'x').length, 1);
+  const layers = JSON.parse(await readFile(path.join(cdir, 'course.json'), 'utf8')).layers.map((l) => l.id);
+  assert.deepEqual(layers, ['basics']);
+  await setTurn({});
+  await (ra === refused[0] ? A : B)();
+  assert.match((await lastMessage()).split('EVENT:')[0], /approval refused: the plan no longer fits the map/);
+  await rm(path.join(dir, 'turn.json'), { force: true });
+});
+
+test('two-tab approval race on a shared new layer: distinct nodes, one approval; the loser is refused', async () => {
+  const slug = (await call('POST', '/api/courses', { title: 'Race Layer' })).json.slug;
+  const cdir = path.join(dataDir, 'courses', slug);
+  const plans = ['y', 'z'].map((n) => ({ approach: n, in_scope: [n], new_layers: [{ id: 'basics', name: 'Basics' }], new_nodes: [NODE(n)] }));
+  let k = 0;
+  const open = async () => {
+    const plan = plans[k++];
+    await setTurn({ goal: GOAL, assessment: ASSESSMENT });
+    const id = (await call('POST', '/api/lesson', { course: slug, mode: 'course' })).json.lesson_id;
+    const say = () => call('POST', '/api/turn', { course: slug, lesson_id: id, event: { type: 'ask', text: 'ok' } });
+    await setTurn({ plan });
+    assert.ok((await say()).json.turn.plan, 'plan presented');
+    return say;
+  };
+  const A = await open();
+  const B = await open();
+  await setTurn({ approved: true, lesson_done: true });
+  await setControl('slow'); // both tutor replies land together, before either approval is written
+  const [ra, rb] = await Promise.all([A(), B()]);
+  await setControl('ok');
+  const approved = [ra, rb].filter((r) => r.json.turn.approved);
+  const refused = [ra, rb].filter((r) => !r.json.turn.approved);
+  assert.equal(approved.length, 1);
+  assert.equal(refused.length, 1);
+  assert.equal(refused[0].json.turn.lesson_done, false);
+  const map = (await call('GET', `/api/courses/${slug}/map`)).json;
+  assert.equal(map.nodes.filter((n) => n.id === 'y' || n.id === 'z').length, 1);
+  const layers = JSON.parse(await readFile(path.join(cdir, 'course.json'), 'utf8')).layers.map((l) => l.id);
+  assert.deepEqual(layers, ['basics']);
+  await setTurn({});
+  await (ra === refused[0] ? A : B)();
+  assert.match((await lastMessage()).split('EVENT:')[0], /approval refused: the plan no longer fits the map/);
+  await rm(path.join(dir, 'turn.json'), { force: true });
+});
+
 test('instruments: a generated course (lab null) never returns a sim or lab; a shipped course with a lab keeps both', async () => {
   const slug = (await call('POST', '/api/courses', { title: 'No Instruments' })).json.slug;
   const cdir = path.join(dataDir, 'courses', slug);
@@ -1422,6 +1500,20 @@ test('failed lesson start (tutor error) leaves no meta', async () => {
   assert.equal(r.status, 502, r.text);
   await noOrphanAfterFailedStart(slug, cdir);
 });
+
+for (const [mode, body] of [['node', { node_id: 'alpha', mode: 'teach' }], ['course', { mode: 'course' }]]) {
+  test(`lesson start whose context build throws (${mode} mode) leaves no meta and never calls the tutor`, async () => {
+    const { slug, cdir } = await writableCourse(`Start Ctx ${mode}`);
+    await mkdir(path.join(cdir, 'state'), { recursive: true });
+    await writeFile(path.join(cdir, 'state', 'propositions.jsonl'), '{not json\n');
+    const calls = async () => (await readCalls().catch(() => [])).length;
+    const n = await calls();
+    const r = await call('POST', '/api/lesson', { course: slug, ...body });
+    assert.ok(r.status >= 400, r.text);
+    assert.equal(await calls(), n);
+    await noOrphanAfterFailedStart(slug, cdir);
+  });
+}
 
 test('cancel with nothing running is 200 cancelled:false; unknown course is 404', async () => {
   const r = await call('POST', '/api/courses/net/cancel', {});

@@ -411,3 +411,26 @@ test('applyPlan appends new nodes with their probed status and evidence, leaves 
   assert.equal(out.nodes[1].in_scope, false);
   assert.deepEqual(applyPlan(map, ['a']).nodes.length, 4);
 });
+
+// --- links on drawn nodes ---
+test('drawn node links: valid accepted, missing counts as [], bad shapes refused', () => {
+  const ok = (links) => checkPlan(EMPTY, drawn([nn('n1', links === undefined ? {} : { links })]), new Set(), GEN);
+  assert.equal(ok([{ label: 'AWS', text: 'like a security group' }]), null);
+  assert.equal(ok([]), null);
+  assert.equal(ok(undefined), null);
+  const L = (o = {}) => ({ label: 'a', text: 'b', ...o });
+  assert.match(ok([L(), L(), L(), L()]), /links/);
+  assert.match(ok([L({ label: '  ' })]), /links/);
+  assert.match(ok([L({ label: 'x'.repeat(41) })]), /links/);
+  assert.match(ok([L({ text: '' })]), /links/);
+  assert.match(ok([L({ text: 'x'.repeat(301) })]), /links/);
+  assert.match(ok([L({ extra: 1 })]), /links/);
+  assert.match(ok('x'), /links/);
+  assert.match(ok([null]), /links/);
+});
+
+test('applyPlan copies links only when non-empty', () => {
+  const out = applyPlan({ nodes: [] }, ['a', 'b'], [], [nn('a', { links: [{ label: 'L', text: 't' }] }), nn('b', { links: [] })]);
+  assert.deepEqual(out.nodes[0].links, [{ label: 'L', text: 't' }]);
+  assert.ok(!('links' in out.nodes[1]));
+});
