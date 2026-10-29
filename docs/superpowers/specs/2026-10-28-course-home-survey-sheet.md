@@ -36,7 +36,7 @@ A stranger who cloned mindgap opens a course, either for a long study session or
 - Selecting a square shows its prerequisites as a highlighted route; no lines drawn by default.
 - Keyboard: arrows move across the grid, Enter opens, `n` starts the next step, `/` focuses topic search.
 - Next-step pick: current `pickNext()` (prerequisite order) for the main suggestion; alternates are the first shaky topic and the first gap whose prerequisites are all solid, excluding the main pick.
-- Under 900px the sheet stacks below the next step.
+- Below 1240px the sheet stacks below the next step (changed from 900px at build: between 900 and 1240 the sheet clipped to 4 of 9 columns).
 
 ## 7. Constraints and decisions
 - Zero npm dependencies, plain ES modules, WCAG AA contrast, functional text at least 11px (the sketch's in-square text is not).

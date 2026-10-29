@@ -177,12 +177,10 @@ pre code { background: none; padding: 0; color: inherit; }
   --border: rgba(28, 35, 33, 0.22);
   --disabled-bg: #eceeeb;
   --sv-solid: #4f9a52;
-  --sv-solid-tint: #e6f0e4;
   --sv-shaky: #c2652a;
-  --sv-shaky-tint: #fbf0e6;
   --sv-gap: #c0176b;
-  --sv-gap-tint: #fbe6f0;
   --sv-untested: #8a948f;
+  --busy-bg: #eef3f9;
   --danger: #a3123f;
   --danger-bg: #fbe8ee;
   font-size: 15px;
@@ -197,6 +195,7 @@ body.sheet button.primary:hover:not(:disabled) { background: var(--primary-ink);
 body.sheet button:hover:not(:disabled) { border-color: var(--fg); }
 body.sheet .button { display: inline-block; padding: 6px 12px; border: 1px solid var(--border); background: var(--panel); color: var(--fg); text-decoration: none; }
 body.sheet .button:hover { border-color: var(--fg); }
+body.sheet .skip-link { border-radius: 0; }
 body.sheet .notice { border-radius: 0; margin: 8px 24px; }
 body.sheet .spinner { border-top-color: var(--grid); }
 
@@ -215,7 +214,7 @@ body.sheet .spinner { border-top-color: var(--grid); }
 .more-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; display: flex; flex-direction: column; min-width: 160px; background: var(--panel); border: 1px solid var(--fg); box-shadow: 0 6px 18px rgba(28, 35, 33, 0.14); }
 .more-menu button { border: 0; border-bottom: 1px solid var(--hair); padding: 8px 12px; }
 .more-menu button:last-child { border-bottom: 0; }
-.busy { display: flex; align-items: center; gap: 8px; padding: 8px 24px; background: #eef3f9; border-bottom: 1px solid var(--hair); font-size: 14px; }
+.busy { display: flex; align-items: center; gap: 8px; padding: 8px 24px; background: var(--busy-bg); border-bottom: 1px solid var(--hair); font-size: 14px; }
 .busy #busy-text { font-variant-numeric: tabular-nums; }
 
 #view { padding: 24px; max-width: 1600px; margin: 0 auto; }
