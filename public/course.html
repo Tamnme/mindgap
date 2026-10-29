@@ -22,11 +22,11 @@
       <div class="more-menu">
         <button type="button" id="btn-goal" data-action="goal">New goal</button>
         <button type="button" id="btn-debug" data-action="debug" class="hidden">Debug drill</button>
+        <label class="theme"><span>Theme</span>
+          <select id="theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select>
+        </label>
       </div>
     </details>
-    <label class="theme"><span class="sr-only">Theme</span>
-      <select id="theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select>
-    </label>
   </header>
 
   <div id="busy" class="busy hidden" role="status"><span class="spinner"></span><span id="busy-text"></span> <button id="busy-cancel" type="button">Cancel</button></div>

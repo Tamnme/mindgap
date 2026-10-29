@@ -150,11 +150,13 @@ input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color:
 .more-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; display: flex; flex-direction: column; min-width: 160px; background: var(--panel); border: 1px solid var(--fg); box-shadow: 0 6px 18px rgba(28, 35, 33, 0.14); }
 .more-menu button { border: 0; border-bottom: 1px solid var(--hair); padding: 8px 12px; }
 .more-menu button:last-child { border-bottom: 0; }
+.more-menu .theme { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; font-size: 14px; }
+.more-menu .theme select { padding: 3px 6px; font-size: 14px; }
 .busy { display: flex; align-items: center; gap: 8px; padding: 8px 24px; background: var(--busy-bg); border-bottom: 1px solid var(--hair); font-size: 14px; }
 .busy #busy-text { font-variant-numeric: tabular-nums; }
 a.tb-title { text-decoration: none; }
 a.tb-title:hover { color: var(--fg); text-decoration: underline; }
-.theme select { font: inherit; font-size: 13px; padding: 5px 6px; border: 1px solid var(--border); background: var(--panel); color: var(--fg); cursor: pointer; }
+.theme select { font: inherit; padding: 6px 8px; border: 1px solid var(--border); background: var(--panel); color: var(--fg); cursor: pointer; }
 .theme select:hover { border-color: var(--fg); }
 
 /* lesson: one reading column under the top bar */
@@ -268,8 +270,9 @@ a.tb-title:hover { color: var(--fg); text-decoration: underline; }
 .sources-view .actions button { flex: none; }
 
 @media (max-width: 899px) {
-  #view { padding: 16px; }
-  .topbar { padding: 10px 16px; }
+  #view, .page { padding: 16px; }
+  .topbar { padding: 10px 16px; column-gap: 12px; }
+  .tabs a { padding: 6px 8px; }
   .tabs a { margin-bottom: 0; }
   .next-title { font-size: 24px; }
 }
