@@ -186,3 +186,18 @@ test('evidenceParts lifts the learner\'s quoted words and drops a dated prefix',
   assert.deepEqual(evidenceParts('said "ok"'), { quote: null, note: 'said "ok"' }, 'short quoted bits stay in the note');
   assert.deepEqual(evidenceParts(''), { quote: null, note: '' });
 });
+
+test('topoSort: prereqs first, then layer order, then file order; cycles do not hang', async () => {
+  const { topoSort } = await import('../public/map-logic.js');
+  const layers = [{ id: 'a' }, { id: 'b' }];
+  const ns = [
+    { id: 'b1', layer: 'b' },
+    { id: 'a2', layer: 'a', prereqs: ['a3'] },
+    { id: 'a3', layer: 'a' },
+    { id: 'x', layer: 'zz' },
+    { id: 'a1', layer: 'a', prereqs: ['missing'] },
+  ];
+  assert.deepEqual(topoSort(ns, layers).map((n) => n.id), ['a3', 'a2', 'a1', 'b1', 'x']);
+  const cyc = [{ id: 'p', layer: 'a', prereqs: ['q'] }, { id: 'q', layer: 'a', prereqs: ['p'] }];
+  assert.deepEqual(topoSort(cyc, layers).map((n) => n.id), ['p', 'q']);
+});

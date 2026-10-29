@@ -4,6 +4,8 @@
 import { renderMarkdown } from './md.js';
 import { elapsedText, turnErrorText, withCode } from './ui-text.js';
 import { createLabCard, fillLabCard, runLabCommand, setLabBusy } from './labcard.js';
+import { topoSort, gridRefs } from './map-logic.js';
+import { statusMark, statusOf, fillCourseBar } from './chrome.js';
 import { firstOpenCheckpoint, flatBlocks, answerEvent, answersFrom, sectionState } from './chapter-logic.js';
 
 const $ = (id) => document.getElementById(id);
@@ -19,6 +21,8 @@ const S = {
   queue: [],        // learner events waiting for the tutor
   sending: false,
   unread: 0,
+  topo: [],         // map nodes in learning order
+  refs: {},         // node id -> grid ref, as the course sheet numbers it
 };
 
 function el(tag, props = {}, children = []) {
@@ -61,10 +65,10 @@ async function getJson(url) {
   return data;
 }
 
-function setStatusChip(status) {
-  const s = ['untested', 'gap', 'shaky', 'solid'].includes(status) ? status : 'untested';
-  $('status-chip').className = `chip ${s}`;
-  $('status-chip').textContent = s;
+// Under the title: the topic's mark, then "L1·01 · gap · Chapter 1 · Physical".
+function renderMeta() {
+  const parts = [S.refs[S.node.id], statusOf(S.node.status), `Chapter ${S.chapter.number}`, S.chapter.kicker];
+  $('ch-meta').replaceChildren(statusMark(S.node.status), ' ', parts.filter(Boolean).join(' · '));
 }
 
 // ---------- checkpoints ----------
@@ -263,11 +267,12 @@ function renderToc() {
   const states = sectionState(S.chapter, S.answers);
   const toc = $('toc');
   toc.replaceChildren();
-  const layerNodes = S.map.nodes.filter((n) => n.layer === S.node.layer);
-  layerNodes.forEach((n, i) => {
+  const layerNodes = S.topo.filter((n) => n.layer === S.node.layer);
+  layerNodes.forEach((n) => {
     const current = n.id === nodeId;
     const has = S.chapterIds.includes(n.id);
-    const label = [el('span', { class: 'toc-num', text: String(i + 1) }), el('span', { text: n.title }), el('span', { class: `dot ${n.status}`, title: n.status })];
+    const label = [el('span', { class: 'toc-num num', text: S.refs[n.id] || '' }), el('span', { text: n.title }), statusMark(n.status, 'sm')];
+    label[2].title = statusOf(n.status);
     const item = has && !current
       ? el('a', { class: 'toc-item', href: `chapter.html?course=${encodeURIComponent(course)}&node=${encodeURIComponent(n.id)}` }, label)
       : el('div', { class: `toc-item${current ? ' current' : ' no-chapter'}`, title: has ? '' : 'No chapter yet' }, label);
@@ -336,7 +341,12 @@ function setTutorState(text) {
 }
 
 function handleTurn(turn) {
-  for (const u of turn.node_updates || []) if (u.id === nodeId) setStatusChip(u.status);
+  for (const u of turn.node_updates || []) {
+    if (u.id !== nodeId) continue;
+    S.node.status = u.status;
+    renderMeta();
+    renderToc();
+  }
   if (!turn.say || !turn.say.trim()) return;
   drawerAppend('tutor', turn.say);
   if (!$('drawer').classList.contains('open')) {
@@ -404,7 +414,7 @@ function replay(events) {
 
 async function init() {
   if (!course || !nodeId) return showError('No chapter in the URL. Open one from the map.');
-  $('back-map').href = `course.html?course=${encodeURIComponent(course)}`;
+  fillCourseBar(course);
   // Phones: the chapter list starts folded so the reading starts at the top of the screen.
   if (!matchMedia('(min-width: 960px)').matches) $('toc-wrap').open = false;
   try {
@@ -423,11 +433,14 @@ async function init() {
     S.lessonId = lesson.lesson_id;
 
     document.title = `mindgap · ${S.chapter.title}`;
-    $('ch-number').textContent = `Chapter ${S.chapter.number} · ${S.chapter.kicker}`;
-    $('side-layer').textContent = S.chapter.kicker;
+    const layers = info.layers || [];
+    S.topo = topoSort(S.map.nodes, layers);
+    S.refs = gridRefs(S.topo, layers);
+    fillCourseBar(course, info.title);
+    $('side-layer').textContent = layers.find((l) => l.id === S.node.layer)?.name || S.chapter.kicker;
     $('ch-title').textContent = S.chapter.title;
     $('ch-lede').textContent = S.chapter.lede;
-    setStatusChip(S.node.status);
+    renderMeta();
 
     replay(lesson.events);
     renderArticle();

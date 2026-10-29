@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>mindgap</title>
   <link rel="stylesheet" href="app.css">
+  <script>try { const t = localStorage.getItem('mindgap-theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch {}</script>
 </head>
 <body>
   <a class="skip-link" href="#view">Skip to the course</a>
@@ -23,6 +24,9 @@
         <button type="button" id="btn-debug" data-action="debug" class="hidden">Debug drill</button>
       </div>
     </details>
+    <label class="theme"><span class="sr-only">Theme</span>
+      <select id="theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select>
+    </label>
   </header>
 
   <div id="busy" class="busy hidden" role="status"><span class="spinner"></span><span id="busy-text"></span> <button id="busy-cancel" type="button">Cancel</button></div>

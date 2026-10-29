@@ -1,10 +1,11 @@
 // Course page: Home (what next + the sheet), Map (the sheet + topic details) and Sources, as hash views.
 // All map text comes from model-written files, so it is only ever set via textContent.
 
+import './chrome.js';
 import { elapsedText, withCode } from './ui-text.js';
 import {
   offGoalCount, isOffGoal, pickNext, dataUrlToBase64, sourceErrorMessage, canWriteChapter, nodeMatches, lockWhileBusy,
-  sheetRows, gridRefs, alternates, prereqRoute, statusCounts, isFirstRun, gridMove, evidenceParts,
+  sheetRows, gridRefs, topoSort, alternates, prereqRoute, statusCounts, isFirstRun, gridMove, evidenceParts,
 } from './map-logic.js';
 
 const STATUSES = ['untested', 'gap', 'shaky', 'solid'];
@@ -48,28 +49,6 @@ function el(tag, props = {}, children = []) {
 
 function statusOf(node) {
   return STATUSES.includes(node.status) ? node.status : 'untested';
-}
-
-// Kahn's algorithm; ties broken by layer order then file order. Cycles fall back to sort order.
-function topoSort(nodes) {
-  const ids = state.layers.map((l) => l.id);
-  const layerIdx = (n) => {
-    const i = ids.indexOf(n.layer);
-    return i === -1 ? ids.length : i;
-  };
-  const sortKey = nodes.map((n, i) => ({ n, i, l: layerIdx(n) }))
-    .sort((a, b) => a.l - b.l || a.i - b.i);
-  const placed = new Set();
-  const order = [];
-  let remaining = sortKey.slice();
-  while (remaining.length) {
-    const next = remaining.find(({ n }) => (n.prereqs || []).every(p => placed.has(p) || !state.byId.has(p)));
-    const pick = next || remaining[0];
-    placed.add(pick.n.id);
-    order.push(pick.n);
-    remaining = remaining.filter(x => x !== pick);
-  }
-  return order;
 }
 
 // ---------- the status mark: one form at every scale ----------
@@ -590,7 +569,7 @@ async function load() {
     document.title = `${course.title || course.slug} · mindgap`;
     state.nodes = Array.isArray(data.nodes) ? data.nodes : [];
     state.byId = new Map(state.nodes.map(n => [n.id, n]));
-    state.topo = topoSort(state.nodes);
+    state.topo = topoSort(state.nodes, state.layers);
     state.refs = gridRefs(state.topo, state.layers);
   } catch (err) {
     showError(`Could not load the course: ${err.message}`);
