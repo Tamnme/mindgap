@@ -96,10 +96,14 @@ import { layerCodes, sheetRows, gridRefs, alternates, prereqRoute, statusCounts,
 
 const st = (n) => n.status || 'untested';
 
-test('layerCodes: short ids as-is, long ids two letters, duplicates numbered', () => {
+test('layerCodes: short ids as-is, numbered ids keep the number, words give initials, clashes numbered', () => {
   assert.deepEqual(
     layerCodes([{ id: 'L1' }, { id: 'overlay' }, { id: 'services' }, { id: 'serving' }, { id: 'l2' }]),
     { L1: 'L1', overlay: 'OV', services: 'SE', serving: 'SE2', l2: 'L2' },
+  );
+  assert.deepEqual(
+    layerCodes([{ id: 'layer-0' }, { id: 'layer-12' }, { id: 'ownership-basics' }, { id: 'state_of_the_art' }, { id: 'one-basics' }]),
+    { 'layer-0': 'L0', 'layer-12': 'L12', 'ownership-basics': 'OB', state_of_the_art: 'SA', 'one-basics': 'OB2' },
   );
   assert.deepEqual(layerCodes([]), {});
 });

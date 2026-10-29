@@ -78,12 +78,23 @@ export const lockWhileBusy = (action, hasChapter) => startsAiCall(action) && !(a
 
 // --- Survey sheet: rows of grid-referenced squares, one row per layer. ---
 
-// Short margin code per layer: ids of 3 chars or fewer as-is, else the first two letters; clashes get a digit.
+const STOP = new Set(['and', 'of', 'the', 'a', 'an', 'to', 'in', 'on', 'for']);
+
+// Short margin code from a layer id: "L3" as-is; "layer-3" -> L3; "ownership-basics" -> OB; "overlay" -> OV.
+function codeFor(id) {
+  if (id.length <= 3) return id;
+  const words = id.split(/[^A-Za-z0-9]+/).filter((w) => w && !STOP.has(w.toLowerCase()));
+  const num = words.find((w) => /^\d+$/.test(w));
+  if (num) return `${(words[0] || 'L')[0]}${num}`.slice(0, 3);
+  return words.length > 1 ? words[0][0] + words[1][0] : (words[0] || id).slice(0, 2);
+}
+
+// Margin code per layer (see codeFor); clashes get a digit.
 export function layerCodes(layers) {
   const out = {};
   const used = new Set();
   for (const { id } of layers) {
-    const base = (id.length <= 3 ? id : id.slice(0, 2)).toUpperCase();
+    const base = codeFor(id).toUpperCase();
     let code = base;
     for (let i = 2; used.has(code); i++) code = `${base}${i}`;
     used.add(code);
