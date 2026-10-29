@@ -404,7 +404,7 @@ function replay(events) {
 
 async function init() {
   if (!course || !nodeId) return showError('No chapter in the URL. Open one from the map.');
-  $('back-map').href = `map.html?course=${encodeURIComponent(course)}`;
+  $('back-map').href = `course.html?course=${encodeURIComponent(course)}`;
   // Phones: the chapter list starts folded so the reading starts at the top of the screen.
   if (!matchMedia('(min-width: 960px)').matches) $('toc-wrap').open = false;
   try {
