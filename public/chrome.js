@@ -19,11 +19,20 @@ function applyTheme(value) {
   else delete document.documentElement.dataset.theme;
 }
 
+function storedTheme() {
+  try {
+    const t = localStorage.getItem(THEME_KEY);
+    return t === 'light' || t === 'dark' ? t : 'system';
+  } catch { return 'system'; /* storage blocked: follow the system */ }
+}
+
 const select = document.getElementById('theme');
 if (select) {
-  let stored = null;
-  try { stored = localStorage.getItem(THEME_KEY); } catch { /* storage blocked: follow the system */ }
-  select.value = stored === 'light' || stored === 'dark' ? stored : 'system';
+  select.value = storedTheme();
+  // Another tab changed it, or Back restored this page from the cache with the old choice.
+  const resync = () => { applyTheme(storedTheme()); select.value = storedTheme(); };
+  addEventListener('storage', (e) => { if (e.key === THEME_KEY || e.key === null) resync(); });
+  addEventListener('pageshow', (e) => { if (e.persisted) resync(); });
   select.addEventListener('change', () => {
     applyTheme(select.value);
     try {

@@ -173,3 +173,15 @@ test('createCourse: bad title or background throws InvalidCourse and writes noth
   const r = await createCourse(opts, { title: 'ok', background: '   ' });
   assert.ok(!existsSync(path.join(opts.dataDir, 'courses', r.slug, 'state')));
 });
+
+test('listCourses counts an unknown status as untested, including prototype keys', async () => {
+  const o = await fixture({
+    'courses/a/course.json': course('a', 'A'),
+    'courses/a/map.seed.json': JSON.stringify({ nodes: [
+      { id: 'p', status: 'bogus' }, { id: 'q', status: '__proto__' }, { id: 'r', status: 'toString' }, { id: 's', status: 'gap' },
+    ] }),
+  });
+  const [a] = await listCourses(o);
+  assert.deepEqual(a.counts, { untested: 3, gap: 1, shaky: 0, solid: 0 });
+  assert.equal(a.total, 4);
+});

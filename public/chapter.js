@@ -78,10 +78,11 @@ function receipt(cp, ans) {
   const short = (o) => String(o).split(': ')[0];
   const pick = ans.skipped ? null : short(ans.chosen);
   const line = ans.skipped
-    ? `↷ Skipped · answer: ${short(cp.options[cp.key])}`
+    ? `Skipped · answer: ${short(cp.options[cp.key])}`
     : ans.correct
-      ? `✓ ${pick} · confidence ${ans.confidence}`
-      : `✗ You: ${pick} · answer: ${short(cp.options[cp.key])}`;
+      ? `Right: ${pick} · confidence ${ans.confidence}`
+      : `You: ${pick} · answer: ${short(cp.options[cp.key])}`;
+  const mark = statusMark(ans.skipped ? 'untested' : ans.correct ? 'solid' : 'gap', 'sm');
   const details = el('div', { class: 'cp-details hidden' }, [
     md(cp.prompt, 'cp-q'),
     el('p', { text: cp.why }),
@@ -90,12 +91,11 @@ function receipt(cp, ans) {
   const btn = el('button', {
     class: `cp-receipt ${ans.skipped ? 'skipped' : ans.correct ? 'right' : 'wrong'}`,
     'aria-expanded': 'false',
-    text: line,
     onclick: () => {
       const open = details.classList.toggle('hidden') === false;
       btn.setAttribute('aria-expanded', String(open));
     },
-  });
+  }, [mark, ' ', line]);
   return el('div', { class: 'cp folded' }, [btn, details]);
 }
 
@@ -157,7 +157,7 @@ function widgetCard(w) {
   let explored = false;
   try { explored = localStorage.getItem(key) === '1'; } catch { /* storage blocked */ }
 
-  const badge = el('span', { class: `w-badge${explored ? '' : ' hidden'}`, text: '✓ Explored' });
+  const badge = el('span', { class: `w-badge${explored ? '' : ' hidden'}`, text: 'explored' });
   const host = el('div', { class: 'sim-host' });
   let instance = null;
   const mount = async () => {
@@ -180,11 +180,11 @@ function widgetCard(w) {
   for (const t of ['click', 'input', 'change']) host.addEventListener(t, markExplored);
 
   const card = el('div', { class: 'widget' });
-  const focusBtn = el('button', { class: 'w-tool', text: '⤢ Focus' });
+  const focusBtn = el('button', { class: 'w-tool', text: 'Focus' });
   const setFocus = (on) => {
     card.classList.toggle('focused', on);
     document.body.classList.toggle('has-focus', on);
-    focusBtn.textContent = on ? '× Close' : '⤢ Focus';
+    focusBtn.textContent = on ? 'Close' : 'Focus';
   };
   focusBtn.addEventListener('click', () => setFocus(!card.classList.contains('focused')));
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && card.classList.contains('focused')) setFocus(false); });
@@ -192,11 +192,10 @@ function widgetCard(w) {
   card.append(
     el('div', { class: 'w-head' }, [
       el('div', { class: 'w-titles' }, [
-        el('div', { class: 'w-kicker' }, [el('span', { text: 'Interactive' }), badge]),
-        el('h3', { text: w.title }),
+        el('h3', { class: 'w-kicker' }, [el('span', { text: w.title }), badge]),
         w.hint ? el('p', { class: 'w-hint', text: w.hint }) : null,
       ]),
-      el('div', { class: 'w-tools' }, [el('button', { class: 'w-tool', text: '↺ Reset', onclick: mount }), focusBtn]),
+      el('div', { class: 'w-tools' }, [el('button', { class: 'w-tool', text: 'Reset', onclick: mount }), focusBtn]),
     ]),
     el('div', { class: 'w-body' }, [host]),
     w.takeaway ? md(w.takeaway, 'w-take') : null,
@@ -281,7 +280,7 @@ function renderToc() {
       toc.append(el('div', { class: 'toc-sections' }, S.chapter.sections.map((s) => el('a', {
         class: `toc-sec st-${states[s.id]}`,
         href: `#s-${s.id}`,
-        text: `${states[s.id] === 'done' ? '✓ ' : ''}${s.title}`,
+        text: s.title,
       }))));
     }
   });
@@ -302,7 +301,7 @@ function drawerAppend(kind, content) {
 function noteFor(ev) {
   if (ev.type === 'ask') return ['learner', ev.text];
   if (ev.type === 'checkpoint') {
-    return ['note', ev.skipped ? `${ev.id}: skipped` : `${ev.id}: ${ev.correct ? '✓' : '✗'} ${ev.chosen} · confidence ${ev.confidence}`];
+    return ['note', ev.skipped ? `${ev.id}: skipped` : `${ev.id}: ${ev.correct ? 'right' : 'wrong'}, ${ev.chosen} · confidence ${ev.confidence}`];
   }
   return ['note', ev.type];
 }
