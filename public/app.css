@@ -580,30 +580,37 @@ body.has-focus::after { content: ""; position: fixed; inset: 0; background: rgba
 .plan-card .plan-nodes li { margin: 2px 0; }
 .plan-node { display: flex; align-items: center; gap: 8px; }
 
-/* index: course list and new-course form */
-.index { max-width: 720px; margin: 0 auto; padding: 40px 16px 64px; }
-.index header { margin-bottom: 24px; }
-.index .lede { max-width: 60ch; margin: 0; font-size: 16px; }
-.course-list { list-style: none; margin: 0 0 40px; padding: 0; border-top: 1px solid var(--border); }
+/* index: the course list beside the new-course form */
+.tb-spacer { flex: 1 1 auto; }
+.index { max-width: 1200px; margin: 0 auto; padding: 32px 24px 64px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 40px; }
+.index:focus { outline: none; }
+@media (min-width: 1100px) {
+  .index.has-courses { grid-template-columns: minmax(0, 1fr) 360px; align-items: start; }
+}
+.course-list { list-style: none; margin: 16px 0 0; padding: 0; border-top: 1px solid var(--fg); }
 .course-list:empty { display: none; }
-.course { display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; align-items: center; padding: 14px 0; border-bottom: 1px solid var(--border); }
-.course-title { grid-column: 1 / -1; font-size: 18px; font-weight: 700; letter-spacing: -0.01em; overflow-wrap: anywhere; }
-.course progress { grid-column: 1; width: 100%; height: 6px; appearance: none; -webkit-appearance: none; border: 0; background: var(--disabled-bg); overflow: hidden; }
-.course progress::-webkit-progress-bar { background: var(--disabled-bg); }
-.course progress::-webkit-progress-value { background: var(--st-solid-fg); }
-.course progress::-moz-progress-bar { background: var(--st-solid-fg); }
-.course .small { grid-column: 2; grid-row: 2; white-space: nowrap; }
-.course-go { grid-column: 1 / -1; justify-self: start; margin-top: 4px; font-weight: 600; }
+.course { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 24px; align-items: center; padding: 18px 0; border-bottom: 1px solid var(--hair); }
+.course-title { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; color: var(--fg); text-decoration: none; overflow-wrap: anywhere; }
+.course-title:hover { text-decoration: underline; }
+.course-go { justify-self: end; max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.course-strip { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 2px; }
+.course-strip:empty { display: none; }
+.course-meta { grid-column: 1 / -1; margin: 0; font-size: 14px; color: var(--ink-2); }
+.course-meta b { font-size: 16px; color: var(--fg); }
 .new-course label { display: block; font-weight: 600; margin-bottom: 4px; }
-.new-course .small { display: block; margin-top: 4px; max-width: 60ch; }
-.new-course form { max-width: 560px; }
-/* Empty state: the form is the page. Once a course exists it drops to a quiet secondary section. */
-.index:not(.has-courses) .new-course label[for="title"] { font-size: 18px; }
-.index:not(.has-courses) .new-course .new-heading { display: none; }
-.index.has-courses .new-heading { font-size: 15px; color: var(--muted); font-weight: 600; }
-.index.has-courses .new-course { padding-top: 8px; }
-@media (max-width: 480px) {
-  .index { padding-top: 24px; }
-  .course { grid-template-columns: 1fr; }
-  .course .small { grid-column: 1; grid-row: auto; }
+.new-course .small { display: block; margin-top: 4px; }
+.new-course form p { margin-bottom: 14px; }
+.new-course button.primary { padding: 9px 16px; }
+/* With courses, the form is a framed side panel; without, the form is the page. */
+.has-courses .new-course { background: var(--panel); border: 1px solid var(--fg); padding: 16px; }
+.has-courses .new-heading { font-size: 16px; margin-bottom: 12px; }
+.has-courses .new-course .lede { display: none; }
+.index:not(.has-courses) { max-width: 640px; }
+.index:not(.has-courses) .courses .page-title, .index:not(.has-courses) .new-heading { display: none; }
+.index:not(.has-courses) .new-course .lede { margin-bottom: 24px; }
+.index:not(.has-courses) .new-course label[for="title"] { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.15; margin-bottom: 12px; }
+@media (max-width: 600px) {
+  .index { padding: 24px 16px 48px; }
+  .course { grid-template-columns: minmax(0, 1fr); }
+  .course-go { justify-self: start; max-width: 100%; }
 }

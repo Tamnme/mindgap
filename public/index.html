@@ -5,17 +5,26 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>mindgap · courses</title>
   <link rel="stylesheet" href="app.css">
+  <script>try { const t = localStorage.getItem('mindgap-theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch {}</script>
 </head>
 <body>
-  <main class="index" id="index">
-    <header>
-      <h1>mindgap</h1>
-      <p class="muted lede" id="lede">Tell it what you want to learn. It probes what you already know, then teaches the gaps.</p>
-    </header>
-    <div id="error" class="notice error hidden" role="alert"></div>
-    <ul id="courses" class="course-list"></ul>
+  <a class="skip-link" href="#index">Skip to your courses</a>
+  <header class="topbar">
+    <a class="wordmark" href="/">mindgap</a>
+    <span class="tb-spacer"></span>
+    <label class="theme"><span class="sr-only">Theme</span>
+      <select id="theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select>
+    </label>
+  </header>
+  <main class="index" id="index" tabindex="-1">
+    <section class="courses" aria-labelledby="courses-heading">
+      <h1 id="courses-heading" class="page-title">Your courses</h1>
+      <div id="error" class="notice error hidden" role="alert"></div>
+      <ul id="courses" class="course-list"></ul>
+    </section>
     <section class="new-course" aria-labelledby="new-heading">
       <h2 id="new-heading" class="new-heading">Start a new course</h2>
+      <p class="lede">Tell it what you want to learn. It probes what you already know, then teaches the gaps.</p>
       <form id="new-course">
         <p><label for="title">What do you want to learn?</label>
           <input id="title" type="text" name="title" required maxlength="80" placeholder="e.g. Kubernetes networking"></p>
@@ -27,7 +36,10 @@
     </section>
   </main>
   <script type="module">
+    import { statusMark } from './chrome.js';
+
     const list = document.getElementById('courses');
+    const ORDER = ['solid', 'shaky', 'gap', 'untested'];
     const showError = (msg) => {
       const box = document.getElementById('error');
       box.textContent = msg;
@@ -39,22 +51,29 @@
       if (text != null) e.textContent = text;
       return e;
     };
+    // One row per course: title, where to pick up, a strip with one mark per topic, and the counts in words.
     const courseItem = (c) => {
       const q = encodeURIComponent(c.slug);
       const li = el('li', 'course');
       const title = el('a', 'course-title', c.title || c.slug);
       title.href = `course.html?course=${q}`;
-      const bar = el('progress');
-      bar.max = Math.max(c.total, 1);
-      bar.value = c.solid;
-      bar.setAttribute('aria-label', `${c.title || c.slug}: ${c.solid} of ${c.total} solid`);
-      const count = el('span', 'muted small', c.total ? `${c.solid}/${c.total} solid` : 'No map yet');
+      const counts = c.counts || { solid: c.solid, untested: c.total - c.solid };
+      const strip = el('div', 'course-strip');
+      strip.setAttribute('aria-hidden', 'true');
+      for (const s of ORDER) for (let i = 0; i < (counts[s] || 0); i++) strip.append(statusMark(s, 'sm'));
+      const meta = el('p', 'course-meta num');
+      if (c.total) {
+        meta.append(el('b', null, String(counts.untested || 0)), ` of ${c.total} untested · ${counts.solid || 0} solid · ${counts.shaky || 0} shaky · ${counts.gap || 0} gap`);
+      } else {
+        meta.textContent = 'No map yet. Open it to set a goal.';
+      }
       const l = c.lastLesson;
-      const go = el('a', 'course-go', l ? `Resume ${l.title}` : 'Open map');
+      const go = el('a', 'button course-go', l ? `Resume: ${l.title}` : 'Open');
+      go.title = go.textContent;
       go.href = !l ? `course.html?course=${q}`
         : l.mode === 'chapter' ? `chapter.html?course=${q}&node=${encodeURIComponent(l.nodeId)}`
         : `lesson.html?course=${q}&id=${encodeURIComponent(l.id)}`;
-      li.append(title, bar, count, go);
+      li.append(title, go, strip, meta);
       return li;
     };
     try {
@@ -62,7 +81,6 @@
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const courses = await res.json();
       document.getElementById('index').classList.toggle('has-courses', courses.length > 0);
-      if (courses.length) document.getElementById('lede').textContent = 'Pick up where you left off, or start something new below.';
       for (const c of courses) list.append(courseItem(c));
     } catch (err) {
       showError(`Could not load courses: ${err.message}`);
