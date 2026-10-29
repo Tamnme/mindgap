@@ -67,7 +67,6 @@ button {
   overflow-wrap: anywhere;
   text-align: left;
 }
-button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 button:disabled, button.primary:disabled { background: var(--disabled-bg); border-color: var(--border); border-style: dashed; color: var(--muted); cursor: not-allowed; }
 
 input:not([type="checkbox"], [type="radio"], [type="range"], [type="button"], [type="submit"], [type="file"], [type="color"]), textarea {
@@ -370,10 +369,10 @@ a.tb-title:hover { color: var(--fg); text-decoration: underline; }
 .question.submitted label.opt:hover:not(:has(input:checked)) { border-color: var(--border); }
 .question.submitted textarea:disabled { background: transparent; color: var(--fg); border-style: solid; cursor: default; }
 .question.submitted .conf button:disabled { background: transparent; color: var(--muted); border-style: solid; cursor: default; }
-.question.submitted .conf button.on:disabled { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.question.submitted .conf button.on:disabled { background: var(--panel); border-color: var(--fg); color: var(--fg); outline: 1px solid var(--fg); outline-offset: -2px; font-weight: 700; }
 .conf { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin: 8px 0; font-size: 12px; }
 .conf button { width: 32px; padding: 4px 0; text-align: center; }
-.conf button.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.conf button.on { background: var(--panel); border-color: var(--fg); color: var(--fg); outline: 1px solid var(--fg); outline-offset: -2px; font-weight: 700; }
 .actions-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 
 .done-banner {
@@ -477,10 +476,10 @@ a.toc-item:hover span:nth-child(2) { text-decoration: underline; }
 .w-body { padding: 16px 18px; overflow-x: auto; }
 .w-take { margin: 0 18px 16px; padding: 10px 14px; border: 1px solid var(--border); font-size: 14px; color: var(--ink-2); }
 .w-take p:last-child { margin: 0; }
-.widget.focused { position: fixed; inset: 4vh 4vw; z-index: 50; overflow: auto; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5); }
-body.has-focus::after { content: ""; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55); z-index: 40; }
+.widget.focused { position: fixed; inset: 4vh 4vw; z-index: 50; overflow: auto; box-shadow: 0 20px 60px rgba(28, 35, 33, 0.45); }
+body.has-focus::after { content: ""; position: fixed; inset: 0; background: rgba(28, 35, 33, 0.55); z-index: 40; }
 
-.tutor-fab { position: fixed; right: 20px; bottom: 20px; z-index: 30; padding: 10px 18px; background: var(--panel); border: 1px solid var(--fg); color: var(--fg); font-weight: 600; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18); }
+.tutor-fab { position: fixed; right: 20px; bottom: 20px; z-index: 30; padding: 10px 18px; background: var(--panel); border: 1px solid var(--fg); color: var(--fg); font-weight: 600; box-shadow: 0 6px 18px rgba(28, 35, 33, 0.18); }
 .badge { display: inline-block; margin-left: 6px; min-width: 18px; padding: 0 5px; border: 1px solid var(--grid); color: var(--grid); font-size: 11px; text-align: center; font-variant-numeric: tabular-nums; }
 .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(420px, 100vw); z-index: 35; background: var(--bg); border-left: 1px solid var(--border); display: flex; flex-direction: column; transform: translateX(100%); transition: transform 0.2s; visibility: hidden; }
 .drawer.open { transform: none; visibility: visible; }
@@ -557,7 +556,7 @@ body.has-focus::after { content: ""; position: fixed; inset: 0; background: rgba
 .nbtimeline button { font: inherit; font-size: 14px; padding: 4px 12px; border: 1px solid var(--border); background: var(--panel); color: var(--fg); cursor: pointer; }
 .nbtimeline button:hover:not(:disabled) { border-color: var(--accent); }
 .nbtimeline button:disabled { opacity: .5; cursor: default; }
-.nbtimeline .tl-scn[aria-pressed=true] { border-color: var(--accent); background: var(--tint); font-weight: 700; }
+.nbtimeline .tl-scn[aria-pressed=true] { border-color: var(--fg); outline: 1px solid var(--fg); outline-offset: -2px; font-weight: 700; }
 .nbtimeline .tl-count { font-family: ui-monospace, monospace; font-size: 14px; color: var(--muted); }
 .nbtimeline .tl-svg { display: block; width: 100%; max-width: 100%; border: 1px solid var(--border); background: var(--panel); font-family: ui-monospace, monospace; }
 .nbtimeline .tl-lane { font-size: 13px; font-weight: 700; fill: var(--fg); }

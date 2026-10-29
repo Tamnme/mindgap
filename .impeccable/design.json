@@ -1,45 +1,363 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-29T00:00:00Z",
+  "generatedAt": "2026-10-29T12:00:00Z",
   "title": "Design System: mindgap",
   "extensions": {
     "colorMeta": {
-      "sheet-ground": { "role": "neutral", "displayName": "Sheet Ground", "canonical": "#f7f8f6", "tonalRamp": ["#1c2321", "#353d3a", "#4f5853", "#6b746f", "#8a928e", "#b4bab7", "#dcdfdc", "#f7f8f6"] },
-      "ink": { "role": "neutral", "displayName": "Ink", "canonical": "#1c2321", "tonalRamp": ["#0f1312", "#1c2321", "#2f3835", "#47514d", "#5a6460", "#8a948f", "#c3c9c6", "#eef0ee"] },
-      "ink-2": { "role": "neutral", "displayName": "Ink 2", "canonical": "#47514d" },
-      "muted": { "role": "neutral", "displayName": "Muted", "canonical": "#5a6460" },
-      "panel": { "role": "neutral", "displayName": "Panel White", "canonical": "#ffffff" },
-      "grid-blue": { "role": "secondary", "displayName": "National-Grid Blue", "canonical": "#2b6cb0", "tonalRamp": ["#0f2742", "#173d66", "#20538c", "#2b6cb0", "#5089c4", "#7fa8d4", "#b5cde6", "#e6eef7"] },
-      "grid-hairline": { "role": "secondary", "displayName": "Grid Hairline", "canonical": "rgba(43, 108, 176, 0.28)" },
-      "border": { "role": "neutral", "displayName": "Border", "canonical": "rgba(28, 35, 33, 0.22)" },
-      "disabled": { "role": "neutral", "displayName": "Disabled", "canonical": "#eceeeb" },
-      "survey-magenta": { "role": "primary", "displayName": "Survey Magenta", "canonical": "#c0176b", "tonalRamp": ["#46072a", "#6e0d41", "#9e1258", "#c0176b", "#d34a8c", "#e27fb0", "#f0b8d3", "#fbe6f0"] },
-      "survey-magenta-ink": { "role": "primary", "displayName": "Survey Magenta Ink", "canonical": "#9e1258" },
-      "survey-green": { "role": "tertiary", "displayName": "Survey Green", "canonical": "#4f9a52", "tonalRamp": ["#1a361b", "#295a2b", "#3a7b3d", "#4f9a52", "#73b175", "#9cc99d", "#c8e1c8", "#e6f0e4"] },
-      "contour-orange": { "role": "tertiary", "displayName": "Contour Orange", "canonical": "#c2652a", "tonalRamp": ["#46220c", "#6e3714", "#984d1e", "#c2652a", "#d48653", "#e2a982", "#efcfb7", "#fbf0e6"] },
-      "untested-grey": { "role": "tertiary", "displayName": "Untested Grey", "canonical": "#8a948f" },
-      "danger": { "role": "neutral", "displayName": "Danger", "canonical": "#a3123f" },
-      "danger-bg": { "role": "neutral", "displayName": "Danger Background", "canonical": "#fbe8ee" }
+      "sheet-ground": {
+        "role": "neutral",
+        "displayName": "Sheet Ground",
+        "canonical": "#f7f8f6",
+        "tonalRamp": [
+          "#1c2321",
+          "#353d3a",
+          "#4f5853",
+          "#6b746f",
+          "#8a928e",
+          "#b4bab7",
+          "#dcdfdc",
+          "#f7f8f6"
+        ],
+        "dark": "#121614"
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#1c2321",
+        "tonalRamp": [
+          "#0f1312",
+          "#1c2321",
+          "#2f3835",
+          "#47514d",
+          "#5a6460",
+          "#8a948f",
+          "#c3c9c6",
+          "#eef0ee"
+        ],
+        "dark": "#e3e8e5"
+      },
+      "ink-2": {
+        "role": "neutral",
+        "displayName": "Ink 2",
+        "canonical": "#47514d",
+        "dark": "#b4bdb8"
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Muted",
+        "canonical": "#5a6460",
+        "dark": "#919c97"
+      },
+      "panel": {
+        "role": "neutral",
+        "displayName": "Panel",
+        "canonical": "#ffffff",
+        "dark": "#1a1f1d"
+      },
+      "grid-blue": {
+        "role": "secondary",
+        "displayName": "National-Grid Blue",
+        "canonical": "#2b6cb0",
+        "tonalRamp": [
+          "#0f2742",
+          "#173d66",
+          "#20538c",
+          "#2b6cb0",
+          "#5089c4",
+          "#7fa8d4",
+          "#b5cde6",
+          "#e6eef7"
+        ],
+        "dark": "#6ea8e6"
+      },
+      "grid-hairline": {
+        "role": "secondary",
+        "displayName": "Grid Hairline",
+        "canonical": "rgba(43, 108, 176, 0.28)",
+        "dark": "rgba(110, 168, 230, 0.3)"
+      },
+      "border": {
+        "role": "neutral",
+        "displayName": "Border",
+        "canonical": "rgba(28, 35, 33, 0.22)",
+        "dark": "rgba(227, 232, 229, 0.22)"
+      },
+      "disabled": {
+        "role": "neutral",
+        "displayName": "Disabled",
+        "canonical": "#eceeeb",
+        "dark": "#232926"
+      },
+      "survey-magenta": {
+        "role": "primary",
+        "displayName": "Survey Magenta",
+        "canonical": "#c0176b",
+        "tonalRamp": [
+          "#46072a",
+          "#6e0d41",
+          "#9e1258",
+          "#c0176b",
+          "#d34a8c",
+          "#e27fb0",
+          "#f0b8d3",
+          "#fbe6f0"
+        ],
+        "dark": "#c8277a"
+      },
+      "survey-magenta-ink": {
+        "role": "primary",
+        "displayName": "Survey Magenta Ink",
+        "canonical": "#9e1258",
+        "dark": "#a81b63"
+      },
+      "survey-green": {
+        "role": "tertiary",
+        "displayName": "Survey Green",
+        "canonical": "#4f9a52",
+        "tonalRamp": [
+          "#1a361b",
+          "#295a2b",
+          "#3a7b3d",
+          "#4f9a52",
+          "#73b175",
+          "#9cc99d",
+          "#c8e1c8",
+          "#e6f0e4"
+        ]
+      },
+      "contour-orange": {
+        "role": "tertiary",
+        "displayName": "Contour Orange",
+        "canonical": "#c2652a",
+        "tonalRamp": [
+          "#46220c",
+          "#6e3714",
+          "#984d1e",
+          "#c2652a",
+          "#d48653",
+          "#e2a982",
+          "#efcfb7",
+          "#fbf0e6"
+        ],
+        "dark": "#e0874b"
+      },
+      "untested-grey": {
+        "role": "tertiary",
+        "displayName": "Untested Grey",
+        "canonical": "#8a948f",
+        "dark": "#6f7974"
+      },
+      "danger": {
+        "role": "neutral",
+        "displayName": "Danger",
+        "canonical": "#a3123f",
+        "dark": "#ff8fa8"
+      },
+      "danger-bg": {
+        "role": "neutral",
+        "displayName": "Danger Background",
+        "canonical": "#fbe8ee",
+        "dark": "#3a1420"
+      },
+      "grid-tint": {
+        "role": "secondary",
+        "displayName": "Grid Tint",
+        "canonical": "rgba(43, 108, 176, 0.07)",
+        "dark": "rgba(110, 168, 230, 0.1)"
+      },
+      "survey-magenta-text": {
+        "role": "primary",
+        "displayName": "Survey Magenta Text",
+        "canonical": "#c0176b",
+        "dark": "#e8559a"
+      },
+      "on-solid": {
+        "role": "tertiary",
+        "displayName": "On Solid",
+        "canonical": "#101512"
+      },
+      "busy-bg": {
+        "role": "neutral",
+        "displayName": "Busy Background",
+        "canonical": "#eef3f9",
+        "dark": "#18211d"
+      },
+      "ok-bg": {
+        "role": "neutral",
+        "displayName": "Ok Background",
+        "canonical": "#e6f2e6",
+        "dark": "#17301a"
+      },
+      "ok-fg": {
+        "role": "neutral",
+        "displayName": "Ok Text",
+        "canonical": "#1f5a23",
+        "dark": "#a8dcaa"
+      },
+      "slab": {
+        "role": "neutral",
+        "displayName": "Slab",
+        "canonical": "#1c2321",
+        "dark": "#0c100e"
+      },
+      "slab-2": {
+        "role": "neutral",
+        "displayName": "Slab Well",
+        "canonical": "#151b19",
+        "dark": "#070a09"
+      },
+      "slab-rule": {
+        "role": "neutral",
+        "displayName": "Slab Rule",
+        "canonical": "rgba(227, 232, 229, 0.16)"
+      },
+      "slab-fg": {
+        "role": "neutral",
+        "displayName": "Slab Ink",
+        "canonical": "#e3e8e5"
+      },
+      "slab-muted": {
+        "role": "neutral",
+        "displayName": "Slab Muted",
+        "canonical": "#919c97"
+      },
+      "slab-grid": {
+        "role": "secondary",
+        "displayName": "Slab Grid Blue",
+        "canonical": "#6ea8e6"
+      }
     },
     "typographyMeta": {
-      "headline": { "displayName": "Headline", "purpose": "Next-step topic title or the first-run question; 24px below 900px." },
-      "quote": { "displayName": "Quote", "purpose": "The learner's own words in the evidence figure." },
-      "title": { "displayName": "Title", "purpose": "Topic title in the Map side panel." },
-      "wordmark": { "displayName": "Wordmark", "purpose": "Lowercase 'mindgap' in the top bar." },
-      "lede": { "displayName": "Lede", "purpose": "Reason line when there is no quote; max 46ch." },
-      "body": { "displayName": "Body", "purpose": "Root size on the sheet." },
-      "note": { "displayName": "Note", "purpose": "Tutor's note, sheet margin note, Resume." },
-      "meta": { "displayName": "Meta", "purpose": "Meta line, grid ref beside the large mark, 'Or' heading." },
-      "square-title": { "displayName": "Square title", "purpose": "Topic title inside a sheet square, clamped to 3 lines." },
-      "label": { "displayName": "Label", "purpose": "Grid refs, column numbers, key counts; tabular figures; 11px floor." }
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Next-step topic title, lesson title, first-run question on an empty course list; 24px below 900px."
+      },
+      "quote": {
+        "displayName": "Quote",
+        "purpose": "The learner's own words in the evidence figure."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Topic title in the Map side panel; course title in the course list."
+      },
+      "wordmark": {
+        "displayName": "Wordmark",
+        "purpose": "Lowercase 'mindgap' in the top bar."
+      },
+      "lede": {
+        "displayName": "Lede",
+        "purpose": "Reason line when there is no quote, chapter lede (18px), empty-list intro; max 46ch."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Root size everywhere except chapter prose."
+      },
+      "note": {
+        "displayName": "Note",
+        "purpose": "Tutor's note, sheet margin note, Resume, course-list counts sentence, theme control."
+      },
+      "meta": {
+        "displayName": "Meta",
+        "purpose": "Meta line, grid ref beside the large mark, 'Or' heading."
+      },
+      "square-title": {
+        "displayName": "Square title",
+        "purpose": "Topic title inside a sheet square, clamped to 3 lines."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Grid refs, column numbers, key counts, TOC numbers, speaker labels; tabular figures; 11px floor."
+      },
+      "chapter-title": {
+        "displayName": "Chapter title",
+        "purpose": "The chapter page title."
+      },
+      "chapter-section": {
+        "displayName": "Chapter section",
+        "purpose": "Chapter section headings, led by a grid-blue section number."
+      },
+      "reading": {
+        "displayName": "Reading",
+        "purpose": "Chapter prose in a 760px column."
+      },
+      "frame-title": {
+        "displayName": "Frame title",
+        "purpose": "Checkpoint and widget titles set in the frame top edge; chapter-list heading. Grid blue."
+      },
+      "code": {
+        "displayName": "Code",
+        "purpose": "Inline code and code blocks on the slab."
+      },
+      "lab-code": {
+        "displayName": "Lab code",
+        "purpose": "Commands in the lab card."
+      }
     },
     "shadows": [
-      { "name": "menu-lift", "value": "0 6px 18px rgba(28, 35, 33, 0.14)", "purpose": "The open More menu only; the one floating layer." }
+      {
+        "name": "menu-lift",
+        "value": "0 6px 18px rgba(28, 35, 33, 0.14)",
+        "purpose": "The open More menu."
+      },
+      {
+        "name": "tutor-lift",
+        "value": "0 6px 18px rgba(28, 35, 33, 0.18)",
+        "purpose": "The floating Tutor button on the chapter page; dropped when it docks as a bottom bar on phones."
+      },
+      {
+        "name": "focus-overlay",
+        "value": "0 20px 60px rgba(28, 35, 33, 0.45)",
+        "purpose": "A widget opened with Focus, over a rgba(28, 35, 33, 0.55) scrim."
+      }
     ],
-    "motion": [],
+    "motion": [
+      {
+        "name": "drawer-slide",
+        "value": "transform 0.2s",
+        "purpose": "Tutor drawer in from the right; none under reduced motion."
+      },
+      {
+        "name": "unlock",
+        "value": "filter 0.3s, opacity 0.3s",
+        "purpose": "Content after a checkpoint un-blurs once answered; none under reduced motion."
+      },
+      {
+        "name": "spinner",
+        "value": "rotate 0.8s linear infinite",
+        "purpose": "Busy spinner."
+      }
+    ],
     "breakpoints": [
-      { "name": "compact", "value": "899px", "purpose": "Max-width: tighter page padding, 24px headline." },
-      { "name": "wide", "value": "1240px", "purpose": "Min-width: next step beside the sheet; sheet beside the sticky side panel. Shared with course.js WIDE." }
+      {
+        "name": "widget-compact",
+        "value": "520px",
+        "purpose": "Max-width: widgets tighten padding and stack grids."
+      },
+      {
+        "name": "phone",
+        "value": "600px",
+        "purpose": "Max-width: Tutor button docks as a bottom bar; course rows drop Resume under the title."
+      },
+      {
+        "name": "compact",
+        "value": "899px",
+        "purpose": "Max-width: 16px page and bar padding, 24px headline."
+      },
+      {
+        "name": "chapter-side",
+        "value": "960px",
+        "purpose": "Min-width: sticky 270px chapter list beside the reading column."
+      },
+      {
+        "name": "index-side",
+        "value": "1100px",
+        "purpose": "Min-width: new-course panel beside the course list."
+      },
+      {
+        "name": "wide",
+        "value": "1240px",
+        "purpose": "Min-width: next step beside the sheet; sheet beside the sticky side panel. Shared with course.js WIDE."
+      }
     ]
   },
   "components": [
@@ -81,7 +399,7 @@
       "refersTo": "sheet-square",
       "description": "A topic on the sheet: grid ref, mark, title; status is the fill.",
       "html": "<div class=\"ds-row\"><button class=\"ds-sq ds-sq-solid\"><span class=\"ds-top\"><span class=\"ds-ref\">L3·01</span></span><span class=\"ds-t\">IP addressing and subnet math</span></button><button class=\"ds-sq ds-sq-shaky\"><span class=\"ds-top\"><span class=\"ds-ref ds-chip\">L3·02</span></span><span class=\"ds-t ds-chip\">Default gateway</span></button><button class=\"ds-sq ds-sq-gap\"><span class=\"ds-top\"><span class=\"ds-ref\">L3·03</span></span><span class=\"ds-t\">Router vs switch</span></button><button class=\"ds-sq ds-sq-untested\"><span class=\"ds-top\"><span class=\"ds-ref\">L3·04</span></span><span class=\"ds-t\">Longest-prefix match</span></button></div>",
-      "css": ".ds-row { display: grid; grid-template-columns: repeat(4, 110px); font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; } .ds-sq { display: flex; flex-direction: column; gap: 3px; min-height: 84px; margin: 3px; padding: 5px 5px 6px; border: 1px solid rgba(28, 35, 33, 0.22); background: #fff; color: #1c2321; text-align: left; border-radius: 0; cursor: pointer; font: inherit; } .ds-sq:hover { border-color: #1c2321; } .ds-sq:focus-visible { outline: 2px solid #2b6cb0; outline-offset: 2px; } .ds-ref { font-size: 11px; color: #5a6460; font-variant-numeric: tabular-nums; } .ds-t { font-size: 12px; line-height: 1.3; font-weight: 500; } .ds-sq-solid { background: #4f9a52; border-color: #4f9a52; } .ds-sq-solid .ds-ref { color: #1c2321; } .ds-sq-gap { background: #c0176b; border-color: #c0176b; color: #fff; } .ds-sq-gap .ds-ref { color: #fff; } .ds-sq-shaky { border-color: #c2652a; background: repeating-linear-gradient(135deg, #c2652a 0 1.5px, #fff 1.5px 6px); } .ds-chip { background: #fff; padding: 0 3px; margin: 0 -3px; align-self: flex-start; } .ds-sq-untested { border-style: dashed; border-color: #8a948f; background: transparent; }"
+      "css": ".ds-row { display: grid; grid-template-columns: repeat(4, 110px); font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; } .ds-sq { display: flex; flex-direction: column; gap: 3px; min-height: 84px; margin: 3px; padding: 5px 5px 6px; border: 1px solid rgba(28, 35, 33, 0.22); background: #fff; color: #1c2321; text-align: left; border-radius: 0; cursor: pointer; font: inherit; } .ds-sq:hover { border-color: #1c2321; } .ds-sq:focus-visible { outline: 2px solid #2b6cb0; outline-offset: 2px; } .ds-ref { font-size: 11px; color: #5a6460; font-variant-numeric: tabular-nums; } .ds-t { font-size: 12px; line-height: 1.3; font-weight: 500; } .ds-sq-solid { background: #4f9a52; border-color: #4f9a52; } .ds-sq-solid { color: #101512; } .ds-sq-solid .ds-ref { color: #101512; } .ds-sq-gap { background: #c0176b; border-color: #c0176b; color: #fff; } .ds-sq-gap .ds-ref { color: #fff; } .ds-sq-shaky { border-color: #c2652a; background: repeating-linear-gradient(135deg, #c2652a 0 1.5px, #fff 1.5px 6px); } .ds-chip { background: #fff; padding: 0 3px; margin: 0 -3px; align-self: flex-start; } .ds-sq-untested { border-style: dashed; border-color: #8a948f; background: transparent; }"
     },
     {
       "name": "Evidence Figure",
@@ -98,11 +416,51 @@
       "description": "Key box in the sheet head: four marks with tabular counts, blue hairline box.",
       "html": "<ul class=\"ds-key\"><li><span class=\"ds-k ds-k-solid\"></span>solid <b>0</b></li><li><span class=\"ds-k ds-k-shaky\"></span>shaky <b>0</b></li><li><span class=\"ds-k ds-k-gap\"></span>gap <b>0</b></li><li><span class=\"ds-k ds-k-un\"></span>untested <b>33</b></li></ul>",
       "css": ".ds-key { display: flex; gap: 4px 16px; margin: 0; padding: 6px 10px; list-style: none; border: 1px solid rgba(43, 108, 176, 0.28); font: 12px system-ui, -apple-system, 'Segoe UI', sans-serif; color: #47514d; } .ds-key li { display: flex; align-items: center; gap: 6px; } .ds-key b { color: #1c2321; font-weight: 600; font-variant-numeric: tabular-nums; } .ds-k { width: 12px; height: 12px; border: 1px solid #1c2321; } .ds-k-solid { background: #4f9a52; border-color: #4f9a52; } .ds-k-gap { background: #c0176b; border-color: #c0176b; } .ds-k-shaky { border-color: #c2652a; background: repeating-linear-gradient(135deg, #c2652a 0 1.5px, transparent 1.5px 4px); } .ds-k-un { border: 1px dashed #8a948f; }"
+    },
+    {
+      "name": "Theme Control",
+      "kind": "input",
+      "refersTo": "theme-select",
+      "description": "Visible Theme label and a square select with the More CSS chevron; end of the top bar (inside More on the course page).",
+      "html": "<label class=\"ds-theme\"><span>Theme</span><select><option>System</option><option>Light</option><option>Dark</option></select></label>",
+      "css": ".ds-theme { position: relative; display: inline-flex; align-items: center; gap: 8px; color: #47514d; font: 14px system-ui, -apple-system, 'Segoe UI', sans-serif; } .ds-theme select { appearance: none; font: inherit; padding: 6px 28px 6px 10px; border: 1px solid rgba(28, 35, 33, 0.22); background: #fff; color: #1c2321; border-radius: 0; cursor: pointer; } .ds-theme select:hover { border-color: #1c2321; } .ds-theme select:focus-visible { outline: 2px solid #2b6cb0; outline-offset: 2px; } .ds-theme::after { content: ''; position: absolute; right: 11px; top: 50%; width: 6px; height: 6px; border-right: 1.5px solid #1c2321; border-bottom: 1.5px solid #1c2321; transform: translateY(-70%) rotate(45deg); pointer-events: none; }"
+    },
+    {
+      "name": "Course Row",
+      "kind": "custom",
+      "refersTo": "course-row",
+      "description": "A ruled course-list row: title, Resume, a mark strip ordered solid, shaky, gap, untested, and the counts sentence.",
+      "html": "<ul class=\"ds-cl\"><li class=\"ds-cr\"><a class=\"ds-ct\" href=\"#\">Networking under the cloud</a><a class=\"ds-go\" href=\"#\">Resume: Default gateway</a><div class=\"ds-strip\"><span class=\"ds-m ds-s\"></span><span class=\"ds-m ds-s\"></span><span class=\"ds-m ds-k\"></span><span class=\"ds-m ds-g\"></span><span class=\"ds-m ds-u\"></span><span class=\"ds-m ds-u\"></span><span class=\"ds-m ds-u\"></span></div><p class=\"ds-cm\"><b>3</b> of 7 untested · 2 solid · 1 shaky · 1 gap</p></li></ul>",
+      "css": ".ds-cl { list-style: none; margin: 0; padding: 0; border-top: 1px solid #2b6cb0; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; color: #1c2321; max-width: 640px; } .ds-cr { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 24px; align-items: center; padding: 18px 0; border-bottom: 1px solid rgba(43, 108, 176, 0.28); } .ds-ct { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; color: #1c2321; text-decoration: none; } .ds-ct:hover { text-decoration: underline; } .ds-go { padding: 6px 12px; border: 1px solid rgba(28, 35, 33, 0.22); background: #fff; color: #1c2321; text-decoration: none; font-size: 15px; } .ds-go:hover { border-color: #1c2321; } .ds-go:focus-visible, .ds-ct:focus-visible { outline: 2px solid #2b6cb0; outline-offset: 2px; } .ds-strip { grid-column: 1 / -1; display: flex; gap: 2px; } .ds-m { width: 10px; height: 10px; border: 1px solid; } .ds-s { background: #4f9a52; border-color: #4f9a52; } .ds-k { border-color: #c2652a; background: repeating-linear-gradient(135deg, #c2652a 0 1.5px, transparent 1.5px 4px); } .ds-g { background: #c0176b; border-color: #c0176b; } .ds-u { border: 1px dashed #8a948f; } .ds-cm { grid-column: 1 / -1; margin: 0; font-size: 14px; color: #47514d; font-variant-numeric: tabular-nums; } .ds-cm b { font-size: 16px; color: #1c2321; }"
+    },
+    {
+      "name": "Checkpoint",
+      "kind": "card",
+      "refersTo": "checkpoint",
+      "description": "Grid-blue frame with its title in the top edge; hairline-ruled options; the chosen option is outlined in ink.",
+      "html": "<div class=\"ds-cp\"><div class=\"ds-cpt\">Checkpoint · predict first</div><p class=\"ds-q\">Which hop drops the 1500-byte packet?</p><label class=\"ds-o\"><input type=\"radio\" name=\"o\" checked> The VPN gateway</label><label class=\"ds-o\"><input type=\"radio\" name=\"o\"> The home router</label></div>",
+      "css": ".ds-cp { position: relative; border: 1px solid #2b6cb0; padding: 20px 18px 16px; margin-top: 12px; background: #fff; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 15px; color: #1c2321; max-width: 520px; } .ds-cpt { position: absolute; top: -0.75em; left: 12px; padding: 0 6px; background: #fff; font-size: 13px; font-weight: 700; color: #2b6cb0; } .ds-q { font-weight: 600; margin: 0 0 10px; } .ds-o { display: flex; gap: 8px; align-items: baseline; border-bottom: 1px solid rgba(43, 108, 176, 0.28); padding: 10px 6px; cursor: pointer; } .ds-o:first-of-type { border-top: 1px solid rgba(43, 108, 176, 0.28); } .ds-o:hover { background: rgba(43, 108, 176, 0.07); } .ds-o:has(input:checked) { outline: 2px solid #1c2321; outline-offset: -2px; font-weight: 600; } .ds-o input { accent-color: #2b6cb0; }"
+    },
+    {
+      "name": "Lab Card",
+      "kind": "card",
+      "refersTo": "lab-card",
+      "description": "The slab: always dark in both themes; command, Run bar, output well.",
+      "html": "<div class=\"ds-lab\"><pre class=\"ds-lc\"><span class=\"ds-cmd\">ping</span> <span class=\"ds-fl\">-M do -s</span> 1472 10.0.0.1</pre><div class=\"ds-lb\"><button class=\"ds-run\">Run</button></div><div class=\"ds-lo\"><pre>PING 10.0.0.1 1472(1500) bytes of data.</pre></div></div>",
+      "css": ".ds-lab { background: #1c2321; border: 1px solid rgba(227, 232, 229, 0.16); color: #e3e8e5; max-width: 520px; } .ds-lab pre { margin: 0; font: 13.5px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; } .ds-lc { padding: 16px 20px; } .ds-cmd { color: #6ea8e6; } .ds-fl { color: #919c97; } .ds-lb { border-top: 1px solid rgba(227, 232, 229, 0.16); padding: 10px 20px; } .ds-run { background: transparent; border: 1px solid rgba(227, 232, 229, 0.16); color: #e3e8e5; font: 600 15px system-ui, -apple-system, 'Segoe UI', sans-serif; padding: 6px 14px; border-radius: 0; cursor: pointer; } .ds-run:hover { border-color: #e3e8e5; } .ds-run:focus-visible { outline: 2px solid #6ea8e6; outline-offset: 2px; } .ds-lo { border-top: 1px solid rgba(227, 232, 229, 0.16); background: #151b19; padding: 14px 20px; }"
+    },
+    {
+      "name": "Tutor Button",
+      "kind": "button",
+      "refersTo": "tutor-button",
+      "description": "Square floating Tutor button with an ink frame and the Tutor lift; grid-blue outlined count.",
+      "html": "<button class=\"ds-fab\">Tutor <span class=\"ds-badge\">2</span></button>",
+      "css": ".ds-fab { font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 15px; padding: 10px 18px; background: #fff; border: 1px solid #1c2321; color: #1c2321; font-weight: 600; border-radius: 0; box-shadow: 0 6px 18px rgba(28, 35, 33, 0.18); cursor: pointer; } .ds-fab:focus-visible { outline: 2px solid #2b6cb0; outline-offset: 2px; } .ds-badge { display: inline-block; margin-left: 6px; min-width: 18px; padding: 0 5px; border: 1px solid #2b6cb0; color: #2b6cb0; font-size: 11px; text-align: center; font-variant-numeric: tabular-nums; }"
     }
   ],
   "narrative": {
     "northStar": "The Survey Sheet",
-    "overview": "A course is a surveyed sheet. The page borrows from an Ordnance Survey topographic map only its type discipline, its palette and one signature move: every topic is a square with a grid reference on a grid-referenced sheet, the layer codes in the left margin and column numbers along the top edge. Nothing else of the map comes along. There are no contour textures, terrain or paper grain; the ground is cool white, not cream.\n\nDensity is high and calm. All 33 topics of the networking course fit one 1440x900 viewport beside the next step. Marks are 1px hairlines, corners are square, and every number is set in tabular figures. One colour does two jobs on purpose: magenta marks a gap and also the primary action, so the button that starts the next lesson is the same colour as the gaps it teaches into.\n\nScope today: this system applies to the course page only (`public/course.html`, scoped by `body.sheet` with its tokens on `:root:has(body.sheet)`). The lesson, chapter and course-list pages still use the older global tokens at the top of `public/app.css` until a later slice migrates them. The system is light only; dark is a later slice, and the sheet sets `color-scheme: light`.",
+    "overview": "A course is a surveyed sheet. The page borrows from an Ordnance Survey topographic map only its type discipline, its palette and one signature move: every topic is a square with a grid reference on a grid-referenced sheet, the layer codes in the left margin and column numbers along the top edge. Nothing else of the map comes along. There are no contour textures, terrain or paper grain; the ground is cool white, not cream.\n\nDensity is high and calm. All 33 topics of the networking course fit one 1440x900 viewport beside the next step. Marks are 1px hairlines, corners are square, and every number is set in tabular figures. One colour does two jobs on purpose: magenta marks a gap and also the primary action, so the button that starts the next lesson is the same colour as the gaps it teaches into.\n\nScope: every page (course list, course, lesson, chapter) uses this system. The tokens sit once on `:root` at the top of `public/app.css`, each written as `light-dark(light, dark)` under `color-scheme: light dark`. The theme control (System / Light / Dark, stored in `localStorage` as `mindgap-theme`) sets `data-theme` on the root, which forces `color-scheme`; an inline script in each page's head applies it before paint, and `chrome.js` keeps it in sync across tabs and back-forward restores. The hex values in the front matter are the light ones; the dark ones are listed under Colors. One surface ignores the theme: the slab, which holds code blocks and the lab card.",
     "keyCharacteristics": [
       "Grid-referenced sheet: layer codes in the margin, two-digit column numbers on top, a grid ref such as `L3·04` on every square.",
       "A closed vocabulary of four status marks (solid, shaky, gap, untested), with one mark form drawn at three scales.",
@@ -111,26 +469,59 @@
       "The margin always counts what remains (\"N of M untested\")."
     ],
     "rules": [
-      { "name": "The Shared Magenta Rule", "body": "Magenta means \"gap\" and \"act on it\" and nothing else. Do not use it for decoration, headings or links.", "section": "colors" },
-      { "name": "The Status Is the Fill Rule", "body": "A square's state is shown by its whole surface: a green fill, orange hatching, a magenta fill, or blank with a dashed edge. A sheet must read without the key; the key only confirms it.", "section": "colors" },
-      { "name": "The Tabular Figures Rule", "body": "Every count, grid ref, column number and elapsed time is set with `tabular-nums`, so the numbers line up like a survey index.", "section": "typography" },
-      { "name": "The Ruled Not Raised Rule", "body": "Separate things with a 1px rule. Use the ink rule for a frame and a blue hairline for a division. A shadow appears only on a layer that floats over content.", "section": "elevation" },
-      { "name": "The One Mark Rule", "body": "A topic's status is always this same square mark, scaled as needed. Do not use dots, chips, rings or percentages for status on the sheet.", "section": "shapes" }
+      {
+        "name": "The Shared Magenta Rule",
+        "body": "Magenta means \"gap\" and \"act on it\" and nothing else. Do not use it for decoration, headings or links.",
+        "section": "colors"
+      },
+      {
+        "name": "The Status Is the Fill Rule",
+        "body": "A square's state is shown by its whole surface: a green fill, orange hatching, a magenta fill, or blank with a dashed edge. A sheet must read without the key; the key only confirms it.",
+        "section": "colors"
+      },
+      {
+        "name": "The One Slab Rule",
+        "body": "The slab is the only surface that ignores the theme. Everything else reads its colour from a `light-dark()` token.",
+        "section": "colors"
+      },
+      {
+        "name": "The Tabular Figures Rule",
+        "body": "Every count, grid ref, column number and elapsed time is set with `tabular-nums`, so the numbers line up like a survey index.",
+        "section": "typography"
+      },
+      {
+        "name": "The Ruled Not Raised Rule",
+        "body": "Separate things with a 1px rule. Use the ink rule for a frame and a blue hairline for a division. A shadow appears only on a layer that floats over content.",
+        "section": "elevation"
+      },
+      {
+        "name": "The One Mark Rule",
+        "body": "A topic's status is always this same square mark, scaled as needed. Do not use dots, chips, rings or percentages for status on the sheet.",
+        "section": "shapes"
+      },
+      {
+        "name": "The Outline Selects Rule",
+        "body": "A chosen thing is outlined in ink: the selected square, the chosen answer, the current chapter. A tint marks hover or emphasis, never selection.",
+        "section": "shapes"
+      }
     ],
     "dos": [
       "**Do** show status by filling the whole square: green fill, 135° orange hatching, magenta fill, or blank with a dashed edge.",
       "**Do** put the fixed furniture on every square: grid ref, mark and title, with the title clamped to 3 lines.",
-      "**Do** set every number in tabular figures and keep the \"N of M untested\" count in the sheet margin.",
+      "**Do** set every number in tabular figures and keep the \"N of M untested\" count in the sheet margin and on each course row.",
       "**Do** use 1px ink rules for frames, 1px grid-blue hairlines for divisions and square corners for everything.",
       "**Do** quote the learner's own words as the reason for the next step, with the tutor's note beneath.",
-      "**Do** keep functional text at 11px or larger and keep text on status fills at WCAG AA (ink on green, white on magenta)."
+      "**Do** keep functional text at 11px or larger and keep text on status fills at WCAG AA (dark ink on green, white on magenta).",
+      "**Do** outline a chosen thing in ink; keep the tint for hover and emphasis.",
+      "**Do** put a frame's title in its top edge, in grid blue."
     ],
     "donts": [
-      "**Don't** use magenta for anything except gap and the primary action.",
+      "**Don't** use magenta for anything except gap and the primary action; use `--primary-text` when it is text.",
       "**Don't** add progress rings, mastery percentages or a card per unit; the sheet is the progress view.",
       "**Don't** dress the sheet as a map: no contour textures, terrain or paper grain. The hatching on shaky squares is a status mark, not decoration.",
-      "**Don't** round corners or put shadows on resting surfaces; the More menu is the only floating layer.",
-      "**Don't** apply these tokens to the lesson, chapter or course-list pages until their migration slice, and don't add a dark variant outside the dark slice."
+      "**Don't** round corners or put shadows on resting surfaces; only the More menu, the Tutor button and the focused widget float.",
+      "**Don't** hard-code a colour that has to read in both themes; add a token with `light-dark()`. The slab is the one surface that stays dark in both.",
+      "**Don't** use glyph icons (arrows, ticks, crosses); status is the mark, controls are words, chevrons are CSS borders."
     ]
   }
 }
