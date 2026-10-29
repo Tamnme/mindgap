@@ -226,7 +226,8 @@ function topicBlock(n, mode) {
   const status = statusOf(n);
   const hasChapter = state.chapters.includes(n.id);
   const actions = [
-    el('button', { class: 'primary', 'data-action': mode, 'data-node': n.id, onclick: () => startLesson(n.id, mode, true),
+    // No data-node: these always start a tutor call, so the chapter exemption in lockWhileBusy must not apply.
+    el('button', { class: 'primary', 'data-action': mode, onclick: () => startLesson(n.id, mode, true),
       text: mode === 'practice' ? 'Start practice' : 'Start lesson' }),
   ];
   if (hasChapter) actions.push(el('a', { class: 'button', href: chapterUrl(n.id), text: 'Read chapter' }));
@@ -253,7 +254,7 @@ function altRow(n, verb, mode) {
       el('p', { class: 'alt-title' }, [el('span', { class: 'num', text: state.refs[n.id] }), ' ', n.title || n.id]),
       el('p', { class: 'alt-why', text: n.evidence || status }),
     ]),
-    el('button', { 'data-action': mode, 'data-node': n.id, onclick: () => startLesson(n.id, mode, true), text: verb }),
+    el('button', { 'data-action': mode, onclick: () => startLesson(n.id, mode, true), text: verb }),
   ]);
 }
 
@@ -537,8 +538,8 @@ function onKey(e) {
   if (t.closest && t.closest('input, textarea, select, [contenteditable]')) return;
   if (e.key === '/') {
     e.preventDefault();
-    if (state.view !== 'map') location.hash = 'map';
-    requestAnimationFrame(() => $('node-search').focus());
+    if (state.view !== 'map') { history.pushState(null, '', '#map'); showView(); }
+    $('node-search').focus();
   } else if (e.key === 'n' && state.view === 'home' && !state.busy) {
     document.querySelector('#next .primary')?.click();
   }
