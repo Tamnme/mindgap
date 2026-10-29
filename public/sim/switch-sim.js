@@ -201,15 +201,15 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&
 const reducedMotion = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 const CSS = `
-.nbsim{font:13px/1.45 system-ui,sans-serif;color:#1d1f24;color-scheme:light dark;max-width:420px;min-width:0;overflow-wrap:anywhere}
+.nbsim{font:13px/1.45 system-ui,sans-serif;color:light-dark(#1d1f24,#e7e9ee);max-width:420px;min-width:0;overflow-wrap:anywhere}
 .nbsim *{box-sizing:border-box;min-width:0}
 .nbsim svg{display:block;width:100%;height:auto}
-.nbsim svg text{font:11px system-ui,sans-serif;fill:#1d1f24;text-anchor:middle}
-.nbsim .sub{font-size:10px;fill:#4a4f5a}
-.nbsim .box{fill:#e6e6e6;stroke:#8a8f99}
-.nbsim .sw{fill:#cfd8ea;stroke:#6b7a99}
-.nbsim .wire{stroke:#8a8f99;stroke-width:2}
-.nbsim .trunk{stroke:#6b7a99;stroke-width:3;stroke-dasharray:6 3}
+.nbsim svg text{font:11px system-ui,sans-serif;fill:light-dark(#1d1f24,#e7e9ee);text-anchor:middle}
+.nbsim .sub{font-size:10px;fill:light-dark(#4a4f5a,#b5bac6)}
+.nbsim .box{fill:light-dark(#e6e6e6,#2a2f3a);stroke:light-dark(#8a8f99,#6b7280)}
+.nbsim .sw{fill:light-dark(#cfd8ea,#34405a);stroke:light-dark(#6b7a99,#8fa3c9)}
+.nbsim .wire{stroke:light-dark(#8a8f99,#6b7280);stroke-width:2}
+.nbsim .trunk{stroke:light-dark(#6b7a99,#8fa3c9);stroke-width:3;stroke-dasharray:6 3}
 .nbsim .drop{fill:#d64c7f;font-size:16px;font-weight:700}
 .nbsim .pk{stroke:#fff;stroke-width:1.5}
 .nbsim .legend{font-size:12px;margin:4px 0}
@@ -220,16 +220,7 @@ const CSS = `
 .nbsim .log{margin:6px 0;padding-left:20px;max-height:170px;overflow:auto;font-size:12px}
 .nbsim .log li{overflow-wrap:anywhere;margin:2px 0}
 .nbsim table{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed}
-.nbsim th,.nbsim td{text-align:left;padding:3px 4px;border-bottom:1px solid rgba(128,128,128,.3);overflow-wrap:anywhere}
-@media (prefers-color-scheme:dark){
-.nbsim{color:#e7e9ee}
-.nbsim svg text{fill:#e7e9ee}
-.nbsim .sub{fill:#b5bac6}
-.nbsim .box{fill:#2a2f3a;stroke:#6b7280}
-.nbsim .sw{fill:#34405a;stroke:#8fa3c9}
-.nbsim .wire{stroke:#6b7280}
-.nbsim .trunk{stroke:#8fa3c9}
-}`;
+.nbsim th,.nbsim td{text-align:left;padding:3px 4px;border-bottom:1px solid rgba(128,128,128,.3);overflow-wrap:anywhere}`;
 
 function injectStyle() {
   if (document.getElementById('nbsim-style')) return;

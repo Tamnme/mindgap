@@ -5,22 +5,35 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>mindgap · chapter</title>
   <link rel="stylesheet" href="app.css">
+  <script>try { const t = localStorage.getItem('mindgap-theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch {}</script>
 </head>
 <body>
+  <a class="skip-link" href="#main">Skip to the chapter</a>
+  <header class="topbar">
+    <a class="wordmark" href="/">mindgap</a>
+    <a id="course-title" class="tb-title" href="course.html">Course</a>
+    <nav class="tabs" aria-label="Course">
+      <a href="course.html#home" data-view="home">Home</a>
+      <a href="course.html#map" data-view="map">Map</a>
+      <a href="course.html#sources" data-view="sources">Sources</a>
+    </nav>
+    <label class="theme"><span>Theme</span>
+      <select id="theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select>
+    </label>
+  </header>
   <div class="ch-layout">
     <aside class="ch-side" aria-label="Chapters">
-      <a href="course.html" id="back-map" class="ch-back">← Course</a>
-      <div id="side-layer" class="ch-kicker"></div>
+      <p id="side-layer" class="ch-side-h"></p>
       <details id="toc-wrap" class="toc-wrap" open>
         <summary>Chapters and sections</summary>
         <nav id="toc"></nav>
       </details>
     </aside>
 
-    <main class="ch-main">
+    <main id="main" class="ch-main" tabindex="-1">
       <header class="ch-head">
-        <div class="ch-kicker"><span id="ch-number"></span> <span id="status-chip" class="chip">…</span></div>
         <h1 id="ch-title">Chapter</h1>
+        <p id="ch-meta" class="meta"></p>
         <p id="ch-lede" class="ch-lede"></p>
       </header>
       <div id="error" class="notice error hidden" role="alert"></div>
@@ -29,14 +42,14 @@
   </div>
 
   <button id="tutor-fab" class="tutor-fab" aria-controls="drawer" aria-expanded="false">
-    ✦ Tutor <span id="tutor-state" class="small"></span><span id="tutor-badge" class="badge hidden"></span>
+    Tutor <span id="tutor-state" class="small"></span><span id="tutor-badge" class="badge hidden"></span>
   </button>
 
   <aside id="drawer" class="drawer" aria-label="Tutor" inert>
     <header class="drawer-head">
       <strong>Tutor</strong>
       <span class="small muted">Reviews your checkpoint answers. Ask it anything about the chapter.</span>
-      <button id="drawer-close" aria-label="Close tutor">×</button>
+      <button id="drawer-close" type="button">Close</button>
     </header>
     <div id="drawer-thread" class="drawer-thread" aria-live="polite"></div>
     <form id="ask-form" class="ask-form">

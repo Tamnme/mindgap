@@ -122,6 +122,26 @@ export function sheetRows(topo, layers, showOff) {
     .filter((r) => r.nodes.length);
 }
 
+// Learning order: Kahn's algorithm, ties broken by layer order then file order. Cycles fall back to sort order.
+export function topoSort(nodes, layers) {
+  const ids = layers.map((l) => l.id);
+  const known = new Set(nodes.map((n) => n.id));
+  const layerIdx = (n) => {
+    const i = ids.indexOf(n.layer);
+    return i === -1 ? ids.length : i;
+  };
+  let remaining = nodes.map((n, i) => ({ n, i, l: layerIdx(n) })).sort((a, b) => a.l - b.l || a.i - b.i);
+  const placed = new Set();
+  const order = [];
+  while (remaining.length) {
+    const pick = remaining.find(({ n }) => (n.prereqs || []).every((p) => placed.has(p) || !known.has(p))) || remaining[0];
+    placed.add(pick.n.id);
+    order.push(pick.n);
+    remaining = remaining.filter((x) => x !== pick);
+  }
+  return order;
+}
+
 // "L3·04": row code and 1-based column in learning order. Off-goal nodes keep a number, so refs never shift.
 export function gridRefs(topo, layers) {
   const refs = {};

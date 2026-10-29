@@ -4,6 +4,8 @@
 import { renderMarkdown } from './md.js';
 import { elapsedText, turnErrorText, withCode } from './ui-text.js';
 import { createLabCard, fillLabCard, runLabCommand, setLabBusy } from './labcard.js';
+import { topoSort, gridRefs } from './map-logic.js';
+import { statusMark, statusOf, fillCourseBar } from './chrome.js';
 import { firstOpenCheckpoint, flatBlocks, answerEvent, answersFrom, sectionState } from './chapter-logic.js';
 
 const $ = (id) => document.getElementById(id);
@@ -19,6 +21,8 @@ const S = {
   queue: [],        // learner events waiting for the tutor
   sending: false,
   unread: 0,
+  topo: [],         // map nodes in learning order
+  refs: {},         // node id -> grid ref, as the course sheet numbers it
 };
 
 function el(tag, props = {}, children = []) {
@@ -61,10 +65,10 @@ async function getJson(url) {
   return data;
 }
 
-function setStatusChip(status) {
-  const s = ['untested', 'gap', 'shaky', 'solid'].includes(status) ? status : 'untested';
-  $('status-chip').className = `chip ${s}`;
-  $('status-chip').textContent = s;
+// Under the title: the topic's mark, then "L1·01 · gap · Chapter 1 · Physical".
+function renderMeta() {
+  const parts = [S.refs[S.node.id], statusOf(S.node.status), `Chapter ${S.chapter.number}`, S.chapter.kicker];
+  $('ch-meta').replaceChildren(statusMark(S.node.status), ' ', parts.filter(Boolean).join(' · '));
 }
 
 // ---------- checkpoints ----------
@@ -74,10 +78,11 @@ function receipt(cp, ans) {
   const short = (o) => String(o).split(': ')[0];
   const pick = ans.skipped ? null : short(ans.chosen);
   const line = ans.skipped
-    ? `↷ Skipped · answer: ${short(cp.options[cp.key])}`
+    ? `Skipped · answer: ${short(cp.options[cp.key])}`
     : ans.correct
-      ? `✓ ${pick} · confidence ${ans.confidence}`
-      : `✗ You: ${pick} · answer: ${short(cp.options[cp.key])}`;
+      ? `Right: ${pick} · confidence ${ans.confidence}`
+      : `You: ${pick} · answer: ${short(cp.options[cp.key])}`;
+  const mark = statusMark(ans.skipped ? 'untested' : ans.correct ? 'solid' : 'gap', 'sm');
   const details = el('div', { class: 'cp-details hidden' }, [
     md(cp.prompt, 'cp-q'),
     el('p', { text: cp.why }),
@@ -86,12 +91,11 @@ function receipt(cp, ans) {
   const btn = el('button', {
     class: `cp-receipt ${ans.skipped ? 'skipped' : ans.correct ? 'right' : 'wrong'}`,
     'aria-expanded': 'false',
-    text: line,
     onclick: () => {
       const open = details.classList.toggle('hidden') === false;
       btn.setAttribute('aria-expanded', String(open));
     },
-  });
+  }, [mark, ' ', line]);
   return el('div', { class: 'cp folded' }, [btn, details]);
 }
 
@@ -153,7 +157,7 @@ function widgetCard(w) {
   let explored = false;
   try { explored = localStorage.getItem(key) === '1'; } catch { /* storage blocked */ }
 
-  const badge = el('span', { class: `w-badge${explored ? '' : ' hidden'}`, text: '✓ Explored' });
+  const badge = el('span', { class: `w-badge${explored ? '' : ' hidden'}`, text: 'explored' });
   const host = el('div', { class: 'sim-host' });
   let instance = null;
   const mount = async () => {
@@ -176,11 +180,11 @@ function widgetCard(w) {
   for (const t of ['click', 'input', 'change']) host.addEventListener(t, markExplored);
 
   const card = el('div', { class: 'widget' });
-  const focusBtn = el('button', { class: 'w-tool', text: '⤢ Focus' });
+  const focusBtn = el('button', { class: 'w-tool', text: 'Focus' });
   const setFocus = (on) => {
     card.classList.toggle('focused', on);
     document.body.classList.toggle('has-focus', on);
-    focusBtn.textContent = on ? '× Close' : '⤢ Focus';
+    focusBtn.textContent = on ? 'Close' : 'Focus';
   };
   focusBtn.addEventListener('click', () => setFocus(!card.classList.contains('focused')));
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && card.classList.contains('focused')) setFocus(false); });
@@ -188,11 +192,10 @@ function widgetCard(w) {
   card.append(
     el('div', { class: 'w-head' }, [
       el('div', { class: 'w-titles' }, [
-        el('div', { class: 'w-kicker' }, [el('span', { text: 'Interactive' }), badge]),
-        el('h3', { text: w.title }),
+        el('h3', { class: 'w-kicker' }, [el('span', { text: w.title }), badge]),
         w.hint ? el('p', { class: 'w-hint', text: w.hint }) : null,
       ]),
-      el('div', { class: 'w-tools' }, [el('button', { class: 'w-tool', text: '↺ Reset', onclick: mount }), focusBtn]),
+      el('div', { class: 'w-tools' }, [el('button', { class: 'w-tool', text: 'Reset', onclick: mount }), focusBtn]),
     ]),
     el('div', { class: 'w-body' }, [host]),
     w.takeaway ? md(w.takeaway, 'w-take') : null,
@@ -263,11 +266,12 @@ function renderToc() {
   const states = sectionState(S.chapter, S.answers);
   const toc = $('toc');
   toc.replaceChildren();
-  const layerNodes = S.map.nodes.filter((n) => n.layer === S.node.layer);
-  layerNodes.forEach((n, i) => {
+  const layerNodes = S.topo.filter((n) => n.layer === S.node.layer);
+  layerNodes.forEach((n) => {
     const current = n.id === nodeId;
     const has = S.chapterIds.includes(n.id);
-    const label = [el('span', { class: 'toc-num', text: String(i + 1) }), el('span', { text: n.title }), el('span', { class: `dot ${n.status}`, title: n.status })];
+    const label = [el('span', { class: 'toc-num num', text: S.refs[n.id] || '' }), el('span', { text: n.title }), statusMark(n.status, 'sm')];
+    label[2].title = statusOf(n.status);
     const item = has && !current
       ? el('a', { class: 'toc-item', href: `chapter.html?course=${encodeURIComponent(course)}&node=${encodeURIComponent(n.id)}` }, label)
       : el('div', { class: `toc-item${current ? ' current' : ' no-chapter'}`, title: has ? '' : 'No chapter yet' }, label);
@@ -276,7 +280,7 @@ function renderToc() {
       toc.append(el('div', { class: 'toc-sections' }, S.chapter.sections.map((s) => el('a', {
         class: `toc-sec st-${states[s.id]}`,
         href: `#s-${s.id}`,
-        text: `${states[s.id] === 'done' ? '✓ ' : ''}${s.title}`,
+        text: s.title,
       }))));
     }
   });
@@ -297,7 +301,7 @@ function drawerAppend(kind, content) {
 function noteFor(ev) {
   if (ev.type === 'ask') return ['learner', ev.text];
   if (ev.type === 'checkpoint') {
-    return ['note', ev.skipped ? `${ev.id}: skipped` : `${ev.id}: ${ev.correct ? '✓' : '✗'} ${ev.chosen} · confidence ${ev.confidence}`];
+    return ['note', ev.skipped ? `${ev.id}: skipped` : `${ev.id}: ${ev.correct ? 'right' : 'wrong'}, ${ev.chosen} · confidence ${ev.confidence}`];
   }
   return ['note', ev.type];
 }
@@ -336,7 +340,12 @@ function setTutorState(text) {
 }
 
 function handleTurn(turn) {
-  for (const u of turn.node_updates || []) if (u.id === nodeId) setStatusChip(u.status);
+  for (const u of turn.node_updates || []) {
+    if (u.id !== nodeId) continue;
+    S.node.status = u.status;
+    renderMeta();
+    renderToc();
+  }
   if (!turn.say || !turn.say.trim()) return;
   drawerAppend('tutor', turn.say);
   if (!$('drawer').classList.contains('open')) {
@@ -404,7 +413,7 @@ function replay(events) {
 
 async function init() {
   if (!course || !nodeId) return showError('No chapter in the URL. Open one from the map.');
-  $('back-map').href = `course.html?course=${encodeURIComponent(course)}`;
+  fillCourseBar(course);
   // Phones: the chapter list starts folded so the reading starts at the top of the screen.
   if (!matchMedia('(min-width: 960px)').matches) $('toc-wrap').open = false;
   try {
@@ -423,11 +432,14 @@ async function init() {
     S.lessonId = lesson.lesson_id;
 
     document.title = `mindgap · ${S.chapter.title}`;
-    $('ch-number').textContent = `Chapter ${S.chapter.number} · ${S.chapter.kicker}`;
-    $('side-layer').textContent = S.chapter.kicker;
+    const layers = info.layers || [];
+    S.topo = topoSort(S.map.nodes, layers);
+    S.refs = gridRefs(S.topo, layers);
+    fillCourseBar(course, info.title);
+    $('side-layer').textContent = layers.find((l) => l.id === S.node.layer)?.name || S.chapter.kicker;
     $('ch-title').textContent = S.chapter.title;
     $('ch-lede').textContent = S.chapter.lede;
-    setStatusChip(S.node.status);
+    renderMeta();
 
     replay(lesson.events);
     renderArticle();

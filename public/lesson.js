@@ -2,7 +2,8 @@
 // Model text is rendered with renderMarkdown (escapes first); everything else uses textContent.
 
 import { renderMarkdown } from './md.js';
-import { planNodes, replyQuestion } from './map-logic.js';
+import { planNodes, replyQuestion, topoSort, gridRefs } from './map-logic.js';
+import { statusMark, statusOf, fillCourseBar } from './chrome.js';
 import { elapsedText, turnErrorText, withCode } from './ui-text.js';
 import { createLabCard, fillLabCard, runLabCommand, setLabBusy } from './labcard.js';
 
@@ -26,6 +27,8 @@ const S = {
   sim: null,         // {card, instance} of the live simulator
   simToken: 0,
   lab: null,         // course lab state: {available, reason?, request, approved}
+  ref: '',           // the topic's grid ref, as the course sheet numbers it
+  layerName: '',
 };
 
 class HttpError extends Error {
@@ -121,8 +124,8 @@ function appendPlan(plan) {
   const card = el('div', { class: 'card plan-card' }, [el('div', { class: 'who', text: 'Proposed plan' }), approach]);
   const list = el('ol', { class: 'plan-nodes' });
   for (const n of nodes) {
-    const s = ['untested', 'gap', 'shaky', 'solid'].includes(n.status) ? n.status : 'untested';
-    list.append(el('li', {}, [el('span', { text: `${n.title || n.id} ` }), el('span', { class: `chip ${s}`, text: s })]));
+    const s = statusOf(n.status);
+    list.append(el('li', { class: 'plan-node' }, [statusMark(s), el('span', { text: n.title || n.id }), el('span', { class: 'muted small', text: s })]));
   }
   card.append(list);
   if (rest > 0) card.append(el('p', { class: 'muted small', text: `${rest} topics set aside` }));
@@ -231,11 +234,12 @@ function openSim(scenario) {
     });
 }
 
-function setStatusChip(status) {
-  const chip = $('status-chip');
-  const s = ['untested', 'gap', 'shaky', 'solid'].includes(status) ? status : 'untested';
-  chip.className = `chip ${s}`;
-  chip.textContent = s;
+// Under the title: the topic's mark, then "L1·01 · gap · teach · Physical: links and NICs".
+function renderMeta() {
+  const n = S.node;
+  const mode = S.meta?.mode === 'course' ? 'probe, then plan' : S.meta?.mode;
+  const parts = n ? [S.ref, statusOf(n.status), mode, S.layerName] : [mode];
+  $('meta').replaceChildren(...(n ? [statusMark(n.status), ' '] : []), parts.filter(Boolean).join(' · '));
 }
 
 function renderBanner() {
@@ -264,7 +268,7 @@ function applyTurn(turn) {
   renderQuestion(replyQuestion(turn));
   if (S.meta) {
     for (const u of turn.node_updates || []) {
-      if (u.id === S.meta.node_id) setStatusChip(u.status);
+      if (u.id === S.meta.node_id && S.node) { S.node.status = u.status; renderMeta(); }
     }
   }
   S.done = !!turn.lesson_done;
@@ -430,7 +434,7 @@ async function init() {
     showError('No lesson in the URL. Start a lesson from the map.');
     return;
   }
-  $('back-map').href = mapUrl;
+  fillCourseBar(course);
   $('btn-submit').addEventListener('click', onSubmit);
   $('btn-lost').addEventListener('click', onLost);
   $('btn-ask').addEventListener('click', () => openAsk($('ask-box').classList.contains('hidden')));
@@ -453,24 +457,25 @@ async function init() {
     if (!lessonRes.ok) throw new HttpError(lessonRes.status, await errorText(lessonRes));
     const { meta = {}, events = [] } = await lessonRes.json();
     S.meta = meta;
-    if (courseRes.ok) S.lab = (await courseRes.json()).lab ?? null;
+    const info = courseRes.ok ? await courseRes.json() : {};
+    S.lab = info.lab ?? null;
+    fillCourseBar(course, info.title);
     if (mapRes.ok) {
       const map = await mapRes.json();
       S.mapNodes = map.nodes || [];
       S.node = S.mapNodes.find(n => n.id === meta.node_id) || null;
     }
+    const layers = info.layers || [];
     if (meta.mode === 'course') {
+      S.node = null;
       $('title').textContent = 'New goal';
-      $('status-chip').classList.add('hidden');
     } else {
       $('title').textContent = S.node?.title || meta.node_id || 'Lesson';
-      setStatusChip(S.node?.status);
+      S.ref = S.node ? gridRefs(topoSort(S.mapNodes, layers), layers)[S.node.id] : '';
+      S.layerName = layers.find((l) => l.id === S.node?.layer)?.name || '';
     }
-    if (meta.mode) {
-      const m = $('mode-chip');
-      m.textContent = meta.mode;
-      m.classList.remove('hidden');
-    }
+    renderMeta();
+    document.title = `mindgap · ${$('title').textContent}`;
     replay(events);
   } catch (err) {
     showError(withCode(`Could not load lesson${err.message ? `: ${err.message}` : ''}`, err.status));

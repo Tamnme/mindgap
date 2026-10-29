@@ -41,7 +41,7 @@ after(async () => {
 });
 
 test('listCourses returns shipped courses with slug and title', async () => {
-  assert.deepEqual(await listCourses(opts), [{ slug: 'alpha', title: 'Alpha', solid: 0, total: 0, lastLesson: null }]);
+  assert.deepEqual(await listCourses(opts), [{ slug: 'alpha', title: 'Alpha', solid: 0, total: 0, counts: { untested: 0, gap: 0, shaky: 0, solid: 0 }, lastLesson: null }]);
 });
 
 test('listCourses reports solid/total from state map and the latest node lesson', async () => {
@@ -57,9 +57,9 @@ test('listCourses reports solid/total from state map and the latest node lesson'
     'data/courses/a/state/sessions/bad.meta.json': '{nope',
   });
   const [a, b] = await listCourses(o);
-  assert.deepEqual(a, { slug: 'a', title: 'A', solid: 2, total: 3, lastLesson: { id: 'y-200', nodeId: 'y', title: 'Y', mode: 'chapter' } });
+  assert.deepEqual(a, { slug: 'a', title: 'A', solid: 2, total: 3, counts: { untested: 0, gap: 0, shaky: 1, solid: 2 }, lastLesson: { id: 'y-200', nodeId: 'y', title: 'Y', mode: 'chapter' } });
   // no state yet: total comes from the seed the map would be seeded with
-  assert.deepEqual(b, { slug: 'b', title: 'B', solid: 0, total: 1, lastLesson: null });
+  assert.deepEqual(b, { slug: 'b', title: 'B', solid: 0, total: 1, counts: { untested: 1, gap: 0, shaky: 0, solid: 0 }, lastLesson: null });
 });
 
 test('loadCourse sets stateDir under dataDir/courses/<slug>/state', async () => {
@@ -93,7 +93,7 @@ test('a shipped course wins over a same-slug course in dataDir', async () => {
     'courses/alpha/course.json': course('alpha', 'Alpha'),
     'data/courses/alpha/course.json': course('alpha', 'Alpha Local'),
   });
-  assert.deepEqual(await listCourses(local), [{ slug: 'alpha', title: 'Alpha', solid: 0, total: 0, lastLesson: null }]);
+  assert.deepEqual(await listCourses(local), [{ slug: 'alpha', title: 'Alpha', solid: 0, total: 0, counts: { untested: 0, gap: 0, shaky: 0, solid: 0 }, lastLesson: null }]);
   assert.equal((await loadCourse(local, 'alpha')).title, 'Alpha');
 });
 
@@ -103,8 +103,8 @@ test('a dataDir-only course is listed after shipped ones and loads from dataDir'
     'data/courses/beta/course.json': course('beta', 'Beta'),
   });
   assert.deepEqual(await listCourses(local), [
-    { slug: 'alpha', title: 'Alpha', solid: 0, total: 0, lastLesson: null },
-    { slug: 'beta', title: 'Beta', solid: 0, total: 0, lastLesson: null },
+    { slug: 'alpha', title: 'Alpha', solid: 0, total: 0, counts: { untested: 0, gap: 0, shaky: 0, solid: 0 }, lastLesson: null },
+    { slug: 'beta', title: 'Beta', solid: 0, total: 0, counts: { untested: 0, gap: 0, shaky: 0, solid: 0 }, lastLesson: null },
   ]);
   const beta = await loadCourse(local, 'beta');
   assert.equal(beta.title, 'Beta');
@@ -122,7 +122,7 @@ test('a malformed shipped course still owns its slug over a dataDir course', asy
     assert.ok(err.message.includes('course.json'));
     return true;
   });
-  assert.deepEqual(await listCourses(local), [{ slug: 'alpha', title: 'Alpha', solid: 0, total: 0, lastLesson: null }]);
+  assert.deepEqual(await listCourses(local), [{ slug: 'alpha', title: 'Alpha', solid: 0, total: 0, counts: { untested: 0, gap: 0, shaky: 0, solid: 0 }, lastLesson: null }]);
 });
 
 test('loadCourse.generated is true only for courses under <data>/courses', async () => {
@@ -172,4 +172,16 @@ test('createCourse: bad title or background throws InvalidCourse and writes noth
   assert.ok(!existsSync(path.join(root, 'data')));
   const r = await createCourse(opts, { title: 'ok', background: '   ' });
   assert.ok(!existsSync(path.join(opts.dataDir, 'courses', r.slug, 'state')));
+});
+
+test('listCourses counts an unknown status as untested, including prototype keys', async () => {
+  const o = await fixture({
+    'courses/a/course.json': course('a', 'A'),
+    'courses/a/map.seed.json': JSON.stringify({ nodes: [
+      { id: 'p', status: 'bogus' }, { id: 'q', status: '__proto__' }, { id: 'r', status: 'toString' }, { id: 's', status: 'gap' },
+    ] }),
+  });
+  const [a] = await listCourses(o);
+  assert.deepEqual(a.counts, { untested: 3, gap: 1, shaky: 0, solid: 0 });
+  assert.equal(a.total, 4);
 });

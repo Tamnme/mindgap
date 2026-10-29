@@ -5,8 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>mindgap</title>
   <link rel="stylesheet" href="app.css">
+  <script>try { const t = localStorage.getItem('mindgap-theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch {}</script>
 </head>
-<body class="sheet">
+<body>
   <a class="skip-link" href="#view">Skip to the course</a>
   <header class="topbar">
     <a class="wordmark" href="/">mindgap</a>
@@ -21,6 +22,9 @@
       <div class="more-menu">
         <button type="button" id="btn-goal" data-action="goal">New goal</button>
         <button type="button" id="btn-debug" data-action="debug" class="hidden">Debug drill</button>
+        <label class="theme"><span>Theme</span>
+          <select id="theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select>
+        </label>
       </div>
     </details>
   </header>
