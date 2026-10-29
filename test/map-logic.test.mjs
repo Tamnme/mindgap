@@ -156,6 +156,7 @@ test('isFirstRun: no nodes, or nothing measured yet', () => {
   assert.equal(isFirstRun([], st), true);
   assert.equal(isFirstRun([{ id: 'a' }, { id: 'b', status: 'untested' }], st), true);
   assert.equal(isFirstRun(sheet, st), false);
+  assert.equal(isFirstRun([{ id: 'a' }, { id: 'b', in_scope: false }], st), false, 'an approved plan is not a first run');
 });
 
 test('gridMove: left/right wrap in a row, up/down keep the column (clamped), unknown key null', () => {

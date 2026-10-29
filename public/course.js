@@ -84,11 +84,14 @@ function renderSheets() {
 
 function renderSheet(slot, where) {
   slot.replaceChildren();
-  if (!state.nodes.length) return;
+  if (!state.nodes.length) {
+    if (where === 'map') slot.append(el('p', { class: 'muted', text: 'This course has no map yet. Start with your goal on Home; the tutor draws the map when you approve its plan.' }));
+    return;
+  }
   const counts = statusCounts(state.nodes, statusOf);
   const rows = sheetRows(state.topo, state.layers, state.showOff);
   const cols = Math.min(MAX_COLS, Math.max(1, ...rows.map((r) => r.nodes.length)));
-  const route = state.selected ? prereqRoute(state.selected, state.byId) : null;
+  const route = where === 'map' && state.selected ? prereqRoute(state.selected, state.byId) : null;
 
   const key = el('ul', { class: 'sheet-key', 'aria-label': 'Key' }, ['solid', 'shaky', 'gap', 'untested'].map((s) =>
     el('li', {}, [mark(s), el('span', { text: s }), el('span', { class: 'num', text: String(counts[s]) })])));
@@ -110,7 +113,7 @@ function renderSheet(slot, where) {
       if (isOffGoal(n)) cls.push('off-goal');
       if (state.selected === n.id) cls.push('selected');
       if (route && route.has(n.id)) cls.push('on-route');
-      if (route && n.id !== state.selected && !route.has(n.id)) cls.push('off-route');
+      if (route && route.size && n.id !== state.selected && !route.has(n.id)) cls.push('off-route');
       if (!nodeMatches(n, state.query)) cls.push('no-match');
       return el('button', {
         type: 'button', class: cls.join(' '), 'data-id': n.id, tabindex: n.id === current ? 0 : -1,
@@ -136,8 +139,9 @@ function renderSheet(slot, where) {
     grid.querySelector(`[data-id="${CSS.escape(to)}"]`)?.focus();
   });
 
+  const drawn = route ? [...route].filter((id) => rows.some((row) => row.nodes.some((n) => n.id === id))).length : 0;
   const hint = route
-    ? el('p', { class: 'sheet-hint', text: route.size ? `Outlined: the ${route.size} topic${route.size === 1 ? '' : 's'} “${state.byId.get(state.selected)?.title || state.selected}” builds on.` : `“${state.byId.get(state.selected)?.title || state.selected}” builds on nothing else.` })
+    ? el('p', { class: 'sheet-hint', text: drawn ? `Outlined: the ${drawn} topic${drawn === 1 ? '' : 's'} “${state.byId.get(state.selected)?.title || state.selected}” builds on.` : `“${state.byId.get(state.selected)?.title || state.selected}” builds on nothing else.` })
     : el('p', { class: 'sheet-hint', text: where === 'home' ? 'Select a square to open it on the map.' : 'Select a square to see what it builds on.' });
 
   slot.append(el('div', { class: `sheet-frame at-${where}` }, [
@@ -324,10 +328,14 @@ function renderSide() {
 
 function showView() {
   const [view, arg] = location.hash.slice(1).split(':');
-  state.view = ['home', 'map', 'sources'].includes(view) ? view : 'home';
+  // Not a view (e.g. the skip link's #view): stay where we are.
+  if (view && !['home', 'map', 'sources'].includes(view)) return;
+  state.view = view || 'home';
   if (state.view === 'map' && arg) {
-    const id = decodeURIComponent(arg);
-    if (state.byId.has(id)) state.selected = id;
+    let id = null;
+    try { id = decodeURIComponent(arg); } catch { /* malformed hash: no selection */ }
+    const n = state.byId.get(id);
+    if (n && (state.showOff || !isOffGoal(n))) state.selected = id;
   }
   for (const v of ['home', 'map', 'sources']) $(`view-${v}`).classList.toggle('hidden', v !== state.view);
   document.querySelectorAll('.tabs a').forEach((a) => {
@@ -489,6 +497,8 @@ function renderSources(list) {
     el('div', { class: 'actions' }, [url, add]),
     el('div', { class: 'actions' }, [file]),
   );
+  // Re-rendered mid-import (tab switch): keep it locked.
+  if (state.busy) box.querySelectorAll('button, input').forEach((b) => { b.disabled = true; });
 }
 
 // ---------- AI calls ----------
@@ -540,7 +550,7 @@ function onKey(e) {
     e.preventDefault();
     if (state.view !== 'map') { history.pushState(null, '', '#map'); showView(); }
     $('node-search').focus();
-  } else if (e.key === 'n' && state.view === 'home' && !state.busy) {
+  } else if (e.key === 'n' && state.view === 'home' && !state.busy && !isFirstRun(state.nodes, statusOf)) {
     document.querySelector('#next .primary')?.click();
   }
 }
@@ -581,7 +591,10 @@ async function load() {
 
   $('show-off').addEventListener('change', (e) => {
     state.showOff = e.target.checked;
-    if (!state.showOff && isOffGoal(state.byId.get(state.selected) || {})) state.selected = null;
+    if (!state.showOff && isOffGoal(state.byId.get(state.selected) || {})) {
+      state.selected = null;
+      history.replaceState(null, '', '#map');
+    }
     renderSheets();
     renderSide();
   });

@@ -160,8 +160,8 @@ export function statusCounts(nodes, status) {
   return c;
 }
 
-// Nothing measured yet: the goal question is the home.
-export const isFirstRun = (nodes, status) => nodes.every((n) => status(n) === 'untested');
+// Nothing measured and no plan approved (an approved plan marks off-goal nodes): the goal question is the home.
+export const isFirstRun = (nodes, status) => nodes.every((n) => status(n) === 'untested' && !isOffGoal(n));
 
 // Arrow-key move across the sheet: left/right wrap within a row, up/down keep the column, clamped to the row.
 export function gridMove(rows, id, key) {
